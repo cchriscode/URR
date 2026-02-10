@@ -1,0 +1,13 @@
+﻿apiVersion: v1
+kind: Service
+metadata:
+  name: stats-service
+  labels:
+    app: stats-service
+spec:
+  selector:
+    app: stats-service
+  ports:
+    - protocol: TCP
+      port: 3004
+      targetPort: 3004

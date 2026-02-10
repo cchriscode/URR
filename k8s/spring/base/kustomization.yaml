@@ -1,0 +1,16 @@
+﻿apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: tiketi-dev
+resources:
+  - gateway-service/deployment.yaml
+  - gateway-service/service.yaml
+  - ticket-service/deployment.yaml
+  - ticket-service/service.yaml
+  - payment-service/deployment.yaml
+  - payment-service/service.yaml
+  - stats-service/deployment.yaml
+  - stats-service/service.yaml
+  - auth-service/deployment.yaml
+  - auth-service/service.yaml
+  - frontend/deployment.yaml
+  - frontend/service.yaml

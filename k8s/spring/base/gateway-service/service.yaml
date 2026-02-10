@@ -1,0 +1,13 @@
+﻿apiVersion: v1
+kind: Service
+metadata:
+  name: gateway-service
+  labels:
+    app: gateway-service
+spec:
+  selector:
+    app: gateway-service
+  ports:
+    - protocol: TCP
+      port: 3001
+      targetPort: 3001

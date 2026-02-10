@@ -1,0 +1,46 @@
+﻿apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ticket-service
+  labels:
+    app: ticket-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ticket-service
+  template:
+    metadata:
+      labels:
+        app: ticket-service
+    spec:
+      containers:
+        - name: ticket-service
+          image: YOUR_ECR_URI/ticket-service:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3002
+          env:
+            - name: PORT
+              value: "3002"
+            - name: SPRING_PROFILES_ACTIVE
+              value: "prod"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3002
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3002
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"

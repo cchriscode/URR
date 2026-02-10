@@ -1,0 +1,23 @@
+spring:
+  application:
+    name: stats-service
+  datasource:
+    url: ${STATS_DB_URL:jdbc:postgresql://localhost:5432/stats_db}
+    username: ${STATS_DB_USERNAME:tiketi_user}
+    password: ${STATS_DB_PASSWORD:tiketi_password}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+
+server:
+  port: ${PORT:3004}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus

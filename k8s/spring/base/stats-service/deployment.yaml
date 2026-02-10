@@ -1,0 +1,46 @@
+﻿apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stats-service
+  labels:
+    app: stats-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: stats-service
+  template:
+    metadata:
+      labels:
+        app: stats-service
+    spec:
+      containers:
+        - name: stats-service
+          image: YOUR_ECR_URI/stats-service:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3004
+          env:
+            - name: PORT
+              value: "3004"
+            - name: SPRING_PROFILES_ACTIVE
+              value: "prod"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3004
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3004
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"

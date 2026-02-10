@@ -1,0 +1,82 @@
+# Dependencies
+node_modules/
+*/node_modules/
+
+# Environment Variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Kubernetes Secrets (Dev overlay)
+k8s/overlays/dev/secrets.env
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Build
+build/
+dist/
+*.tsbuildinfo
+
+# Docker
+docker-compose.override.yml
+
+# Database
+*.db
+*.sqlite
+
+# Frontend
+frontend/build/
+frontend/.env.local
+
+# Backend
+backend/dist/
+
+# Misc
+.cache
+.temp
+
+# Local agent settings
+.claude/settings.local.json
+
+# Credentials
+credentials.txt
+*.key
+
+# Gradle
+.gradle/
+**/build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Next.js
+.next/
+out/
+
+# Spring Boot
+*.jar
+!gradle/wrapper/*.jar
+
+# Zip archives
+*.zip
+
+# Local tools (JDK, etc.)
+.tools/
+
+# Claude project files
+.claude/

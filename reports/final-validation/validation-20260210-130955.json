@@ -1,0 +1,367 @@
+{
+    "timestamp":  "2026-02-10T13:09:55.5856106+09:00",
+    "newBaseUrl":  "http://localhost:3001",
+    "legacyBaseUrl":  "",
+    "steps":  [
+                  {
+                      "name":  "api:integration:expanded",
+                      "status":  "passed",
+                      "durationSec":  7.44,
+                      "details":  "ok"
+                  }
+              ],
+    "apiChecks":  [
+                      {
+                          "name":  "GET /health",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "POST /api/auth/register (user)",
+                          "expectedStatus":  201,
+                          "actualStatus":  201,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "POST /api/auth/login (user)",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "POST /api/auth/register (admin candidate)",
+                          "expectedStatus":  201,
+                          "actualStatus":  201,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "POST /api/auth/login (admin candidate)",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "POST /api/auth/login (promoted admin)",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "GET /api/auth/me (user token)",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "GET /api/auth/me (admin token)",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "GET /api/admin/dashboard (no token)",
+                          "expectedStatus":  401,
+                          "actualStatus":  401,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "GET /api/admin/dashboard (user token)",
+                          "expectedStatus":  403,
+                          "actualStatus":  403,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "GET /api/stats/overview (no token)",
+                          "expectedStatus":  401,
+                          "actualStatus":  401,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "GET /api/stats/overview (user token)",
+                          "expectedStatus":  403,
+                          "actualStatus":  403,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "GET /api/admin/seat-layouts",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "POST /api/admin/events",
+                          "expectedStatus":  201,
+                          "actualStatus":  201,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "PUT /api/admin/events/{id}",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "POST /api/admin/events/{id}/tickets",
+                          "expectedStatus":  201,
+                          "actualStatus":  201,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "PUT /api/admin/tickets/{id}",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "DELETE /api/admin/events/{id}/seats",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "POST /api/admin/events/{id}/generate-seats (without layout)",
+                          "expectedStatus":  400,
+                          "actualStatus":  400,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "GET /api/events",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "GET /api/events/{id}",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "GET /api/tickets/event/{eventId}",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "GET /api/tickets/availability/{ticketTypeId}",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "GET /api/seats/layouts",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "GET /api/seats/events/{eventId}",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "POST /api/seats/reserve",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "GET /api/seats/reservation/{reservationId}",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "POST /api/queue/check/{eventId}",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "GET /api/queue/status/{eventId}",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "POST /api/queue/heartbeat/{eventId}",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "POST /api/queue/leave/{eventId}",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "POST /api/reservations",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "GET /api/reservations/my",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "GET /api/reservations/{id}",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "POST /api/reservations/{id}/cancel",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "POST /api/reservations (for payment)",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "POST /api/payments/prepare",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "GET /api/payments/order/{orderId}",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "POST /api/payments/confirm",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "GET /api/payments/user/me",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "POST /api/payments/{paymentKey}/cancel",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "POST /api/reservations (for process payment)",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "POST /api/payments/process",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "GET /api/payments/order/{orderId} (process flow)",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "GET /api/news",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "POST /api/news",
+                          "expectedStatus":  201,
+                          "actualStatus":  201,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "GET /api/news/{id}",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "PUT /api/news/{id}",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "DELETE /api/news/{id}",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "GET /api/admin/dashboard (admin token)",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "GET /api/admin/reservations",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "PATCH /api/admin/reservations/{id}/status",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "GET /api/stats/overview (admin token)",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "GET /api/stats/daily",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "GET /api/stats/events",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "GET /api/stats/realtime",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "GET /api/stats/performance",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      }
+                  ],
+    "parityChecks":  [
+
+                     ],
+    "summary":  {
+                    "stepsTotal":  1,
+                    "stepsFailed":  0,
+                    "apiChecksTotal":  57,
+                    "apiChecksFailed":  0,
+                    "parityChecksTotal":  0
+                }
+}

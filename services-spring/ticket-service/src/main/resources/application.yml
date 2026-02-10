@@ -1,0 +1,48 @@
+spring:
+  application:
+    name: ticket-service
+  datasource:
+    url: ${TICKET_DB_URL:jdbc:postgresql://localhost:5432/ticket_db}
+    username: ${TICKET_DB_USERNAME:tiketi_user}
+    password: ${TICKET_DB_PASSWORD:tiketi_password}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+server:
+  port: ${PORT:3002}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+
+reservation:
+  cleanup:
+    interval-ms: ${RESERVATION_CLEANUP_INTERVAL_MS:30000}
+event:
+  status:
+    interval-ms: ${EVENT_STATUS_INTERVAL_MS:60000}
+queue:
+  admission:
+    interval-ms: ${QUEUE_ADMISSION_INTERVAL_MS:1000}
+    batch-size: ${QUEUE_ADMISSION_BATCH_SIZE:100}
+  stale-cleanup:
+    interval-ms: ${QUEUE_STALE_CLEANUP_INTERVAL_MS:30000}
+
+internal:
+  auth-service-url: ${AUTH_SERVICE_URL:http://localhost:3005}
+
+aws:
+  region: ${AWS_REGION:}
+  s3:
+    bucket: ${AWS_S3_BUCKET:}

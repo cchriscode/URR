@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dragonfly-spring
+  labels:
+    app: dragonfly-spring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dragonfly-spring
+  template:
+    metadata:
+      labels:
+        app: dragonfly-spring
+    spec:
+      containers:
+        - name: dragonfly
+          image: docker.dragonflydb.io/dragonflydb/dragonfly:latest
+          args:
+            - --maxmemory=512mb
+            - --proactor_threads=1
+            - --snapshot_cron=* * * * *
+            - --dir=/data
+            - --dbfilename=dump
+          ports:
+            - containerPort: 6379
+          volumeMounts:
+            - name: dragonfly-data
+              mountPath: /data
+          readinessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: 20
+            periodSeconds: 10
+      volumes:
+        - name: dragonfly-data
+          persistentVolumeClaim:
+            claimName: dragonfly-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dragonfly-spring
+  labels:
+    app: dragonfly-spring
+spec:
+  selector:
+    app: dragonfly-spring
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: 6379

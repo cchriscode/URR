@@ -1,0 +1,23 @@
+spring:
+  application:
+    name: payment-service
+  datasource:
+    url: ${PAYMENT_DB_URL:jdbc:postgresql://localhost:5432/payment_db}
+    username: ${PAYMENT_DB_USERNAME:tiketi_user}
+    password: ${PAYMENT_DB_PASSWORD:tiketi_password}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+
+server:
+  port: ${PORT:3003}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus

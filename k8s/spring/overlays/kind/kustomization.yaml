@@ -1,0 +1,55 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: tiketi-spring
+
+resources:
+  - namespace.yaml
+  - ../../base
+  - postgres.yaml
+  - dragonfly.yaml
+  - pvc.yaml
+  - loki.yaml
+  - promtail.yaml
+  - grafana.yaml
+
+configMapGenerator:
+  - name: spring-kind-config
+    envs:
+      - config.env
+
+secretGenerator:
+  - name: spring-kind-secret
+    envs:
+      - secrets.env
+
+generatorOptions:
+  disableNameSuffixHash: true
+
+patches:
+  - path: patches/gateway-service.yaml
+  - path: patches/auth-service.yaml
+  - path: patches/ticket-service.yaml
+  - path: patches/payment-service.yaml
+  - path: patches/stats-service.yaml
+  - path: patches/gateway-service-nodeport.yaml
+  - path: patches/frontend-service-nodeport.yaml
+
+images:
+  - name: YOUR_ECR_URI/gateway-service
+    newName: tiketi-spring-gateway-service
+    newTag: local
+  - name: YOUR_ECR_URI/auth-service
+    newName: tiketi-spring-auth-service
+    newTag: local
+  - name: YOUR_ECR_URI/ticket-service
+    newName: tiketi-spring-ticket-service
+    newTag: local
+  - name: YOUR_ECR_URI/payment-service
+    newName: tiketi-spring-payment-service
+    newTag: local
+  - name: YOUR_ECR_URI/stats-service
+    newName: tiketi-spring-stats-service
+    newTag: local
+  - name: YOUR_ECR_URI/frontend
+    newName: tiketi-spring-frontend
+    newTag: local

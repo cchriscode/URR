@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway-service
+spec:
+  template:
+    spec:
+      containers:
+        - name: gateway-service
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: spring-kind-config
+            - secretRef:
+                name: spring-kind-secret
+          env:
+            - name: PORT
+              value: "3001"
+            - name: SPRING_PROFILES_ACTIVE
+              value: "kind"
+            - name: AUTH_SERVICE_URL
+              value: "http://auth-service:3005"
+            - name: PAYMENT_SERVICE_URL
+              value: "http://payment-service:3003"
+            - name: STATS_SERVICE_URL
+              value: "http://stats-service:3004"
+            - name: TICKET_SERVICE_URL
+              value: "http://ticket-service:3002"

@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-service
+spec:
+  template:
+    spec:
+      initContainers:
+        - name: wait-for-postgres
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - until nc -z postgres-spring 5432; do echo waiting for postgres; sleep 2; done
+      containers:
+        - name: payment-service
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: spring-kind-config
+            - secretRef:
+                name: spring-kind-secret
+          env:
+            - name: PORT
+              value: "3003"
+            - name: SPRING_PROFILES_ACTIVE
+              value: "kind"
+            - name: PAYMENT_DB_URL
+              value: "jdbc:postgresql://postgres-spring:5432/payment_db"
+            - name: TICKET_SERVICE_URL
+              value: "http://ticket-service:3002"

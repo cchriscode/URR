@@ -1,0 +1,13 @@
+﻿apiVersion: v1
+kind: Service
+metadata:
+  name: payment-service
+  labels:
+    app: payment-service
+spec:
+  selector:
+    app: payment-service
+  ports:
+    - protocol: TCP
+      port: 3003
+      targetPort: 3003

@@ -1,0 +1,115 @@
+{
+    "timestamp":  "2026-02-10T12:24:23.1331833+09:00",
+    "newBaseUrl":  "http://localhost:3001",
+    "legacyBaseUrl":  "",
+    "steps":  [
+                  {
+                      "name":  "unit:auth-service",
+                      "status":  "passed",
+                      "durationSec":  21.09,
+                      "details":  "ok"
+                  },
+                  {
+                      "name":  "unit:ticket-service",
+                      "status":  "passed",
+                      "durationSec":  28.4,
+                      "details":  "ok"
+                  },
+                  {
+                      "name":  "unit:payment-service",
+                      "status":  "passed",
+                      "durationSec":  21.52,
+                      "details":  "ok"
+                  },
+                  {
+                      "name":  "unit:stats-service",
+                      "status":  "passed",
+                      "durationSec":  19.49,
+                      "details":  "ok"
+                  },
+                  {
+                      "name":  "unit:gateway-service",
+                      "status":  "passed",
+                      "durationSec":  20.86,
+                      "details":  "ok"
+                  },
+                  {
+                      "name":  "web:lint",
+                      "status":  "passed",
+                      "durationSec":  9.81,
+                      "details":  "ok"
+                  },
+                  {
+                      "name":  "web:build",
+                      "status":  "passed",
+                      "durationSec":  17.93,
+                      "details":  "ok"
+                  },
+                  {
+                      "name":  "api:integration",
+                      "status":  "passed",
+                      "durationSec":  3.03,
+                      "details":  "ok"
+                  }
+              ],
+    "apiChecks":  [
+                      {
+                          "name":  "GET /health",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "POST /api/auth/register",
+                          "expectedStatus":  201,
+                          "actualStatus":  201,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "POST /api/auth/login",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "GET /api/auth/me (user token)",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "GET /api/events",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "GET /api/news",
+                          "expectedStatus":  200,
+                          "actualStatus":  200,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "GET /api/admin/dashboard (no token)",
+                          "expectedStatus":  401,
+                          "actualStatus":  401,
+                          "passed":  true
+                      },
+                      {
+                          "name":  "GET /api/admin/dashboard (user token)",
+                          "expectedStatus":  403,
+                          "actualStatus":  403,
+                          "passed":  true
+                      }
+                  ],
+    "parityChecks":  [
+
+                     ],
+    "summary":  {
+                    "stepsTotal":  8,
+                    "stepsFailed":  0,
+                    "apiChecksTotal":  8,
+                    "apiChecksFailed":  0,
+                    "parityChecksTotal":  0
+                }
+}
