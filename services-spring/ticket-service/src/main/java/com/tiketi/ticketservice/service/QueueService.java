@@ -24,7 +24,6 @@ public class QueueService {
     private final EventReadService eventReadService;
     private final int threshold;
     private final int activeTtlSeconds;
-    private final int seenTtlSeconds;
 
     private final ConcurrentMap<String, LinkedHashSet<String>> fallbackQueue = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, Set<String>> fallbackActive = new ConcurrentHashMap<>();
@@ -38,14 +37,12 @@ public class QueueService {
         StringRedisTemplate redisTemplate,
         EventReadService eventReadService,
         @Value("${QUEUE_THRESHOLD:1000}") int threshold,
-        @Value("${QUEUE_ACTIVE_TTL_SECONDS:600}") int activeTtlSeconds,
-        @Value("${QUEUE_SEEN_TTL_SECONDS:600}") int seenTtlSeconds
+        @Value("${QUEUE_ACTIVE_TTL_SECONDS:600}") int activeTtlSeconds
     ) {
         this.redisTemplate = redisTemplate;
         this.eventReadService = eventReadService;
         this.threshold = threshold;
         this.activeTtlSeconds = activeTtlSeconds;
-        this.seenTtlSeconds = seenTtlSeconds;
     }
 
     public Map<String, Object> check(UUID eventId, String userId) {
@@ -75,6 +72,8 @@ public class QueueService {
         }
 
         addActiveUser(eventId, userId);
+        // 직접 활성 진입도 Admission Worker가 순회하도록 등록 (만료된 active 엔트리 정리를 위해)
+        trackActiveEvent(eventId);
         return buildActiveResponse(eventInfo, eventId);
     }
 
@@ -152,11 +151,11 @@ public class QueueService {
     }
 
     /** Called by AdmissionWorkerService to record throughput */
-    public void recordAdmissions(int count) {
+    public synchronized void recordAdmissions(int count) {
         long now = System.currentTimeMillis();
         long windowStart = throughputWindowStart.get();
         if (now - windowStart > THROUGHPUT_WINDOW_MS) {
-            // Reset window
+            // Reset window — synchronized로 TOCTOU 레이스 방지
             recentAdmissions.set(count);
             throughputWindowStart.set(now);
         } else {

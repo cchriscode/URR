@@ -1,29 +1,69 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-KIND_CLUSTER_NAME="${1:-tiketi-local}"
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
+cd "$REPO_ROOT"
 
-if ! kind get clusters | grep -qx "${KIND_CLUSTER_NAME}"; then
-  echo "Kind cluster '${KIND_CLUSTER_NAME}' not found. Create it first."
-  exit 1
-fi
+KIND_CLUSTER_NAME="tiketi-local"
 
-build_and_load() {
-  local service_name="$1"
-  local image="$2"
-  local service_path="${REPO_ROOT}/services-spring/${service_name}"
+for arg in "$@"; do
+  case "$arg" in
+    --name=*) KIND_CLUSTER_NAME="${arg#--name=}" ;;
+    # positional fallback for backwards compat
+    tiketi-*) KIND_CLUSTER_NAME="$arg" ;;
+  esac
+done
 
-  echo "Building image ${image} from ${service_path} ..."
-  docker build -t "${image}" -f "${service_path}/Dockerfile" "${service_path}"
-  echo "Loading image ${image} into kind cluster ${KIND_CLUSTER_NAME} ..."
-  kind load docker-image "${image}" --name "${KIND_CLUSTER_NAME}"
-}
+# ── Prerequisites ─────────────────────────────────────────────────
 
-build_and_load "gateway-service" "tiketi-spring-gateway-service:local"
-build_and_load "auth-service" "tiketi-spring-auth-service:local"
-build_and_load "ticket-service" "tiketi-spring-ticket-service:local"
-build_and_load "payment-service" "tiketi-spring-payment-service:local"
-build_and_load "stats-service" "tiketi-spring-stats-service:local"
+command -v kind   >/dev/null 2>&1 || { echo "kind is not installed."; exit 1; }
+command -v docker >/dev/null 2>&1 || { echo "docker is not installed."; exit 1; }
 
-echo "Spring images are built and loaded into kind."
+docker info >/dev/null 2>&1 || { echo "Docker daemon is not running. Start Docker Desktop first."; exit 1; }
+
+kind get clusters 2>/dev/null | grep -qx "$KIND_CLUSTER_NAME" \
+  || { echo "Kind cluster '$KIND_CLUSTER_NAME' not found. Create it first."; exit 1; }
+
+# ── Spring Boot services ──────────────────────────────────────────
+
+SERVICES=(
+  "gateway-service:tiketi-spring-gateway-service:local"
+  "auth-service:tiketi-spring-auth-service:local"
+  "ticket-service:tiketi-spring-ticket-service:local"
+  "payment-service:tiketi-spring-payment-service:local"
+  "stats-service:tiketi-spring-stats-service:local"
+)
+
+for entry in "${SERVICES[@]}"; do
+  SVC_NAME="${entry%%:*}"
+  IMAGE="${entry#*:}"
+  SVC_PATH="$REPO_ROOT/services-spring/$SVC_NAME"
+  DOCKERFILE="$SVC_PATH/Dockerfile"
+
+  [ -f "$DOCKERFILE" ] || { echo "Dockerfile not found: $DOCKERFILE"; exit 1; }
+
+  echo "Building image $IMAGE from $SVC_PATH ..."
+  docker build -t "$IMAGE" -f "$DOCKERFILE" "$SVC_PATH"
+
+  echo "Loading image $IMAGE into kind cluster $KIND_CLUSTER_NAME ..."
+  kind load docker-image "$IMAGE" --name "$KIND_CLUSTER_NAME"
+done
+
+# ── Frontend ──────────────────────────────────────────────────────
+
+FRONTEND_PATH="$REPO_ROOT/apps/web"
+FRONTEND_DOCKERFILE="$FRONTEND_PATH/Dockerfile"
+FRONTEND_IMAGE="tiketi-spring-frontend:local"
+
+[ -f "$FRONTEND_DOCKERFILE" ] || { echo "Frontend Dockerfile not found: $FRONTEND_DOCKERFILE"; exit 1; }
+
+echo "Building frontend image $FRONTEND_IMAGE ..."
+docker build -t "$FRONTEND_IMAGE" \
+  --build-arg NEXT_PUBLIC_API_URL=http://localhost:3001 \
+  -f "$FRONTEND_DOCKERFILE" "$FRONTEND_PATH"
+
+echo "Loading frontend image into kind cluster $KIND_CLUSTER_NAME ..."
+kind load docker-image "$FRONTEND_IMAGE" --name "$KIND_CLUSTER_NAME"
+
+echo "All images are built and loaded into kind."

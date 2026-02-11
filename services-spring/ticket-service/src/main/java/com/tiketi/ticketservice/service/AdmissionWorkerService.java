@@ -21,6 +21,7 @@ public class AdmissionWorkerService {
     private final QueueService queueService;
     private final int threshold;
     private final int activeTtlSeconds;
+    private final int seenTtlSeconds;
     private final int admitBatchSize;
 
     public AdmissionWorkerService(
@@ -30,6 +31,7 @@ public class AdmissionWorkerService {
         QueueService queueService,
         @Value("${QUEUE_THRESHOLD:1000}") int threshold,
         @Value("${QUEUE_ACTIVE_TTL_SECONDS:600}") int activeTtlSeconds,
+        @Value("${QUEUE_SEEN_TTL_SECONDS:600}") int seenTtlSeconds,
         @Value("${queue.admission.batch-size:100}") int admitBatchSize
     ) {
         this.redisTemplate = redisTemplate;
@@ -38,6 +40,7 @@ public class AdmissionWorkerService {
         this.queueService = queueService;
         this.threshold = threshold;
         this.activeTtlSeconds = activeTtlSeconds;
+        this.seenTtlSeconds = seenTtlSeconds;
         this.admitBatchSize = admitBatchSize;
     }
 
@@ -109,7 +112,9 @@ public class AdmissionWorkerService {
             return;
         }
 
-        long cutoff = System.currentTimeMillis() - (activeTtlSeconds * 1000L);
+        long cutoff = System.currentTimeMillis() - (seenTtlSeconds * 1000L);
+        // active:seen 정리 기준: activeTtlSeconds 이전 마지막 터치 = 이미 active에서도 만료됨
+        long activeSeenCutoff = System.currentTimeMillis() - (activeTtlSeconds * 1000L);
 
         for (String eventId : activeEvents) {
             boolean hasMore = true;
@@ -146,6 +151,17 @@ public class AdmissionWorkerService {
 
             if (totalRemoved > 0) {
                 log.info("Cleaned up {} stale users from queue for event {}", totalRemoved, eventId);
+            }
+
+            // active:seen 누적 정리: TTL 만료로 active에서 제거된 사용자가 active:seen에 잔류하는 문제 해결
+            try {
+                Long activeSeenRemoved = redisTemplate.opsForZSet()
+                    .removeRangeByScore("active:seen:" + eventId, Double.NEGATIVE_INFINITY, activeSeenCutoff);
+                if (activeSeenRemoved != null && activeSeenRemoved > 0) {
+                    log.debug("Cleaned up {} stale entries from active:seen for event {}", activeSeenRemoved, eventId);
+                }
+            } catch (Exception ex) {
+                log.debug("active:seen cleanup failed for event {}: {}", eventId, ex.getMessage());
             }
         }
     }

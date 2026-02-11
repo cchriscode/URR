@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { eventsApi } from "@/lib/api-client";
 import { useCountdown, formatCountdown } from "@/hooks/use-countdown";
@@ -51,7 +51,7 @@ export default function EventDetailPage() {
   const [event, setEvent] = useState<EventDetail | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const fetchEvent = useCallback(() => {
     if (!params.id) return;
     eventsApi
       .detail(params.id)
@@ -64,6 +64,10 @@ export default function EventDetailPage() {
       })
       .finally(() => setLoading(false));
   }, [params.id]);
+
+  useEffect(() => {
+    fetchEvent();
+  }, [fetchEvent]);
 
   if (loading) {
     return (
@@ -89,7 +93,6 @@ export default function EventDetailPage() {
   const saleStart = event.sale_start_date ?? event.saleStartDate;
   const saleEnd = event.sale_end_date ?? event.saleEndDate;
   const tickets = event.ticket_types ?? event.ticketTypes ?? [];
-  const canBook = event.status === "on_sale";
 
   return (
     <EventDetailContent
@@ -101,7 +104,7 @@ export default function EventDetailPage() {
       saleStart={saleStart}
       saleEnd={saleEnd}
       tickets={tickets}
-      canBook={canBook}
+      refetch={fetchEvent}
     />
   );
 }
@@ -115,7 +118,7 @@ function EventDetailContent({
   saleStart,
   saleEnd,
   tickets,
-  canBook,
+  refetch,
 }: {
   event: EventDetail;
   badge: { text: string; cls: string };
@@ -125,7 +128,7 @@ function EventDetailContent({
   saleStart?: string;
   saleEnd?: string;
   tickets: TicketType[];
-  canBook: boolean;
+  refetch: () => void;
 }) {
   const countdownTarget =
     event.status === "on_sale"
@@ -135,7 +138,17 @@ function EventDetailContent({
         : null;
   const countdownLabel = event.status === "on_sale" ? "판매 종료까지" : "판매 시작까지";
   const showMonths = event.status === "upcoming";
-  const timeLeft = useCountdown(countdownTarget);
+
+  // upcoming 상태에서 카운트다운 만료 시 재조회
+  const timeLeft = useCountdown(
+    countdownTarget,
+    event.status === "upcoming" ? refetch : undefined,
+  );
+
+  // 서버 status가 on_sale이거나, upcoming이지만 카운트다운이 이미 만료된 경우 예매 버튼 활성화
+  const canBook =
+    event.status === "on_sale" ||
+    (event.status === "upcoming" && timeLeft.isExpired);
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
@@ -236,7 +249,7 @@ function EventDetailContent({
           예매하기
         </Link>
       )}
-      {!canBook && event.status === "upcoming" && (
+      {event.status === "upcoming" && !timeLeft.isExpired && (
         <div className="rounded-xl bg-amber-50 border border-amber-200 px-6 py-3.5 text-center text-sm text-amber-700">
           아직 판매가 시작되지 않았습니다. {saleStart && `판매 시작: ${formatEventDate(saleStart)}`}
         </div>
