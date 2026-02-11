@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
+import axios from "axios";
 import { AuthGuard } from "@/components/auth-guard";
 import { seatsApi } from "@/lib/api-client";
 import { useQueuePolling } from "@/hooks/use-queue-polling";
@@ -127,16 +128,23 @@ export default function SeatsPage() {
         router.push("/my-reservations");
       }
     } catch (err: unknown) {
-      const resp = (err as { response?: { status?: number; data?: { message?: string; error?: string } } }).response;
-      if (resp?.status === 409) {
-        setError("이미 선택된 좌석입니다. 다른 좌석을 선택해주세요.");
-        // Refresh seats to get latest status
-        seatsApi.byEvent(eventId).then(({ data }) => {
-          setSeats(data.seats ?? data.data ?? []);
-        }).catch(() => {});
-        setSelected(null);
+      if (axios.isAxiosError(err)) {
+        const status = err.response?.status;
+        const data = err.response?.data as
+          | { message?: string; error?: string }
+          | undefined;
+        if (status === 409) {
+          setError("이미 선택된 좌석입니다. 다른 좌석을 선택해주세요.");
+          // Refresh seats to get latest status
+          seatsApi.byEvent(eventId).then(({ data: d }) => {
+            setSeats(d.seats ?? d.data ?? []);
+          }).catch(() => {});
+          setSelected(null);
+        } else {
+          setError(data?.message ?? data?.error ?? "예매에 실패했습니다. 다시 시도해주세요.");
+        }
       } else {
-        setError(resp?.data?.message ?? resp?.data?.error ?? "예매에 실패했습니다. 다시 시도해주세요.");
+        setError("네트워크 오류가 발생했습니다. 다시 시도해주세요.");
       }
       setBooking(false);
     }

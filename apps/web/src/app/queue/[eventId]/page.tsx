@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { AuthGuard } from "@/components/auth-guard";
-import { queueApi } from "@/lib/api-client";
+import { queueApi, eventsApi } from "@/lib/api-client";
 import { useQueuePolling } from "@/hooks/use-queue-polling";
 
 function formatWaitTime(seconds?: number): string {
@@ -22,6 +22,27 @@ export default function QueuePage() {
   const eventId = params.eventId ?? "";
   const [joined, setJoined] = useState(false);
 
+  // undefined = still loading event; null = standing (no seat map); string = has seat map
+  // Derived from server data — not from URL params — to prevent client-side bypass.
+  const [seatLayoutId, setSeatLayoutId] = useState<string | null | undefined>(undefined);
+
+  // Fetch event detail to determine seated vs standing flow
+  useEffect(() => {
+    if (!eventId) return;
+    eventsApi
+      .detail(eventId)
+      .then(({ data }) => {
+        const ev = data.event ?? data.data ?? data;
+        const layoutId: string | null =
+          ev?.seat_layout_id ?? ev?.seatLayoutId ?? null;
+        setSeatLayoutId(layoutId);
+      })
+      .catch(() => {
+        // On error, default null (standing) so user isn't stuck; backend still validates
+        setSeatLayoutId(null);
+      });
+  }, [eventId]);
+
   // Join queue on mount
   useEffect(() => {
     if (!eventId) return;
@@ -30,13 +51,20 @@ export default function QueuePage() {
 
   const { status } = useQueuePolling(eventId, joined);
 
-  // Auto-redirect when admitted
+  // Auto-redirect when admitted — wait for event data before deciding destination
   useEffect(() => {
     if (!status) return;
+    if (seatLayoutId === undefined) return; // event detail still loading
     if (status.status === "active" || (!status.queued && status.status !== "queued")) {
-      router.replace(`/events/${eventId}/seats`);
+      if (seatLayoutId) {
+        router.replace(`/events/${eventId}/seats`);
+      } else {
+        router.replace(`/events/${eventId}/book`);
+      }
     }
-  }, [status, eventId, router]);
+  }, [status, eventId, router, seatLayoutId]);
+
+  const hasSeats = Boolean(seatLayoutId);
 
   const position = status?.position ?? 0;
   const ahead = status?.peopleAhead ?? (position > 0 ? position - 1 : 0);
@@ -105,7 +133,8 @@ export default function QueuePage() {
           {/* Notice */}
           <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3">
             <p className="text-xs text-amber-700 text-center leading-relaxed">
-              이 페이지를 닫지 마세요. 순서가 되면 자동으로 좌석 선택 페이지로 이동합니다.
+              이 페이지를 닫지 마세요. 순서가 되면 자동으로{" "}
+              {hasSeats ? "좌석 선택 페이지" : "티켓 선택 페이지"}로 이동합니다.
             </p>
           </div>
 

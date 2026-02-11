@@ -22,6 +22,23 @@ export interface EventSummary {
   sale_end_date?: string;
 }
 
+/** Full event detail shape (extends EventSummary with camelCase aliases + seat/ticket info) */
+export interface EventDetail extends EventSummary {
+  description?: string;
+  address?: string;
+  eventDate?: string;
+  saleStartDate?: string;
+  saleEndDate?: string;
+  poster_image_url?: string;
+  posterImageUrl?: string;
+  artistName?: string;
+  /** null/undefined = standing (no seat map); UUID string = has seat map */
+  seat_layout_id?: string | null;
+  seatLayoutId?: string | null;
+  ticket_types?: TicketType[];
+  ticketTypes?: TicketType[];
+}
+
 export interface TicketType {
   id: string;
   event_id?: string;

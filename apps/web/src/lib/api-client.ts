@@ -68,8 +68,11 @@ export const queueApi = {
 };
 
 export const reservationsApi = {
-  create: (payload: { eventId: string; seatIds: string[] }) =>
-    http.post("/reservations", payload),
+  // For standing / ticket-type-only events (no seat selection)
+  createTicketOnly: (payload: {
+    eventId: string;
+    items: Array<{ ticketTypeId: string; quantity: number }>;
+  }) => http.post("/reservations", payload),
   mine: () => http.get("/reservations/my"),
   byId: (id: string) => http.get(`/reservations/${id}`),
   cancel: (id: string) => http.post(`/reservations/${id}/cancel`),

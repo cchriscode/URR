@@ -6,28 +6,7 @@ import { useParams } from "next/navigation";
 import { eventsApi } from "@/lib/api-client";
 import { useCountdown, formatCountdown } from "@/hooks/use-countdown";
 import { formatEventDate } from "@/lib/format";
-import type { TicketType } from "@/lib/types";
-
-interface EventDetail {
-  id: string;
-  title?: string;
-  description?: string;
-  venue?: string;
-  address?: string;
-  event_date?: string;
-  eventDate?: string;
-  sale_start_date?: string;
-  saleStartDate?: string;
-  sale_end_date?: string;
-  saleEndDate?: string;
-  poster_image_url?: string;
-  posterImageUrl?: string;
-  artist_name?: string;
-  artistName?: string;
-  status?: string;
-  ticket_types?: TicketType[];
-  ticketTypes?: TicketType[];
-}
+import type { EventDetail, TicketType } from "@/lib/types";
 
 function statusBadge(status?: string) {
   switch (status) {
@@ -93,6 +72,7 @@ export default function EventDetailPage() {
   const saleStart = event.sale_start_date ?? event.saleStartDate;
   const saleEnd = event.sale_end_date ?? event.saleEndDate;
   const tickets = event.ticket_types ?? event.ticketTypes ?? [];
+  const seatLayoutId = event.seat_layout_id ?? event.seatLayoutId ?? null;
 
   return (
     <EventDetailContent
@@ -104,6 +84,7 @@ export default function EventDetailPage() {
       saleStart={saleStart}
       saleEnd={saleEnd}
       tickets={tickets}
+      seatLayoutId={seatLayoutId}
       refetch={fetchEvent}
     />
   );
@@ -118,6 +99,7 @@ function EventDetailContent({
   saleStart,
   saleEnd,
   tickets,
+  seatLayoutId,
   refetch,
 }: {
   event: EventDetail;
@@ -128,6 +110,7 @@ function EventDetailContent({
   saleStart?: string;
   saleEnd?: string;
   tickets: TicketType[];
+  seatLayoutId: string | null;
   refetch: () => void;
 }) {
   const countdownTarget =
@@ -246,7 +229,7 @@ function EventDetailContent({
           href={`/queue/${event.id}`}
           className="block w-full rounded-xl bg-sky-500 px-6 py-3.5 text-center font-medium text-white hover:bg-sky-600 transition-colors"
         >
-          예매하기
+          {seatLayoutId ? "좌석 선택 예매하기" : "바로 예매하기"}
         </Link>
       )}
       {event.status === "upcoming" && !timeLeft.isExpired && (

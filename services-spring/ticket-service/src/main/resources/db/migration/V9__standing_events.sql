@@ -1,0 +1,10 @@
+-- V9: Standing concert support
+--
+-- No schema changes required — standing events are represented by seat_layout_id = NULL
+-- in the existing `events` table (already nullable from V1).
+--
+-- Seed data for standing events has been moved to:
+--   scripts/seed-standing-events.sql
+--
+-- Run the seed script manually against non-production environments:
+--   psql $DATABASE_URL -f scripts/seed-standing-events.sql
