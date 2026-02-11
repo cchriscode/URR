@@ -38,6 +38,9 @@ queue:
     batch-size: ${QUEUE_ADMISSION_BATCH_SIZE:100}
   stale-cleanup:
     interval-ms: ${QUEUE_STALE_CLEANUP_INTERVAL_MS:30000}
+  entry-token:
+    secret: ${QUEUE_ENTRY_TOKEN_SECRET:dev-secret-key-change-in-production-min-32-chars}
+    ttl-seconds: ${QUEUE_ENTRY_TOKEN_TTL_SECONDS:600}
 
 internal:
   auth-service-url: ${AUTH_SERVICE_URL:http://localhost:3005}

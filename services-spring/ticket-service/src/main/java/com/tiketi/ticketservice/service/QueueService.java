@@ -1,5 +1,9 @@
 package com.tiketi.ticketservice.service;
 
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.security.Keys;
+import java.nio.charset.StandardCharsets;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -9,6 +13,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicLong;
+import javax.crypto.SecretKey;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -24,6 +29,8 @@ public class QueueService {
     private final EventReadService eventReadService;
     private final int threshold;
     private final int activeTtlSeconds;
+    private final SecretKey entryTokenKey;
+    private final int entryTokenTtlSeconds;
 
     private final ConcurrentMap<String, LinkedHashSet<String>> fallbackQueue = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, Set<String>> fallbackActive = new ConcurrentHashMap<>();
@@ -37,12 +44,16 @@ public class QueueService {
         StringRedisTemplate redisTemplate,
         EventReadService eventReadService,
         @Value("${QUEUE_THRESHOLD:1000}") int threshold,
-        @Value("${QUEUE_ACTIVE_TTL_SECONDS:600}") int activeTtlSeconds
+        @Value("${QUEUE_ACTIVE_TTL_SECONDS:600}") int activeTtlSeconds,
+        @Value("${queue.entry-token.secret}") String entryTokenSecret,
+        @Value("${queue.entry-token.ttl-seconds:600}") int entryTokenTtlSeconds
     ) {
         this.redisTemplate = redisTemplate;
         this.eventReadService = eventReadService;
         this.threshold = threshold;
         this.activeTtlSeconds = activeTtlSeconds;
+        this.entryTokenKey = Keys.hmacShaKeyFor(entryTokenSecret.getBytes(StandardCharsets.UTF_8));
+        this.entryTokenTtlSeconds = entryTokenTtlSeconds;
     }
 
     public Map<String, Object> check(UUID eventId, String userId) {
@@ -189,7 +200,21 @@ public class QueueService {
         result.put("threshold", threshold);
         result.put("nextPoll", 3);
         result.put("eventInfo", eventInfo);
+        result.put("entryToken", generateEntryToken(eventId.toString()));
         return result;
+    }
+
+    private String generateEntryToken(String eventId) {
+        long nowMs = System.currentTimeMillis();
+        Date issuedAt = new Date(nowMs);
+        Date expiration = new Date(nowMs + (entryTokenTtlSeconds * 1000L));
+
+        return Jwts.builder()
+            .subject(eventId)
+            .issuedAt(issuedAt)
+            .expiration(expiration)
+            .signWith(entryTokenKey)
+            .compact();
     }
 
     // -- Dynamic polling interval --

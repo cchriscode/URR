@@ -62,7 +62,20 @@ public class AdmissionWorkerService {
         long activeTtlMs = activeTtlSeconds * 1000L;
 
         for (String eventId : activeEvents) {
+            String lockKey = "admission:lock:" + eventId;
+            Boolean acquired = false;
+
             try {
+                // Try to acquire distributed lock (TTL 4s to prevent deadlock on pod crash)
+                acquired = redisTemplate.opsForValue().setIfAbsent(lockKey, "1",
+                    java.time.Duration.ofSeconds(4));
+
+                if (acquired == null || !acquired) {
+                    // Another worker is processing this event, skip
+                    log.debug("Skipping event {} - lock held by another worker", eventId);
+                    continue;
+                }
+
                 @SuppressWarnings("unchecked")
                 List<Object> result = redisTemplate.execute(
                     admissionScript,
@@ -95,6 +108,15 @@ public class AdmissionWorkerService {
                 }
             } catch (Exception ex) {
                 log.warn("Admission failed for event {}: {}", eventId, ex.getMessage());
+            } finally {
+                // Release lock
+                if (acquired != null && acquired) {
+                    try {
+                        redisTemplate.delete(lockKey);
+                    } catch (Exception ex) {
+                        log.debug("Failed to release lock for event {}: {}", eventId, ex.getMessage());
+                    }
+                }
             }
         }
     }
