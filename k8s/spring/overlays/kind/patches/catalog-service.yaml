@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalog-service
+spec:
+  template:
+    spec:
+      initContainers:
+        - name: wait-for-postgres
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - until nc -z postgres-spring 5432; do echo waiting for postgres; sleep 2; done
+      containers:
+        - name: catalog-service
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: spring-kind-config
+            - secretRef:
+                name: spring-kind-secret
+          env:
+            - name: PORT
+              value: "3009"
+            - name: SPRING_PROFILES_ACTIVE
+              value: "kind"
+            - name: TICKET_DB_URL
+              value: "jdbc:postgresql://postgres-spring:5432/ticket_db"
+            - name: TICKET_SERVICE_URL
+              value: "http://ticket-service:3002"
+            - name: AUTH_SERVICE_URL
+              value: "http://auth-service:3005"
+            - name: ZIPKIN_ENDPOINT
+              value: "http://zipkin-spring:9411/api/v2/spans"

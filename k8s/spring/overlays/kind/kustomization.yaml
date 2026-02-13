@@ -7,10 +7,14 @@ resources:
   - ../../base
   - postgres.yaml
   - dragonfly.yaml
+  - kafka.yaml
+  - zipkin.yaml
   - pvc.yaml
   - loki.yaml
   - promtail.yaml
   - grafana.yaml
+  - grafana-dashboards.yaml
+  - prometheus.yaml
 
 configMapGenerator:
   - name: spring-kind-config
@@ -31,8 +35,12 @@ patches:
   - path: patches/ticket-service.yaml
   - path: patches/payment-service.yaml
   - path: patches/stats-service.yaml
+  - path: patches/queue-service.yaml
+  - path: patches/catalog-service.yaml
+  - path: patches/community-service.yaml
   - path: patches/gateway-service-nodeport.yaml
   - path: patches/frontend-service-nodeport.yaml
+  - path: patches/frontend.yaml
 
 images:
   - name: YOUR_ECR_URI/gateway-service
@@ -49,6 +57,15 @@ images:
     newTag: local
   - name: YOUR_ECR_URI/stats-service
     newName: tiketi-spring-stats-service
+    newTag: local
+  - name: YOUR_ECR_URI/queue-service
+    newName: tiketi-spring-queue-service
+    newTag: local
+  - name: YOUR_ECR_URI/catalog-service
+    newName: tiketi-spring-catalog-service
+    newTag: local
+  - name: YOUR_ECR_URI/community-service
+    newName: tiketi-spring-community-service
     newTag: local
   - name: YOUR_ECR_URI/frontend
     newName: tiketi-spring-frontend

@@ -1,6 +1,10 @@
 spring:
   application:
     name: gateway-service
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
   cloud:
     gateway:
       mvc:
@@ -8,69 +12,123 @@ spring:
           - id: auth
             uri: ${AUTH_SERVICE_URL:http://localhost:3005}
             predicates:
-              - Path=/api/auth/**
+              - Path=/api/v1/auth/**,/api/auth/**
           - id: payment
             uri: ${PAYMENT_SERVICE_URL:http://localhost:3003}
             predicates:
-              - Path=/api/payments/**
+              - Path=/api/v1/payments/**,/api/payments/**
           - id: stats
             uri: ${STATS_SERVICE_URL:http://localhost:3004}
             predicates:
-              - Path=/api/stats/**
+              - Path=/api/v1/stats/**,/api/stats/**
           - id: events
-            uri: ${TICKET_SERVICE_URL:http://localhost:3002}
+            uri: ${CATALOG_SERVICE_URL:http://localhost:3009}
             predicates:
-              - Path=/api/events/**
+              - Path=/api/v1/events/**,/api/events/**
           - id: tickets
             uri: ${TICKET_SERVICE_URL:http://localhost:3002}
             predicates:
-              - Path=/api/tickets/**
+              - Path=/api/v1/tickets/**,/api/tickets/**
           - id: seats
             uri: ${TICKET_SERVICE_URL:http://localhost:3002}
             predicates:
-              - Path=/api/seats/**
+              - Path=/api/v1/seats/**,/api/seats/**
           - id: reservations
             uri: ${TICKET_SERVICE_URL:http://localhost:3002}
             predicates:
-              - Path=/api/reservations/**
+              - Path=/api/v1/reservations/**,/api/reservations/**
           - id: queue
-            uri: ${TICKET_SERVICE_URL:http://localhost:3002}
+            uri: ${QUEUE_SERVICE_URL:http://localhost:3007}
             predicates:
-              - Path=/api/queue/**
+              - Path=/api/v1/queue/**,/api/queue/**
           - id: admin
-            uri: ${TICKET_SERVICE_URL:http://localhost:3002}
+            uri: ${CATALOG_SERVICE_URL:http://localhost:3009}
             predicates:
-              - Path=/api/admin/**
+              - Path=/api/v1/admin/**,/api/admin/**
           - id: news
-            uri: ${TICKET_SERVICE_URL:http://localhost:3002}
+            uri: ${COMMUNITY_SERVICE_URL:http://localhost:3008}
             predicates:
-              - Path=/api/news/**
+              - Path=/api/v1/news/**,/api/news/**
           - id: artists
-            uri: ${TICKET_SERVICE_URL:http://localhost:3002}
+            uri: ${CATALOG_SERVICE_URL:http://localhost:3009}
             predicates:
-              - Path=/api/artists/**
+              - Path=/api/v1/artists/**,/api/artists/**
           - id: memberships
             uri: ${TICKET_SERVICE_URL:http://localhost:3002}
             predicates:
-              - Path=/api/memberships/**
+              - Path=/api/v1/memberships/**,/api/memberships/**
           - id: transfers
             uri: ${TICKET_SERVICE_URL:http://localhost:3002}
             predicates:
-              - Path=/api/transfers/**
+              - Path=/api/v1/transfers/**,/api/transfers/**
           - id: image
-            uri: ${TICKET_SERVICE_URL:http://localhost:3002}
+            uri: ${CATALOG_SERVICE_URL:http://localhost:3009}
             predicates:
-              - Path=/api/image/**
+              - Path=/api/v1/image/**,/api/image/**
           - id: time
             uri: ${TICKET_SERVICE_URL:http://localhost:3002}
             predicates:
-              - Path=/api/time/**
+              - Path=/api/v1/time/**,/api/time/**
 
 server:
   port: ${PORT:3001}
 
 management:
+  server:
+    port: ${MANAGEMENT_PORT:}
+  endpoint:
+    health:
+      show-details: always
+      show-components: always
+  health:
+    redis:
+      enabled: true
   endpoints:
     web:
       exposure:
         include: health,info,prometheus
+  tracing:
+    sampling:
+      probability: ${TRACING_SAMPLING_PROBABILITY:1.0}
+  zipkin:
+    tracing:
+      endpoint: ${ZIPKIN_ENDPOINT:http://localhost:9411/api/v2/spans}
+
+logging:
+  pattern:
+    level: "%5p [${spring.application.name:},%X{traceId:-},%X{spanId:-}]"
+
+queue:
+  entry-token:
+    secret: ${QUEUE_ENTRY_TOKEN_SECRET}
+
+cloudfront:
+  secret: ${CLOUDFRONT_SECRET:}
+
+cors:
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
+
+rate-limit:
+  auth-rpm: ${RATE_LIMIT_AUTH_RPM:60}
+  queue-rpm: ${RATE_LIMIT_QUEUE_RPM:120}
+  booking-rpm: ${RATE_LIMIT_BOOKING_RPM:30}
+  general-rpm: ${RATE_LIMIT_GENERAL_RPM:3000}
+
+---
+spring:
+  config:
+    activate:
+      on-profile: prod
+  data:
+    redis:
+      cluster:
+        nodes:
+          - redis-cluster-0.redis-cluster:6379
+          - redis-cluster-1.redis-cluster:6379
+          - redis-cluster-2.redis-cluster:6379
+        max-redirects: 3
+      lettuce:
+        cluster:
+          refresh:
+            adaptive: true
+            period: 30s

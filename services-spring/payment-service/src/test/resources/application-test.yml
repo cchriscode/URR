@@ -1,4 +1,6 @@
 spring:
+  autoconfigure:
+    exclude: org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration
   datasource:
     url: jdbc:h2:mem:testdb;MODE=PostgreSQL;DB_CLOSE_DELAY=-1
     driver-class-name: org.h2.Driver
@@ -9,3 +11,8 @@ spring:
       ddl-auto: create-drop
   flyway:
     enabled: false
+
+JWT_SECRET: test-jwt-secret-for-unit-tests-minimum-32-chars
+INTERNAL_API_TOKEN: test-internal-token
+TOSS_CLIENT_KEY: test_ck_dummy
+TICKET_SERVICE_URL: http://localhost:9999

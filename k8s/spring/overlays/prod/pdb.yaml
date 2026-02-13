@@ -1,0 +1,69 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: gateway-service-pdb
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: gateway-service
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ticket-service-pdb
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: ticket-service
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: queue-service-pdb
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: queue-service
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: payment-service-pdb
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: payment-service
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: auth-service-pdb
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: auth-service
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: stats-service-pdb
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: stats-service
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: community-service-pdb
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: community-service

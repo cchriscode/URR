@@ -3,12 +3,20 @@
 # (Must be deployed in us-east-1 for CloudFront)
 # ─────────────────────────────────────────────────────────────────────────────
 
+# Generate config.json with the secret baked in (Lambda@Edge cannot use env vars)
+resource "local_file" "edge_config" {
+  content  = jsonencode({ secret = var.queue_entry_token_secret })
+  filename = "${var.lambda_source_dir}/config.json"
+}
+
 # Package Lambda function code
 # NOTE: lambda_source_dir must be absolute path or use ${path.root}/lambda/edge-queue-check
 data "archive_file" "edge_function" {
   type        = "zip"
   source_dir  = var.lambda_source_dir
   output_path = "${path.module}/lambda-edge-queue-check.zip"
+
+  depends_on = [local_file.edge_config]
 }
 
 # Lambda function (in us-east-1)
@@ -24,12 +32,6 @@ resource "aws_lambda_function" "edge_queue_check" {
   timeout          = 5
   memory_size      = 128
   publish          = true  # Must publish for Lambda@Edge
-
-  environment {
-    variables = {
-      QUEUE_ENTRY_TOKEN_SECRET = var.queue_entry_token_secret
-    }
-  }
 
   tags = {
     Name = "${var.name_prefix}-edge-queue-check"

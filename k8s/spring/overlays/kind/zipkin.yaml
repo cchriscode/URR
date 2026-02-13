@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: zipkin-spring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: zipkin-spring
+  template:
+    metadata:
+      labels:
+        app: zipkin-spring
+    spec:
+      containers:
+        - name: zipkin
+          image: openzipkin/zipkin:3
+          ports:
+            - containerPort: 9411
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: zipkin-spring
+spec:
+  type: NodePort
+  selector:
+    app: zipkin-spring
+  ports:
+    - port: 9411
+      targetPort: 9411
+      nodePort: 30411

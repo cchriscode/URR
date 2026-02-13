@@ -1,0 +1,95 @@
+spring:
+  application:
+    name: queue-service
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+server:
+  port: ${PORT:3007}
+
+management:
+  server:
+    port: ${MANAGEMENT_PORT:}
+  endpoint:
+    health:
+      show-details: always
+      show-components: always
+  health:
+    redis:
+      enabled: true
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  tracing:
+    sampling:
+      probability: ${TRACING_SAMPLING_PROBABILITY:1.0}
+  zipkin:
+    tracing:
+      endpoint: ${ZIPKIN_ENDPOINT:http://localhost:9411/api/v2/spans}
+
+logging:
+  pattern:
+    level: "%5p [${spring.application.name:},%X{traceId:-},%X{spanId:-}]"
+
+queue:
+  admission:
+    interval-ms: ${QUEUE_ADMISSION_INTERVAL_MS:1000}
+    batch-size: ${QUEUE_ADMISSION_BATCH_SIZE:100}
+  stale-cleanup:
+    interval-ms: ${QUEUE_STALE_CLEANUP_INTERVAL_MS:30000}
+  entry-token:
+    secret: ${QUEUE_ENTRY_TOKEN_SECRET}
+    ttl-seconds: ${QUEUE_ENTRY_TOKEN_TTL_SECONDS:600}
+
+internal:
+  ticket-service-url: ${TICKET_SERVICE_URL:http://localhost:3002}
+  catalog-service-url: ${CATALOG_SERVICE_URL:http://localhost:3009}
+  api-token: ${INTERNAL_API_TOKEN}
+
+aws:
+  sqs:
+    queue-url: ${SQS_QUEUE_URL:}
+    enabled: ${SQS_ENABLED:false}
+  region: ${AWS_REGION:ap-northeast-2}
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      internalService:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+        slow-call-duration-threshold: 3s
+        slow-call-rate-threshold: 80
+  retry:
+    instances:
+      internalService:
+        max-attempts: 3
+        wait-duration: 500ms
+        exponential-backoff-multiplier: 2
+        retry-exceptions:
+          - org.springframework.web.client.ResourceAccessException
+          - java.net.ConnectException
+
+---
+spring:
+  config:
+    activate:
+      on-profile: prod
+  data:
+    redis:
+      cluster:
+        nodes:
+          - redis-cluster-0.redis-cluster:6379
+          - redis-cluster-1.redis-cluster:6379
+          - redis-cluster-2.redis-cluster:6379
+        max-redirects: 3
+      lettuce:
+        cluster:
+          refresh:
+            adaptive: true
+            period: 30s

@@ -23,7 +23,7 @@ resource "aws_secretsmanager_secret_version" "rds_credentials" {
     engine   = "postgres"
     host     = var.rds_endpoint
     port     = 5432
-    dbname   = "tiketi_db"
+    dbname   = "ticket_db"
   })
 }
 

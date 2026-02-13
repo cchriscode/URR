@@ -3,12 +3,12 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { clearAuth, getToken, getUser } from "@/lib/storage";
+import { clearAuth, getUser } from "@/lib/storage";
+import { authApi } from "@/lib/api-client";
 
 export function SiteHeader() {
   const pathname = usePathname();
   const router = useRouter();
-  const token = getToken();
   const user = getUser();
   const [searchText, setSearchText] = useState("");
 
@@ -30,9 +30,10 @@ export function SiteHeader() {
         </Link>
 
         {/* Search bar */}
-        <form onSubmit={handleSearch} className="flex flex-1 max-w-md">
+        <form onSubmit={handleSearch} role="search" aria-label="공연 및 아티스트 검색" className="flex flex-1 max-w-md">
           <input
             type="search"
+            aria-label="검색어 입력"
             className="flex-1 rounded-l-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
             placeholder="공연, 아티스트 검색"
             value={searchText}
@@ -47,7 +48,7 @@ export function SiteHeader() {
         </form>
 
         {/* Nav */}
-        <nav className="flex items-center gap-1 text-sm shrink-0">
+        <nav aria-label="메인 내비게이션" className="flex items-center gap-1 text-sm shrink-0">
           <Link
             href="/artists"
             className={`rounded-lg px-3 py-1.5 transition-colors ${
@@ -68,7 +69,7 @@ export function SiteHeader() {
           >
             News
           </Link>
-          {token && user ? (
+          {user ? (
             <>
               <Link
                 href="/my-reservations"
@@ -116,7 +117,8 @@ export function SiteHeader() {
               <button
                 type="button"
                 className="ml-1 rounded-lg border border-slate-200 px-3 py-1.5 text-slate-600 hover:border-sky-300 hover:text-sky-500 transition-colors"
-                onClick={() => {
+                onClick={async () => {
+                  try { await authApi.logout(); } catch {}
                   clearAuth();
                   router.push("/login");
                 }}

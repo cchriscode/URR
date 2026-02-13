@@ -132,6 +132,19 @@ export default function HomePage() {
     }
   }, [filter]);
 
+  // Silent refresh: updates data in-place without showing the loading spinner.
+  // Used by onExpire callbacks so the grid stays mounted and clickable.
+  const refreshEvents = useCallback(async () => {
+    try {
+      const params: Record<string, string | number> = { page: 1, limit: 12 };
+      if (filter) params.status = filter;
+      const res = await eventsApi.list(params);
+      setEvents(res.data.events ?? res.data.data ?? []);
+    } catch {
+      /* silent — grid keeps showing stale data rather than disappearing */
+    }
+  }, [filter]);
+
   useEffect(() => {
     fetchEvents();
   }, [fetchEvents]);
@@ -184,7 +197,7 @@ export default function HomePage() {
               onExpire={
                 event.status === "upcoming"
                   ? () => setFilter("on_sale")
-                  : fetchEvents
+                  : refreshEvents
               }
             />
           ))}

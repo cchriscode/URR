@@ -4,7 +4,7 @@ import { FormEvent, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { authApi } from "@/lib/api-client";
-import { setToken, setUser } from "@/lib/storage";
+import { setUser } from "@/lib/storage";
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -18,7 +18,6 @@ export default function LoginPage() {
     setError(null);
     try {
       const { data } = await authApi.login({ email, password });
-      setToken(data.token);
       setUser(data.user);
       router.push("/");
     } catch (err: unknown) {

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { AuthGuard } from "@/components/auth-guard";
 import { membershipsApi } from "@/lib/api-client";
+import { formatDate } from "@/lib/format";
 import type { ArtistMembership, MembershipTier } from "@/lib/types";
 
 const tierConfig: Record<MembershipTier, { label: string; cls: string }> = {
@@ -12,11 +13,6 @@ const tierConfig: Record<MembershipTier, { label: string; cls: string }> = {
   GOLD: { label: "Gold", cls: "bg-amber-50 text-amber-600 border-amber-200" },
   DIAMOND: { label: "Diamond", cls: "bg-sky-50 text-sky-600 border-sky-200" },
 };
-
-function formatDate(dateStr?: string) {
-  if (!dateStr) return "";
-  return new Date(dateStr).toLocaleDateString("ko-KR");
-}
 
 export default function MyMembershipsPage() {
   const [memberships, setMemberships] = useState<ArtistMembership[]>([]);

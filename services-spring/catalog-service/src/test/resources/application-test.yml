@@ -1,0 +1,15 @@
+spring:
+  profiles:
+    active: test
+  datasource:
+    url: jdbc:h2:mem:testdb
+    driver-class-name: org.h2.Driver
+  flyway:
+    enabled: false
+
+internal:
+  auth-service-url: http://localhost:3005
+  ticket-service-url: http://localhost:3002
+  api-token: test-internal-token
+
+JWT_SECRET: test-jwt-secret-must-be-at-least-32-characters-long-for-hmac

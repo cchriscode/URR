@@ -128,6 +128,7 @@ export interface QueueStatus {
   currentUsers?: number;
   threshold?: number;
   queueSize?: number;
+  entryToken?: string;
   eventInfo?: {
     title?: string;
     artist?: string;

@@ -121,7 +121,7 @@ resource "aws_db_parameter_group" "main" {
 
   parameter {
     name  = "log_statement"
-    value = "all"
+    value = "ddl"
     apply_method = "pending-reboot"
   }
 
@@ -214,6 +214,19 @@ resource "aws_security_group_rule" "rds_proxy_ingress_from_eks" {
   source_security_group_id = var.eks_node_security_group_id
   security_group_id        = aws_security_group.rds_proxy[0].id
   description              = "Allow PostgreSQL from EKS nodes"
+}
+
+# Allow Lambda worker to connect to RDS Proxy
+resource "aws_security_group_rule" "rds_proxy_ingress_from_lambda" {
+  count = var.enable_rds_proxy && var.lambda_worker_security_group_id != "" ? 1 : 0
+
+  type                     = "ingress"
+  from_port                = 5432
+  to_port                  = 5432
+  protocol                 = "tcp"
+  source_security_group_id = var.lambda_worker_security_group_id
+  security_group_id        = aws_security_group.rds_proxy[0].id
+  description              = "Allow PostgreSQL from Lambda worker"
 }
 
 # Allow RDS Proxy to connect to RDS

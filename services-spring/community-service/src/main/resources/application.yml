@@ -1,0 +1,62 @@
+spring:
+  application:
+    name: community-service
+  datasource:
+    url: ${COMMUNITY_DB_URL:jdbc:postgresql://localhost:5437/community_db}
+    username: ${COMMUNITY_DB_USERNAME:tiketi_user}
+    password: ${COMMUNITY_DB_PASSWORD:tiketi_password}
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+
+server:
+  port: ${PORT:3008}
+
+management:
+  server:
+    port: ${MANAGEMENT_PORT:}
+  endpoint:
+    health:
+      show-details: always
+      show-components: always
+  health:
+    db:
+      enabled: true
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  tracing:
+    sampling:
+      probability: ${TRACING_SAMPLING_PROBABILITY:1.0}
+  zipkin:
+    tracing:
+      endpoint: ${ZIPKIN_ENDPOINT:http://localhost:9411/api/v2/spans}
+
+logging:
+  pattern:
+    level: "%5p [${spring.application.name:},%X{traceId:-},%X{spanId:-}]"
+
+internal:
+  ticket-service-url: ${TICKET_SERVICE_URL:http://localhost:3002}
+  api-token: ${INTERNAL_API_TOKEN}
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      internalService:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+        slow-call-duration-threshold: 3s
+        slow-call-rate-threshold: 80
+  retry:
+    instances:
+      internalService:
+        max-attempts: 3
+        wait-duration: 500ms
+        exponential-backoff-multiplier: 2
+        retry-exceptions:
+          - org.springframework.web.client.ResourceAccessException
+          - java.net.ConnectException

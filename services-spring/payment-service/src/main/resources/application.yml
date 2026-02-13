@@ -1,8 +1,17 @@
 spring:
   application:
     name: payment-service
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      acks: all
+      retries: 3
+      properties:
+        spring.json.add.type.headers: false
   datasource:
-    url: ${PAYMENT_DB_URL:jdbc:postgresql://localhost:5432/payment_db}
+    url: ${PAYMENT_DB_URL:jdbc:postgresql://localhost:5435/payment_db}
     username: ${PAYMENT_DB_USERNAME:tiketi_user}
     password: ${PAYMENT_DB_PASSWORD:tiketi_password}
   jpa:
@@ -17,7 +26,46 @@ server:
   port: ${PORT:3003}
 
 management:
+  server:
+    port: ${MANAGEMENT_PORT:}
+  endpoint:
+    health:
+      show-details: always
+      show-components: always
+  health:
+    db:
+      enabled: true
   endpoints:
     web:
       exposure:
         include: health,info,prometheus
+  tracing:
+    sampling:
+      probability: ${TRACING_SAMPLING_PROBABILITY:1.0}
+  zipkin:
+    tracing:
+      endpoint: ${ZIPKIN_ENDPOINT:http://localhost:9411/api/v2/spans}
+
+logging:
+  pattern:
+    level: "%5p [${spring.application.name:},%X{traceId:-},%X{spanId:-}]"
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      internalService:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+        slow-call-duration-threshold: 3s
+        slow-call-rate-threshold: 80
+  retry:
+    instances:
+      internalService:
+        max-attempts: 3
+        wait-duration: 500ms
+        exponential-backoff-multiplier: 2
+        retry-exceptions:
+          - org.springframework.web.client.ResourceAccessException
+          - java.net.ConnectException

@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: community-service
+spec:
+  template:
+    spec:
+      initContainers:
+        - name: wait-for-postgres
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - until nc -z postgres-spring 5432; do echo waiting for postgres; sleep 2; done
+      containers:
+        - name: community-service
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: spring-kind-config
+            - secretRef:
+                name: spring-kind-secret
+          env:
+            - name: PORT
+              value: "3008"
+            - name: SPRING_PROFILES_ACTIVE
+              value: "kind"
+            - name: COMMUNITY_DB_URL
+              value: "jdbc:postgresql://postgres-spring:5432/community_db"
+            - name: TICKET_SERVICE_URL
+              value: "http://ticket-service:3002"
+            - name: ZIPKIN_ENDPOINT
+              value: "http://zipkin-spring:9411/api/v2/spans"

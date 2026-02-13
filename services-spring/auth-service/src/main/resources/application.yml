@@ -2,7 +2,7 @@ spring:
   application:
     name: auth-service
   datasource:
-    url: ${AUTH_DB_URL:jdbc:postgresql://localhost:5432/auth_db}
+    url: ${AUTH_DB_URL:jdbc:postgresql://localhost:5438/auth_db}
     username: ${AUTH_DB_USERNAME:tiketi_user}
     password: ${AUTH_DB_PASSWORD:tiketi_password}
   jpa:
@@ -20,13 +20,33 @@ server:
   port: ${PORT:3005}
 
 management:
+  server:
+    port: ${MANAGEMENT_PORT:}
+  endpoint:
+    health:
+      show-details: always
+      show-components: always
+  health:
+    db:
+      enabled: true
   endpoints:
     web:
       exposure:
         include: health,info,prometheus
+  tracing:
+    sampling:
+      probability: ${TRACING_SAMPLING_PROBABILITY:1.0}
+  zipkin:
+    tracing:
+      endpoint: ${ZIPKIN_ENDPOINT:http://localhost:9411/api/v2/spans}
+
+logging:
+  pattern:
+    level: "%5p [${spring.application.name:},%X{traceId:-},%X{spanId:-}]"
 
 app:
   security:
     jwt:
-      secret: ${JWT_SECRET:dev-only-secret-change-in-production-f8a7b6c5d4e3f2a1}
-      expiration-seconds: ${JWT_EXPIRATION_SECONDS:604800}
+      secret: ${JWT_SECRET}
+      expiration-seconds: ${JWT_EXPIRATION_SECONDS:1800}
+      refresh-token-expiration-seconds: ${JWT_REFRESH_EXPIRATION_SECONDS:604800}

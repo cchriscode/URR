@@ -1,0 +1,16 @@
+spring:
+  data:
+    redis:
+      host: localhost
+      port: 6379
+queue:
+  entry-token:
+    secret: test-queue-entry-token-secret-minimum-32-chars-long
+    ttl-seconds: 600
+  admission:
+    interval-ms: 999999
+  stale-cleanup:
+    interval-ms: 999999
+internal:
+  ticket-service-url: http://localhost:3002
+  api-token: test-token

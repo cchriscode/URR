@@ -49,7 +49,10 @@ $services = @(
     @{ Name = "auth-service"; Image = "tiketi-spring-auth-service:local" },
     @{ Name = "ticket-service"; Image = "tiketi-spring-ticket-service:local" },
     @{ Name = "payment-service"; Image = "tiketi-spring-payment-service:local" },
-    @{ Name = "stats-service"; Image = "tiketi-spring-stats-service:local" }
+    @{ Name = "stats-service"; Image = "tiketi-spring-stats-service:local" },
+    @{ Name = "queue-service"; Image = "tiketi-spring-queue-service:local" },
+    @{ Name = "community-service"; Image = "tiketi-spring-community-service:local" },
+    @{ Name = "catalog-service"; Image = "tiketi-spring-catalog-service:local" }
 )
 
 foreach ($service in $services) {

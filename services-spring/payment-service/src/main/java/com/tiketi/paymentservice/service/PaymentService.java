@@ -5,6 +5,10 @@ import com.tiketi.paymentservice.dto.CancelPaymentRequest;
 import com.tiketi.paymentservice.dto.ConfirmPaymentRequest;
 import com.tiketi.paymentservice.dto.PreparePaymentRequest;
 import com.tiketi.paymentservice.dto.ProcessPaymentRequest;
+import com.tiketi.paymentservice.messaging.PaymentEventProducer;
+import com.tiketi.paymentservice.messaging.event.PaymentConfirmedEvent;
+import com.tiketi.paymentservice.messaging.event.PaymentRefundedEvent;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.HashMap;
 import java.util.List;
@@ -22,15 +26,18 @@ public class PaymentService {
 
     private final JdbcTemplate jdbcTemplate;
     private final TicketInternalClient ticketInternalClient;
+    private final PaymentEventProducer paymentEventProducer;
     private final String tossClientKey;
 
     public PaymentService(
         JdbcTemplate jdbcTemplate,
         TicketInternalClient ticketInternalClient,
+        PaymentEventProducer paymentEventProducer,
         @Value("${TOSS_CLIENT_KEY:test_ck_dummy}") String tossClientKey
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.ticketInternalClient = ticketInternalClient;
+        this.paymentEventProducer = paymentEventProducer;
         this.tossClientKey = tossClientKey;
     }
 
@@ -208,9 +215,10 @@ public class PaymentService {
             WHERE id = ?
             """, reason, payment.get("id"));
 
-        if (payment.get("reservation_id") != null) {
-            ticketInternalClient.refundReservation(asUuid(payment.get("reservation_id"), "reservation_id"));
-        }
+        UUID reservationId = asUuidNullable(payment.get("reservation_id"));
+        paymentEventProducer.publishRefund(new PaymentRefundedEvent(
+            (UUID) payment.get("id"), null, userId, reservationId, null,
+            "reservation", ((Number) payment.get("amount")).intValue(), reason, Instant.now()));
 
         return Map.of("success", true, "message", "Payment cancelled successfully", "refundAmount", payment.get("amount"));
     }
@@ -243,7 +251,6 @@ public class PaymentService {
         int totalAmount;
         String eventIdText = null;
         String reservationIdText = null;
-        String orderName = "결제";
 
         switch (paymentType) {
             case "transfer" -> {
@@ -263,6 +270,39 @@ public class PaymentService {
                 totalAmount = requiredInt(reservation, "total_amount", "totalAmount");
                 eventIdText = String.valueOf(eventId);
                 reservationIdText = request.reservationId().toString();
+            }
+        }
+
+        // Idempotency: check for existing confirmed payment
+        String lookupSql;
+        Object[] lookupParams;
+        if ("reservation".equals(paymentType) && request.reservationId() != null) {
+            lookupSql = "SELECT id, order_id, amount, status FROM payments WHERE reservation_id = ? FOR UPDATE";
+            lookupParams = new Object[]{request.reservationId()};
+        } else if (referenceId != null) {
+            lookupSql = "SELECT id, order_id, amount, status FROM payments WHERE reference_id = ? AND payment_type = ? FOR UPDATE";
+            lookupParams = new Object[]{referenceId, paymentType};
+        } else {
+            lookupSql = null;
+            lookupParams = null;
+        }
+
+        if (lookupSql != null) {
+            List<Map<String, Object>> existing = jdbcTemplate.queryForList(lookupSql, lookupParams);
+            if (!existing.isEmpty()) {
+                Map<String, Object> payment = existing.getFirst();
+                if ("confirmed".equals(String.valueOf(payment.get("status")))) {
+                    return Map.of(
+                        "success", true,
+                        "message", "Payment already completed",
+                        "payment", Map.of(
+                            "id", payment.get("id"),
+                            "orderId", payment.get("order_id"),
+                            "amount", payment.get("amount"),
+                            "method", request.paymentMethod()
+                        )
+                    );
+                }
             }
         }
 
@@ -297,27 +337,19 @@ public class PaymentService {
     }
 
     private void completeByType(String paymentType, Map<String, Object> payment, String userId, String paymentMethod) {
-        switch (paymentType) {
-            case "transfer" -> {
-                UUID refId = asUuidNullable(payment.get("reference_id"));
-                if (refId != null) {
-                    ticketInternalClient.completeTransfer(refId, userId, paymentMethod);
-                }
-            }
-            case "membership" -> {
-                UUID refId = asUuidNullable(payment.get("reference_id"));
-                if (refId != null) {
-                    ticketInternalClient.activateMembership(refId);
-                }
-            }
-            default -> {
-                // reservation
-                UUID reservationId = asUuidNullable(payment.get("reservation_id"));
-                if (reservationId != null) {
-                    ticketInternalClient.confirmReservation(reservationId, paymentMethod);
-                }
-            }
-        }
+        UUID reservationId = asUuidNullable(payment.get("reservation_id"));
+        UUID referenceId = asUuidNullable(payment.get("reference_id"));
+        UUID paymentId = asUuidNullable(payment.get("id"));
+
+        int amount = 0;
+        Object amountObj = payment.get("amount");
+        if (amountObj instanceof Number n) amount = n.intValue();
+
+        String orderId = payment.get("order_id") != null ? String.valueOf(payment.get("order_id")) : null;
+
+        paymentEventProducer.publish(new PaymentConfirmedEvent(
+            paymentId, orderId, userId, reservationId, referenceId,
+            paymentType, amount, paymentMethod, Instant.now()));
     }
 
     private Object firstPresent(Map<String, Object> map, String... keys) {

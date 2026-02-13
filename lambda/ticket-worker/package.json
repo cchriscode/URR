@@ -1,0 +1,12 @@
+{
+  "name": "tiketi-ticket-worker",
+  "version": "1.0.0",
+  "description": "SQS FIFO consumer - processes ticket reservation messages",
+  "main": "index.js",
+  "scripts": {
+    "test": "node --test test/"
+  },
+  "dependencies": {
+    "axios": "^1.7.0"
+  }
+}

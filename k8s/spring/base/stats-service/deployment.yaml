@@ -13,11 +13,22 @@ spec:
     metadata:
       labels:
         app: stats-service
+        tier: backend
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
       containers:
         - name: stats-service
           image: YOUR_ECR_URI/stats-service:latest
           imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
           ports:
             - containerPort: 3004
           env:

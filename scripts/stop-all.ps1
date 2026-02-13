@@ -45,7 +45,7 @@ if ($javaStopped -gt 0) {
 
 # Stop any gradle daemon processes used by bootRun
 $gradleStopped = 0
-$services = @("auth-service", "ticket-service", "payment-service", "stats-service", "gateway-service")
+$services = @("auth-service", "ticket-service", "payment-service", "stats-service", "queue-service", "community-service", "gateway-service")
 foreach ($svc in $services) {
     $gradlew = Join-Path $repoRoot "services-spring\$svc\gradlew.bat"
     if (Test-Path $gradlew) {
@@ -60,7 +60,7 @@ if ($gradleStopped -gt 0) {
 # ── 2. Stop Docker Compose (DB + Redis) ─────────────────────────
 
 Write-Host ""
-Write-Host "[2/2] Stopping databases and Redis ..." -ForegroundColor Cyan
+Write-Host "[2/2] Stopping databases, Redis, Kafka, and Zipkin ..." -ForegroundColor Cyan
 
 $composeFile = Join-Path $repoRoot "services-spring\docker-compose.databases.yml"
 if (Test-Path $composeFile) {

@@ -13,9 +13,28 @@ Write-Host "   TIKETI Spring - Start All Services" -ForegroundColor Cyan
 Write-Host "================================================" -ForegroundColor Cyan
 Write-Host ""
 
-# ── 1. Docker Compose (DB + Redis) ──────────────────────────────
+# ── 0. Environment Variables (Local Dev Secrets) ─────────────────
 
-Write-Host "[1/3] Starting databases and Redis ..." -ForegroundColor Cyan
+Write-Host "[0/3] Setting environment variables ..." -ForegroundColor Cyan
+
+$env:JWT_SECRET                  = "local-dev-jwt-secret-minimum-32-characters-long"
+$env:INTERNAL_API_TOKEN          = "local-dev-internal-api-token"
+$env:QUEUE_ENTRY_TOKEN_SECRET    = "local-dev-queue-entry-token-secret-min-32-chars"
+$env:KAFKA_BOOTSTRAP_SERVERS     = "localhost:9092"
+$env:ZIPKIN_ENDPOINT             = "http://localhost:9411/api/v2/spans"
+$env:TRACING_SAMPLING_PROBABILITY = "1.0"
+$env:TOSS_CLIENT_KEY             = "test_ck_dummy"
+$env:SQS_ENABLED                 = "false"
+$env:SQS_QUEUE_URL               = ""
+$env:CLOUDFRONT_SECRET           = "local-dev-cloudfront-secret"
+$env:CORS_ALLOWED_ORIGINS        = "http://localhost:3000"
+
+Write-Host "  OK: Environment variables configured" -ForegroundColor Green
+Write-Host ""
+
+# ── 1. Docker Compose (DB + Redis + Kafka + Zipkin) ──────────────
+
+Write-Host "[1/3] Starting databases, Redis, Kafka, and Zipkin ..." -ForegroundColor Cyan
 
 $composeFile = Join-Path $repoRoot "services-spring\docker-compose.databases.yml"
 if (-not (Test-Path $composeFile)) {
@@ -34,7 +53,10 @@ $dbPorts = @(
     @{ Name = "auth-db";    Port = 5433 },
     @{ Name = "ticket-db";  Port = 5434 },
     @{ Name = "payment-db"; Port = 5435 },
-    @{ Name = "stats-db";   Port = 5436 }
+    @{ Name = "stats-db";   Port = 5436 },
+    @{ Name = "community-db"; Port = 5437 },
+    @{ Name = "kafka";      Port = 9092 },
+    @{ Name = "zipkin";     Port = 9411 }
 )
 
 foreach ($db in $dbPorts) {
@@ -63,11 +85,13 @@ Write-Host ""
 Write-Host "[2/3] Starting Spring Boot services ..." -ForegroundColor Cyan
 
 $services = @(
-    @{ Name = "auth-service";    Port = 3005 },
-    @{ Name = "ticket-service";  Port = 3002 },
-    @{ Name = "payment-service"; Port = 3003 },
-    @{ Name = "stats-service";   Port = 3004 },
-    @{ Name = "gateway-service"; Port = 3001 }
+    @{ Name = "auth-service";      Port = 3005 },
+    @{ Name = "ticket-service";    Port = 3002 },
+    @{ Name = "payment-service";   Port = 3003 },
+    @{ Name = "stats-service";     Port = 3004 },
+    @{ Name = "queue-service";     Port = 3007 },
+    @{ Name = "community-service"; Port = 3008 },
+    @{ Name = "gateway-service";   Port = 3001 }
 )
 
 foreach ($svc in $services) {
@@ -104,7 +128,7 @@ foreach ($svc in $services) {
     $ready = $false
     while ($retries -lt $maxRetries) {
         try {
-            $response = Invoke-WebRequest -Uri "http://localhost:$($svc.Port)/actuator/health" -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
+            $response = Invoke-WebRequest -Uri "http://localhost:$($svc.Port)/health" -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
             if ($response.StatusCode -eq 200) {
                 Write-Host "  OK: $($svc.Name) (port $($svc.Port))" -ForegroundColor Green
                 $ready = $true
@@ -158,16 +182,21 @@ Write-Host "    Auth Service:    http://localhost:3005" -ForegroundColor White
 Write-Host "    Ticket Service:  http://localhost:3002" -ForegroundColor White
 Write-Host "    Payment Service: http://localhost:3003" -ForegroundColor White
 Write-Host "    Stats Service:   http://localhost:3004" -ForegroundColor White
+Write-Host "    Queue Service:   http://localhost:3007" -ForegroundColor White
+Write-Host "    Community Svc:   http://localhost:3008" -ForegroundColor White
 if ($WithFrontend) {
     Write-Host "    Frontend:        http://localhost:3000" -ForegroundColor White
 }
 Write-Host ""
-Write-Host "  Databases:" -ForegroundColor White
+Write-Host "  Infrastructure:" -ForegroundColor White
 Write-Host "    auth-db:    localhost:5433" -ForegroundColor Gray
 Write-Host "    ticket-db:  localhost:5434" -ForegroundColor Gray
 Write-Host "    payment-db: localhost:5435" -ForegroundColor Gray
-Write-Host "    stats-db:   localhost:5436" -ForegroundColor Gray
-Write-Host "    redis:      localhost:6379" -ForegroundColor Gray
+Write-Host "    stats-db:      localhost:5436" -ForegroundColor Gray
+Write-Host "    community-db:  localhost:5437" -ForegroundColor Gray
+Write-Host "    redis:         localhost:6379" -ForegroundColor Gray
+Write-Host "    kafka:      localhost:9092" -ForegroundColor Gray
+Write-Host "    zipkin:     http://localhost:9411" -ForegroundColor Gray
 Write-Host ""
 Write-Host "  Stop:" -ForegroundColor White
 Write-Host "    .\scripts\stop-all.ps1" -ForegroundColor Cyan

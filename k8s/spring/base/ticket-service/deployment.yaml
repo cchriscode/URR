@@ -13,11 +13,22 @@ spec:
     metadata:
       labels:
         app: ticket-service
+        tier: backend
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
       containers:
         - name: ticket-service
           image: YOUR_ECR_URI/ticket-service:latest
           imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
           ports:
             - containerPort: 3002
           env:

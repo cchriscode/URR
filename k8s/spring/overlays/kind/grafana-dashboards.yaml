@@ -1,0 +1,1218 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards
+  labels:
+    app: grafana
+    component: dashboards
+data:
+  service-overview.json: |
+    {
+      "uid": "tiketi-service-overview",
+      "title": "Service Overview",
+      "tags": ["tiketi", "auto-provisioned"],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "10s",
+      "time": { "from": "now-1h", "to": "now" },
+      "templating": {
+        "list": [
+          {
+            "name": "service",
+            "type": "query",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "query": "label_values(application)",
+            "refresh": 2,
+            "includeAll": true,
+            "multi": true,
+            "current": { "selected": true, "text": "All", "value": "$__all" }
+          }
+        ]
+      },
+      "panels": [
+        {
+          "id": 1,
+          "title": "Request Rate per Service",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "sum(rate(http_server_requests_seconds_count{application=~\"$service\"}[1m])) by (application)",
+              "legendFormat": "{{ application }}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps",
+              "custom": { "drawStyle": "line", "fillOpacity": 15, "lineWidth": 2 }
+            }
+          }
+        },
+        {
+          "id": 2,
+          "title": "Error Rate per Service (5xx)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "sum(rate(http_server_requests_seconds_count{application=~\"$service\", status=~\"5..\"}[1m])) by (application)",
+              "legendFormat": "{{ application }} - 5xx",
+              "refId": "A"
+            },
+            {
+              "expr": "sum(rate(http_server_requests_seconds_count{application=~\"$service\", status=~\"5..\"}[5m])) by (application) / sum(rate(http_server_requests_seconds_count{application=~\"$service\"}[5m])) by (application) * 100",
+              "legendFormat": "{{ application }} - error %",
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps",
+              "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 0.1 },
+                  { "color": "red", "value": 1 }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": { "id": "byRegexp", "options": "error %" },
+                "properties": [{ "id": "unit", "value": "percent" }, { "id": "custom.axisPlacement", "value": "right" }]
+              }
+            ]
+          }
+        },
+        {
+          "id": 3,
+          "title": "Response Time p50",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 8, "x": 0, "y": 8 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.50, sum(rate(http_server_requests_seconds_bucket{application=~\"$service\"}[5m])) by (le, application))",
+              "legendFormat": "{{ application }}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 }
+            }
+          }
+        },
+        {
+          "id": 4,
+          "title": "Response Time p95",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 8, "x": 8, "y": 8 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.95, sum(rate(http_server_requests_seconds_bucket{application=~\"$service\"}[5m])) by (le, application))",
+              "legendFormat": "{{ application }}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 1 },
+                  { "color": "red", "value": 3 }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": 5,
+          "title": "Response Time p99",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 8, "x": 16, "y": 8 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.99, sum(rate(http_server_requests_seconds_bucket{application=~\"$service\"}[5m])) by (le, application))",
+              "legendFormat": "{{ application }}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 2 },
+                  { "color": "red", "value": 5 }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": 6,
+          "title": "Active HTTP Connections",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "tomcat_connections_current_connections{application=~\"$service\"}",
+              "legendFormat": "{{ application }} - current",
+              "refId": "A"
+            },
+            {
+              "expr": "tomcat_threads_busy_threads{application=~\"$service\"}",
+              "legendFormat": "{{ application }} - busy threads",
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 }
+            }
+          }
+        },
+        {
+          "id": 7,
+          "title": "Uptime per Service",
+          "type": "stat",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "process_uptime_seconds{application=~\"$service\"}",
+              "legendFormat": "{{ application }}",
+              "refId": "A",
+              "instant": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "yellow", "value": 300 },
+                  { "color": "green", "value": 3600 }
+                ]
+              }
+            }
+          },
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "textMode": "auto" }
+        },
+        {
+          "id": 8,
+          "title": "Request Count by Status Code",
+          "type": "piechart",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "sum(increase(http_server_requests_seconds_count{application=~\"$service\"}[1h])) by (status)",
+              "legendFormat": "HTTP {{ status }}",
+              "refId": "A",
+              "instant": true
+            }
+          ]
+        },
+        {
+          "id": 9,
+          "title": "Top Endpoints by Request Rate",
+          "type": "table",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "topk(15, sum(rate(http_server_requests_seconds_count{application=~\"$service\"}[5m])) by (application, uri, method))",
+              "legendFormat": "",
+              "refId": "A",
+              "instant": true,
+              "format": "table"
+            }
+          ],
+          "transformations": [
+            { "id": "organize", "options": { "excludeByName": { "Time": true, "__name__": true }, "renameByName": { "application": "Service", "uri": "Endpoint", "method": "Method", "Value": "req/s" } } }
+          ]
+        }
+      ]
+    }
+
+  jvm-metrics.json: |
+    {
+      "uid": "tiketi-jvm-metrics",
+      "title": "JVM Metrics",
+      "tags": ["tiketi", "auto-provisioned"],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "10s",
+      "time": { "from": "now-1h", "to": "now" },
+      "templating": {
+        "list": [
+          {
+            "name": "service",
+            "type": "query",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "query": "label_values(application)",
+            "refresh": 2,
+            "includeAll": true,
+            "multi": true,
+            "current": { "selected": true, "text": "All", "value": "$__all" }
+          }
+        ]
+      },
+      "panels": [
+        {
+          "id": 1,
+          "title": "Heap Memory Used",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "sum(jvm_memory_used_bytes{application=~\"$service\", area=\"heap\"}) by (application)",
+              "legendFormat": "{{ application }} - used",
+              "refId": "A"
+            },
+            {
+              "expr": "sum(jvm_memory_max_bytes{application=~\"$service\", area=\"heap\"}) by (application)",
+              "legendFormat": "{{ application }} - max",
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "custom": { "drawStyle": "line", "fillOpacity": 15, "lineWidth": 2 }
+            },
+            "overrides": [
+              {
+                "matcher": { "id": "byRegexp", "options": "max" },
+                "properties": [{ "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [10, 10] } }, { "id": "custom.fillOpacity", "value": 0 }]
+              }
+            ]
+          }
+        },
+        {
+          "id": 2,
+          "title": "Heap Memory Utilization %",
+          "type": "gauge",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "sum(jvm_memory_used_bytes{application=~\"$service\", area=\"heap\"}) by (application) / sum(jvm_memory_max_bytes{application=~\"$service\", area=\"heap\"}) by (application) * 100",
+              "legendFormat": "{{ application }}",
+              "refId": "A",
+              "instant": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "min": 0,
+              "max": 100,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 70 },
+                  { "color": "red", "value": 90 }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": 3,
+          "title": "Non-Heap Memory Used",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "sum(jvm_memory_used_bytes{application=~\"$service\", area=\"nonheap\"}) by (application)",
+              "legendFormat": "{{ application }}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "custom": { "drawStyle": "line", "fillOpacity": 15, "lineWidth": 2 }
+            }
+          }
+        },
+        {
+          "id": 4,
+          "title": "GC Pause Duration",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "rate(jvm_gc_pause_seconds_sum{application=~\"$service\"}[1m])",
+              "legendFormat": "{{ application }} - {{ action }} {{ cause }}",
+              "refId": "A"
+            },
+            {
+              "expr": "rate(jvm_gc_pause_seconds_count{application=~\"$service\"}[1m])",
+              "legendFormat": "{{ application }} - GC count/s",
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 }
+            },
+            "overrides": [
+              {
+                "matcher": { "id": "byRegexp", "options": "count" },
+                "properties": [{ "id": "unit", "value": "short" }, { "id": "custom.axisPlacement", "value": "right" }]
+              }
+            ]
+          }
+        },
+        {
+          "id": 5,
+          "title": "Live Threads",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "jvm_threads_live_threads{application=~\"$service\"}",
+              "legendFormat": "{{ application }} - live",
+              "refId": "A"
+            },
+            {
+              "expr": "jvm_threads_daemon_threads{application=~\"$service\"}",
+              "legendFormat": "{{ application }} - daemon",
+              "refId": "B"
+            },
+            {
+              "expr": "jvm_threads_peak_threads{application=~\"$service\"}",
+              "legendFormat": "{{ application }} - peak",
+              "refId": "C"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 }
+            },
+            "overrides": [
+              {
+                "matcher": { "id": "byRegexp", "options": "peak" },
+                "properties": [{ "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [10, 10] } }, { "id": "custom.fillOpacity", "value": 0 }]
+              }
+            ]
+          }
+        },
+        {
+          "id": 6,
+          "title": "CPU Usage",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "process_cpu_usage{application=~\"$service\"} * 100",
+              "legendFormat": "{{ application }} - process",
+              "refId": "A"
+            },
+            {
+              "expr": "system_cpu_usage{application=~\"$service\"} * 100",
+              "legendFormat": "{{ application }} - system",
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "min": 0,
+              "max": 100,
+              "custom": { "drawStyle": "line", "fillOpacity": 15, "lineWidth": 2 }
+            },
+            "overrides": [
+              {
+                "matcher": { "id": "byRegexp", "options": "system" },
+                "properties": [{ "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [10, 10] } }, { "id": "custom.fillOpacity", "value": 0 }]
+              }
+            ]
+          }
+        },
+        {
+          "id": 7,
+          "title": "Loaded Classes",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "jvm_classes_loaded_classes{application=~\"$service\"}",
+              "legendFormat": "{{ application }}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 }
+            }
+          }
+        },
+        {
+          "id": 8,
+          "title": "GC Memory Allocated / Promoted",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "rate(jvm_gc_memory_allocated_bytes_total{application=~\"$service\"}[1m])",
+              "legendFormat": "{{ application }} - allocated/s",
+              "refId": "A"
+            },
+            {
+              "expr": "rate(jvm_gc_memory_promoted_bytes_total{application=~\"$service\"}[1m])",
+              "legendFormat": "{{ application }} - promoted/s",
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps",
+              "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 }
+            }
+          }
+        }
+      ]
+    }
+
+  kafka-metrics.json: |
+    {
+      "uid": "tiketi-kafka-metrics",
+      "title": "Kafka Metrics",
+      "tags": ["tiketi", "auto-provisioned"],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "10s",
+      "time": { "from": "now-1h", "to": "now" },
+      "templating": {
+        "list": [
+          {
+            "name": "service",
+            "type": "query",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "query": "label_values(application)",
+            "refresh": 2,
+            "includeAll": true,
+            "multi": true,
+            "current": { "selected": true, "text": "All", "value": "$__all" }
+          },
+          {
+            "name": "topic",
+            "type": "query",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "query": "label_values(kafka_consumer_fetch_manager_records_consumed_total{application=~\"$service\"}, topic)",
+            "refresh": 2,
+            "includeAll": true,
+            "multi": true,
+            "current": { "selected": true, "text": "All", "value": "$__all" }
+          }
+        ]
+      },
+      "panels": [
+        {
+          "id": 1,
+          "title": "Consumer Lag (Max per Partition)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "kafka_consumer_records_lag_max{application=~\"$service\"}",
+              "legendFormat": "{{ application }} - {{ topic }}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": { "drawStyle": "line", "fillOpacity": 15, "lineWidth": 2 },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 100 },
+                  { "color": "red", "value": 1000 }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": 2,
+          "title": "Consumer Lag (Records)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "kafka_consumer_records_lag{application=~\"$service\", topic=~\"$topic\"}",
+              "legendFormat": "{{ application }} - {{ topic }}-{{ partition }}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 }
+            }
+          }
+        },
+        {
+          "id": 3,
+          "title": "Messages Consumed per Second",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "sum(rate(kafka_consumer_fetch_manager_records_consumed_total{application=~\"$service\", topic=~\"$topic\"}[1m])) by (application, topic)",
+              "legendFormat": "{{ application }} - {{ topic }}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "cps",
+              "custom": { "drawStyle": "line", "fillOpacity": 15, "lineWidth": 2 }
+            }
+          }
+        },
+        {
+          "id": 4,
+          "title": "Messages Produced per Second",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "sum(rate(kafka_producer_record_send_total{application=~\"$service\"}[1m])) by (application)",
+              "legendFormat": "{{ application }}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "cps",
+              "custom": { "drawStyle": "line", "fillOpacity": 15, "lineWidth": 2 }
+            }
+          }
+        },
+        {
+          "id": 5,
+          "title": "Consumer Fetch Rate",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "kafka_consumer_fetch_manager_fetch_rate{application=~\"$service\"}",
+              "legendFormat": "{{ application }} - fetch rate",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps",
+              "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 }
+            }
+          }
+        },
+        {
+          "id": 6,
+          "title": "Producer Error Rate",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "sum(rate(kafka_producer_record_error_total{application=~\"$service\"}[1m])) by (application)",
+              "legendFormat": "{{ application }} - errors/s",
+              "refId": "A"
+            },
+            {
+              "expr": "sum(rate(kafka_producer_record_retry_total{application=~\"$service\"}[1m])) by (application)",
+              "legendFormat": "{{ application }} - retries/s",
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "red", "value": 1 }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": 7,
+          "title": "Consumer Group Status",
+          "type": "stat",
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 24 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "kafka_consumer_coordinator_assigned_partitions{application=~\"$service\"}",
+              "legendFormat": "{{ application }} - assigned partitions",
+              "refId": "A",
+              "instant": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "green", "value": 1 }
+                ]
+              }
+            }
+          },
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "textMode": "auto" }
+        }
+      ]
+    }
+
+  infrastructure.json: |
+    {
+      "uid": "tiketi-infrastructure",
+      "title": "Infrastructure",
+      "tags": ["tiketi", "auto-provisioned"],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "10s",
+      "time": { "from": "now-1h", "to": "now" },
+      "templating": {
+        "list": [
+          {
+            "name": "service",
+            "type": "query",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "query": "label_values(application)",
+            "refresh": 2,
+            "includeAll": true,
+            "multi": true,
+            "current": { "selected": true, "text": "All", "value": "$__all" }
+          }
+        ]
+      },
+      "panels": [
+        {
+          "id": 1,
+          "title": "Service Health Status",
+          "type": "stat",
+          "gridPos": { "h": 6, "w": 24, "x": 0, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "up{job=\"spring-services\"}",
+              "legendFormat": "{{ service }}",
+              "refId": "A",
+              "instant": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [
+                { "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } }, "type": "value" }
+              ],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "green", "value": 1 }
+                ]
+              }
+            }
+          },
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "textMode": "auto", "graphMode": "none" }
+        },
+        {
+          "id": 2,
+          "title": "HikariCP Active Connections",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "hikaricp_connections_active{application=~\"$service\"}",
+              "legendFormat": "{{ application }} - active",
+              "refId": "A"
+            },
+            {
+              "expr": "hikaricp_connections_idle{application=~\"$service\"}",
+              "legendFormat": "{{ application }} - idle",
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": { "drawStyle": "line", "fillOpacity": 15, "lineWidth": 2 }
+            }
+          }
+        },
+        {
+          "id": 3,
+          "title": "HikariCP Connection Pool Utilization",
+          "type": "gauge",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "hikaricp_connections_active{application=~\"$service\"} / hikaricp_connections_max{application=~\"$service\"} * 100",
+              "legendFormat": "{{ application }}",
+              "refId": "A",
+              "instant": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "min": 0,
+              "max": 100,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 60 },
+                  { "color": "red", "value": 85 }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": 4,
+          "title": "HikariCP Connection Acquire Time",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "rate(hikaricp_connections_acquire_seconds_sum{application=~\"$service\"}[1m]) / rate(hikaricp_connections_acquire_seconds_count{application=~\"$service\"}[1m])",
+              "legendFormat": "{{ application }} - avg acquire time",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 0.1 },
+                  { "color": "red", "value": 1 }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": 5,
+          "title": "HikariCP Pending Connection Requests",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "hikaricp_connections_pending{application=~\"$service\"}",
+              "legendFormat": "{{ application }} - pending",
+              "refId": "A"
+            },
+            {
+              "expr": "hikaricp_connections_timeout_total{application=~\"$service\"}",
+              "legendFormat": "{{ application }} - timeouts",
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 1 },
+                  { "color": "red", "value": 5 }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": 6,
+          "title": "Redis Command Latency",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 22 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "rate(lettuce_command_completion_seconds_sum{application=~\"$service\"}[1m]) / rate(lettuce_command_completion_seconds_count{application=~\"$service\"}[1m])",
+              "legendFormat": "{{ application }} - {{ command }} avg",
+              "refId": "A"
+            },
+            {
+              "expr": "histogram_quantile(0.95, sum(rate(lettuce_command_completion_seconds_bucket{application=~\"$service\"}[5m])) by (le, application))",
+              "legendFormat": "{{ application }} - p95",
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 }
+            }
+          }
+        },
+        {
+          "id": 7,
+          "title": "Redis Command Rate",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 22 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "sum(rate(lettuce_command_completion_seconds_count{application=~\"$service\"}[1m])) by (application)",
+              "legendFormat": "{{ application }} - cmds/s",
+              "refId": "A"
+            },
+            {
+              "expr": "sum(rate(lettuce_command_firstresponse_seconds_count{application=~\"$service\"}[1m])) by (application)",
+              "legendFormat": "{{ application }} - first response/s",
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops",
+              "custom": { "drawStyle": "line", "fillOpacity": 15, "lineWidth": 2 }
+            }
+          }
+        },
+        {
+          "id": 8,
+          "title": "Kafka Broker Availability",
+          "type": "stat",
+          "gridPos": { "h": 6, "w": 12, "x": 0, "y": 30 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "kafka_consumer_connection_count{application=~\"$service\"}",
+              "legendFormat": "{{ application }} - connections",
+              "refId": "A",
+              "instant": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "green", "value": 1 }
+                ]
+              }
+            }
+          },
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "textMode": "auto" }
+        },
+        {
+          "id": 9,
+          "title": "Disk Usage",
+          "type": "timeseries",
+          "gridPos": { "h": 6, "w": 12, "x": 12, "y": 30 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "disk_free_bytes{application=~\"$service\"}",
+              "legendFormat": "{{ application }} - free",
+              "refId": "A"
+            },
+            {
+              "expr": "disk_total_bytes{application=~\"$service\"}",
+              "legendFormat": "{{ application }} - total",
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 }
+            },
+            "overrides": [
+              {
+                "matcher": { "id": "byRegexp", "options": "total" },
+                "properties": [{ "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [10, 10] } }, { "id": "custom.fillOpacity", "value": 0 }]
+              }
+            ]
+          }
+        }
+      ]
+    }
+
+  alerts.json: |
+    {
+      "uid": "tiketi-alerts",
+      "title": "Tiketi Alert Rules",
+      "tags": ["tiketi", "auto-provisioned"],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "10s",
+      "time": { "from": "now-1h", "to": "now" },
+      "templating": {
+        "list": [
+          {
+            "name": "service",
+            "type": "query",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "query": "label_values(application)",
+            "refresh": 2,
+            "includeAll": true,
+            "multi": true,
+            "current": { "selected": true, "text": "All", "value": "$__all" }
+          }
+        ]
+      },
+      "panels": [
+        {
+          "id": 1,
+          "title": "High Error Rate (>5% for 5min)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "sum(rate(http_server_requests_seconds_count{status=~\"5..\"}[5m])) by (application) / sum(rate(http_server_requests_seconds_count[5m])) by (application) * 100",
+              "legendFormat": "{{ application }} - error %",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "red", "value": 5 }
+                ]
+              }
+            }
+          },
+          "alert": {
+            "name": "High Error Rate",
+            "message": "Service {{ application }} error rate exceeds 5% for more than 5 minutes.",
+            "conditions": [
+              {
+                "type": "query",
+                "query": { "params": ["A", "5m", "now"] },
+                "reducer": { "type": "avg", "params": [] },
+                "evaluator": { "type": "gt", "params": [5] }
+              }
+            ],
+            "frequency": "1m",
+            "for": "5m",
+            "noDataState": "no_data",
+            "executionErrorState": "alerting"
+          }
+        },
+        {
+          "id": 2,
+          "title": "Service Down (up == 0 for 1min)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "up{job=\"spring-services\"}",
+              "legendFormat": "{{ service }}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 },
+              "mappings": [
+                { "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } }, "type": "value" }
+              ],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "green", "value": 1 }
+                ]
+              }
+            }
+          },
+          "alert": {
+            "name": "Service Down",
+            "message": "Service {{ service }} has been down for more than 1 minute.",
+            "conditions": [
+              {
+                "type": "query",
+                "query": { "params": ["A", "1m", "now"] },
+                "reducer": { "type": "last", "params": [] },
+                "evaluator": { "type": "lt", "params": [1] }
+              }
+            ],
+            "frequency": "30s",
+            "for": "1m",
+            "noDataState": "alerting",
+            "executionErrorState": "alerting"
+          }
+        },
+        {
+          "id": 3,
+          "title": "High Latency (p95 > 3s for 5min)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.95, sum(rate(http_server_requests_seconds_bucket[5m])) by (le, application))",
+              "legendFormat": "{{ application }} - p95",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 1 },
+                  { "color": "red", "value": 3 }
+                ]
+              }
+            }
+          },
+          "alert": {
+            "name": "High Latency",
+            "message": "Service {{ application }} p95 latency exceeds 3 seconds for more than 5 minutes.",
+            "conditions": [
+              {
+                "type": "query",
+                "query": { "params": ["A", "5m", "now"] },
+                "reducer": { "type": "avg", "params": [] },
+                "evaluator": { "type": "gt", "params": [3] }
+              }
+            ],
+            "frequency": "1m",
+            "for": "5m",
+            "noDataState": "no_data",
+            "executionErrorState": "alerting"
+          }
+        },
+        {
+          "id": 4,
+          "title": "Low Disk Space (<10% free)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "disk_free_bytes / disk_total_bytes * 100",
+              "legendFormat": "{{ application }} - free %",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "min": 0,
+              "max": 100,
+              "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "yellow", "value": 10 },
+                  { "color": "green", "value": 25 }
+                ]
+              }
+            }
+          },
+          "alert": {
+            "name": "Low Disk Space",
+            "message": "Service {{ application }} disk space is below 10% free.",
+            "conditions": [
+              {
+                "type": "query",
+                "query": { "params": ["A", "5m", "now"] },
+                "reducer": { "type": "last", "params": [] },
+                "evaluator": { "type": "lt", "params": [10] }
+              }
+            ],
+            "frequency": "1m",
+            "for": "5m",
+            "noDataState": "no_data",
+            "executionErrorState": "alerting"
+          }
+        },
+        {
+          "id": 5,
+          "title": "Alert Summary",
+          "type": "text",
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
+          "options": {
+            "mode": "markdown",
+            "content": "## Tiketi Alert Rules Summary\n\n| Alert | Condition | Duration | Severity |\n|-------|-----------|----------|----------|\n| **High Error Rate** | Error rate > 5% of total requests | 5 minutes | Critical |\n| **Service Down** | `up` metric equals 0 | 1 minute | Critical |\n| **High Latency** | p95 response time > 3 seconds | 5 minutes | Warning |\n| **Low Disk Space** | Free disk space < 10% | 5 minutes | Warning |\n\n### Monitored Services\n- auth-service (port 3005)\n- gateway-service (port 3001)\n- ticket-service (port 3002)\n- payment-service (port 3003)\n- stats-service (port 3004)\n- queue-service (port 3007)\n- community-service (port 3008)\n\n### Notes\n- All metrics are scraped from `/actuator/prometheus` every 10 seconds.\n- Error rate is computed over a 5-minute rolling window to reduce noise.\n- The `up` metric is provided by Prometheus itself based on successful scrape targets.\n- Disk metrics depend on the Spring Boot Actuator `disk` endpoint being enabled."
+          }
+        }
+      ]
+    }

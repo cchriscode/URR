@@ -14,16 +14,29 @@ spec:
       labels:
         app: frontend
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
       containers:
         - name: frontend
           image: YOUR_ECR_URI/frontend:latest
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
           ports:
             - containerPort: 3000
               name: http
           env:
+            # NEXT_PUBLIC_API_URL is a build-time variable baked into the JS bundle.
+            # Leave empty so resolveBaseUrl() uses same-origin relative path in production,
+            # or override in overlay for specific environments (e.g., Kind uses NodePort).
             - name: NEXT_PUBLIC_API_URL
-              value: "http://localhost:3001"
+              value: ""
           resources:
             requests:
               memory: "128Mi"

@@ -1,5 +1,9 @@
 package com.tiketi.authservice.service;
 
+import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
+import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier;
+import com.google.api.client.http.javanet.NetHttpTransport;
+import com.google.api.client.json.gson.GsonFactory;
 import com.tiketi.authservice.domain.UserEntity;
 import com.tiketi.authservice.dto.AuthResponse;
 import com.tiketi.authservice.dto.LoginRequest;
@@ -10,28 +14,29 @@ import com.tiketi.authservice.dto.VerifyTokenResponse;
 import com.tiketi.authservice.exception.ApiException;
 import com.tiketi.authservice.repository.UserRepository;
 import com.tiketi.authservice.security.JwtService;
+import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.ParameterizedTypeReference;
-import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.client.RestClient;
-import org.springframework.web.server.ResponseStatusException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 @Service
 public class AuthService {
 
+    private static final Logger log = LoggerFactory.getLogger(AuthService.class);
+
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
-    private final RestClient googleRestClient;
-    private final String googleClientId;
+    private final GoogleIdTokenVerifier googleIdTokenVerifier;
 
     public AuthService(
         UserRepository userRepository,
@@ -42,8 +47,14 @@ public class AuthService {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
-        this.googleClientId = googleClientId;
-        this.googleRestClient = RestClient.builder().baseUrl("https://oauth2.googleapis.com").build();
+        if (googleClientId != null && !googleClientId.isBlank()) {
+            this.googleIdTokenVerifier = new GoogleIdTokenVerifier.Builder(
+                    new NetHttpTransport(), GsonFactory.getDefaultInstance())
+                    .setAudience(Collections.singletonList(googleClientId))
+                    .build();
+        } else {
+            this.googleIdTokenVerifier = null;
+        }
     }
 
     @Transactional
@@ -60,8 +71,9 @@ public class AuthService {
 
         UserEntity saved = userRepository.save(user);
         String token = jwtService.generateToken(saved);
+        String refreshToken = jwtService.generateRefreshToken(saved);
 
-        return new AuthResponse("Registration completed", token, UserPayload.from(saved));
+        return new AuthResponse("Registration completed", token, refreshToken, UserPayload.from(saved));
     }
 
     @Transactional(readOnly = true)
@@ -85,7 +97,30 @@ public class AuthService {
         }
 
         String token = jwtService.generateToken(user);
-        return new AuthResponse("Login successful", token, UserPayload.from(user));
+        String refreshToken = jwtService.generateRefreshToken(user);
+        return new AuthResponse("Login successful", token, refreshToken, UserPayload.from(user));
+    }
+
+    @Transactional(readOnly = true)
+    public AuthResponse refreshToken(String refreshTokenValue) {
+        Claims claims;
+        try {
+            claims = jwtService.validateRefreshToken(refreshTokenValue);
+        } catch (JwtException ex) {
+            throw new ApiException("Invalid or expired refresh token");
+        }
+
+        String userId = claims.get("userId", String.class);
+        if (userId == null) {
+            throw new ApiException("Invalid refresh token");
+        }
+
+        UserEntity user = userRepository.findById(UUID.fromString(userId))
+            .orElseThrow(() -> new ApiException("User not found"));
+
+        String newAccessToken = jwtService.generateToken(user);
+        String newRefreshToken = jwtService.generateRefreshToken(user);
+        return new AuthResponse("Token refreshed", newAccessToken, newRefreshToken, UserPayload.from(user));
     }
 
     @Transactional(readOnly = true)
@@ -134,39 +169,27 @@ public class AuthService {
         if (credential == null || credential.isBlank()) {
             throw new ApiException("Google credential is required");
         }
-        if (googleClientId == null || googleClientId.isBlank()) {
+        if (googleIdTokenVerifier == null) {
             throw new ApiException("GOOGLE_CLIENT_ID is not configured");
         }
 
-        Map<String, Object> payload;
+        GoogleIdToken idToken;
         try {
-            payload = googleRestClient.get()
-                .uri(uriBuilder -> uriBuilder.path("/tokeninfo").queryParam("id_token", credential).build())
-                .retrieve()
-                .onStatus(HttpStatusCode::isError, (request, response) -> {
-                    throw new ApiException("Invalid Google token");
-                })
-                .body(new ParameterizedTypeReference<>() {
-                });
-        } catch (ResponseStatusException ex) {
-            throw ex;
+            idToken = googleIdTokenVerifier.verify(credential);
         } catch (Exception ex) {
+            log.warn("Google token verification failed: {}", ex.getMessage());
             throw new ApiException("Invalid Google token");
         }
 
-        if (payload == null) {
+        if (idToken == null) {
             throw new ApiException("Invalid Google token");
         }
 
-        String audience = toStringValue(payload.get("aud"));
-        if (!googleClientId.equals(audience)) {
-            throw new ApiException("Invalid Google audience");
-        }
-
-        String googleId = toStringValue(payload.get("sub"));
-        String email = toStringValue(payload.get("email"));
-        String name = toStringValue(payload.get("name"));
-        String picture = toStringValue(payload.get("picture"));
+        GoogleIdToken.Payload payload = idToken.getPayload();
+        String googleId = payload.getSubject();
+        String email = payload.getEmail();
+        String name = (String) payload.get("name");
+        String picture = (String) payload.get("picture");
 
         if (googleId == null || googleId.isBlank() || email == null || email.isBlank()) {
             throw new ApiException("Invalid Google token payload");
@@ -178,7 +201,7 @@ public class AuthService {
             user.setEmail(email);
             user.setName((name == null || name.isBlank()) ? email : name);
             user.setGoogleId(googleId);
-            user.setPasswordHash("");
+            user.setPasswordHash("OAUTH_USER_NO_PASSWORD");
             user = userRepository.save(user);
         } else if (user.getGoogleId() == null || user.getGoogleId().isBlank()) {
             user.setGoogleId(googleId);
@@ -186,6 +209,7 @@ public class AuthService {
         }
 
         String token = jwtService.generateToken(user);
+        String refreshToken = jwtService.generateRefreshToken(user);
 
         Map<String, Object> userPayload = new LinkedHashMap<>();
         userPayload.put("id", user.getId().toString());
@@ -198,6 +222,7 @@ public class AuthService {
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("message", "Google login successful");
         response.put("token", token);
+        response.put("refreshToken", refreshToken);
         response.put("user", userPayload);
         return response;
     }

@@ -13,11 +13,22 @@ spec:
     metadata:
       labels:
         app: auth-service
+        tier: backend
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
       containers:
         - name: auth-service
           image: YOUR_ECR_URI/auth-service:latest
           imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
           ports:
             - containerPort: 3005
           env:

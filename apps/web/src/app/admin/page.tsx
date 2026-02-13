@@ -19,7 +19,7 @@ export default function AdminPage() {
     {
       href: "/admin/events",
       label: "이벤트 관리",
-      icon: "&#127915;",
+      icon: "\uD83C\uDFAB",
       description: "이벤트 생성, 수정, 좌석 및 티켓 관리",
       stat: stats.totalEvents,
       statLabel: "개 이벤트",
@@ -27,7 +27,7 @@ export default function AdminPage() {
     {
       href: "/admin/reservations",
       label: "예매 관리",
-      icon: "&#127903;",
+      icon: "\uD83C\uDF9F\uFE0F",
       description: "전체 예매 조회 및 상태 관리",
       stat: stats.totalReservations,
       statLabel: "건 예매",
@@ -35,7 +35,7 @@ export default function AdminPage() {
     {
       href: "/admin/statistics",
       label: "통계",
-      icon: "&#128200;",
+      icon: "\uD83D\uDCC8",
       description: "매출, 예매 현황, 사용자 분석",
       stat: stats.totalRevenue,
       statLabel: "원 매출",
@@ -57,7 +57,7 @@ export default function AdminPage() {
               href={card.href}
               className="group rounded-xl border border-slate-200 bg-white p-5 transition-all hover:border-sky-300 hover:shadow-sm"
             >
-              <div className="text-2xl mb-3" dangerouslySetInnerHTML={{ __html: card.icon }} />
+              <div className="text-2xl mb-3">{card.icon}</div>
               <p className="font-semibold text-slate-900 group-hover:text-sky-600 transition-colors">{card.label}</p>
               <p className="mt-1 text-xs text-slate-500">{card.description}</p>
               {card.stat !== undefined ? (

@@ -20,3 +20,13 @@ export function formatEventDate(d?: string | null): string {
 export function formatPrice(price: number): string {
   return new Intl.NumberFormat("ko-KR").format(price);
 }
+
+export function formatDate(d?: string): string {
+  if (!d) return "";
+  return new Date(d).toLocaleDateString("ko-KR");
+}
+
+export function formatDateTime(d?: string): string {
+  if (!d) return "";
+  return new Date(d).toLocaleString("ko-KR", { dateStyle: "medium", timeStyle: "short" });
+}

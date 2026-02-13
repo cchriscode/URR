@@ -15,5 +15,8 @@ WORKDIR /app
 
 COPY --from=build /workspace/build/libs/*.jar app.jar
 
+RUN addgroup --system --gid 1001 app && adduser --system --uid 1001 --ingroup app app
+USER app
+
 EXPOSE 3001
 ENTRYPOINT ["java", "-jar", "/app/app.jar"]

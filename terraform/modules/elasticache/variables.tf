@@ -18,6 +18,12 @@ variable "eks_node_security_group_id" {
   type        = string
 }
 
+variable "lambda_worker_security_group_id" {
+  description = "Security group ID for Lambda worker (optional, for SQS consumer access to Redis)"
+  type        = string
+  default     = ""
+}
+
 # Engine Configuration
 
 variable "engine_version" {

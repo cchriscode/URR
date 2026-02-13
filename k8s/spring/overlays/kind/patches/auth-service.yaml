@@ -27,3 +27,5 @@ spec:
               value: "kind"
             - name: AUTH_DB_URL
               value: "jdbc:postgresql://postgres-spring:5432/auth_db"
+            - name: ZIPKIN_ENDPOINT
+              value: "http://zipkin-spring:9411/api/v2/spans"

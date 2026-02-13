@@ -43,36 +43,59 @@ export default function QueuePage() {
       });
   }, [eventId]);
 
+  // Track check() response for immediate redirect
+  const [checkResult, setCheckResult] = useState<{ status?: string; queued?: boolean } | null>(null);
+
   // Join queue on mount
   useEffect(() => {
     if (!eventId) return;
-    queueApi.check(eventId).then(() => setJoined(true)).catch(() => setJoined(true));
+    queueApi.check(eventId).then(({ data }) => {
+      // Store entry token as cookie for Lambda@Edge verification
+      if (data?.entryToken) {
+        const isSecure = window.location.protocol === 'https:';
+        document.cookie = `tiketi-entry-token=${data.entryToken}; path=/; max-age=600; SameSite=Strict${isSecure ? '; Secure' : ''}`;
+      }
+      setCheckResult(data);
+      // Only start polling if actually queued
+      if (data?.queued || data?.status === "queued") {
+        setJoined(true);
+      }
+    }).catch(() => {
+      // Don't start polling on failure — show error state instead
+      setCheckResult({ status: "error", queued: false });
+    });
   }, [eventId]);
 
+  // Only poll when actually queued (not when immediately admitted)
   const { status } = useQueuePolling(eventId, joined);
+
+  // Merge check result and polling status for redirect decision
+  const effectiveStatus = status ?? checkResult;
 
   // Auto-redirect when admitted — wait for event data before deciding destination
   useEffect(() => {
-    if (!status) return;
+    if (!effectiveStatus) return;
     if (seatLayoutId === undefined) return; // event detail still loading
-    if (status.status === "active" || (!status.queued && status.status !== "queued")) {
+    if (effectiveStatus.status === "active" || (!effectiveStatus.queued && effectiveStatus.status !== "queued")) {
       if (seatLayoutId) {
         router.replace(`/events/${eventId}/seats`);
       } else {
         router.replace(`/events/${eventId}/book`);
       }
     }
-  }, [status, eventId, router, seatLayoutId]);
+  }, [effectiveStatus, eventId, router, seatLayoutId]);
 
   const hasSeats = Boolean(seatLayoutId);
 
-  const position = status?.position ?? 0;
-  const ahead = status?.peopleAhead ?? (position > 0 ? position - 1 : 0);
-  const behind = status?.peopleBehind ?? 0;
-  const waitTime = formatWaitTime(status?.estimatedWait);
-  const eventTitle = status?.eventInfo?.title;
-  const eventArtist = status?.eventInfo?.artist;
-  const isQueued = status?.queued || status?.status === "queued";
+  const displayStatus = status ?? checkResult;
+  const position = (displayStatus as Record<string, unknown>)?.position as number ?? 0;
+  const ahead = (displayStatus as Record<string, unknown>)?.peopleAhead as number ?? (position > 0 ? position - 1 : 0);
+  const behind = (displayStatus as Record<string, unknown>)?.peopleBehind as number ?? 0;
+  const waitTime = formatWaitTime((displayStatus as Record<string, unknown>)?.estimatedWait as number | undefined);
+  const eventInfo = (displayStatus as Record<string, unknown>)?.eventInfo as Record<string, string> | undefined;
+  const eventTitle = eventInfo?.title;
+  const eventArtist = eventInfo?.artist;
+  const isQueued = displayStatus?.queued || displayStatus?.status === "queued";
 
   return (
     <AuthGuard>
@@ -95,7 +118,7 @@ export default function QueuePage() {
             )}
 
             {isQueued ? (
-              <div className="mt-6 space-y-4">
+              <div className="mt-6 space-y-4" role="status" aria-live="polite" aria-label="대기열 상태">
                 {/* Position */}
                 <div className="rounded-xl bg-sky-50 border border-sky-100 p-4">
                   <p className="text-xs text-sky-600 mb-1">현재 대기 순번</p>
@@ -119,13 +142,13 @@ export default function QueuePage() {
                 </div>
 
                 {/* Progress info */}
-                {status?.currentUsers != null && status?.threshold != null && (
+                {(displayStatus as Record<string, unknown>)?.currentUsers != null && (displayStatus as Record<string, unknown>)?.threshold != null && (
                   <div className="text-xs text-slate-400">
-                    현재 {status.currentUsers.toLocaleString()}명 접속 중 (최대 {status.threshold.toLocaleString()}명)
+                    현재 {((displayStatus as Record<string, unknown>).currentUsers as number).toLocaleString()}명 접속 중 (최대 {((displayStatus as Record<string, unknown>).threshold as number).toLocaleString()}명)
                   </div>
                 )}
               </div>
-            ) : !status ? (
+            ) : !displayStatus ? (
               <p className="mt-6 text-sm text-slate-400">대기열 상태를 확인하고 있습니다...</p>
             ) : null}
           </div>

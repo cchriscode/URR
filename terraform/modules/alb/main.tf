@@ -112,7 +112,8 @@ resource "aws_lb" "main" {
 # ─────────────────────────────────────────────────────────────────────────────
 # Target Group for Gateway Service
 # Architecture: CloudFront → ALB → Gateway-Service (port 3001)
-#              Gateway internally routes to: ticket, payment, stats, auth services
+#              Gateway internally routes to: auth(3005), ticket(3002), catalog(3009),
+#              payment(3003), stats(3004), queue(3007), community(3008)
 # ─────────────────────────────────────────────────────────────────────────────
 
 resource "aws_lb_target_group" "gateway_service" {
@@ -125,7 +126,7 @@ resource "aws_lb_target_group" "gateway_service" {
 
   health_check {
     enabled             = true
-    path                = "/actuator/health"
+    path                = "/health"
     protocol            = "HTTP"
     port                = "traffic-port"
     healthy_threshold   = 2

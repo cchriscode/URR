@@ -25,6 +25,10 @@ COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/node_modules ./node_modules
 
+RUN addgroup --system --gid 1001 app && adduser --system --uid 1001 --ingroup app app
+RUN chown -R app:app /app
+USER app
+
 EXPOSE 3000
 
 CMD ["npm", "run", "start"]

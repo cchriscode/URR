@@ -82,6 +82,20 @@ chmod +x scripts/*.sh
 | `start-all.sh` | `--build`, `--with-frontend` |
 | `cleanup.sh` | `--force` (skip confirmation prompts) |
 
+### Services
+
+| Service | Port | Description |
+|---|---|---|
+| gateway-service | 3001 | API Gateway (external entry point) |
+| auth-service | 3005 | Authentication + JWT |
+| ticket-service | 3002 | Booking, reservations, seats |
+| catalog-service | 3009 | Events, artists, admin |
+| payment-service | 3003 | Payment processing |
+| stats-service | 3004 | Analytics |
+| queue-service | 3007 | Virtual waiting room |
+| community-service | 3008 | News, community |
+| frontend | 3000 | Next.js web app |
+
 Gateway URL: `http://localhost:3001`
 
 Detailed guide: `services-spring/KIND_QUICK_START.md`

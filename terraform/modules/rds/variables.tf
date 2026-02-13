@@ -64,7 +64,7 @@ variable "database_name" {
 variable "additional_databases" {
   description = "List of additional database names (e.g., ['stats_db']). These must be created post-deployment via Flyway or init scripts."
   type        = list(string)
-  default     = ["stats_db"]
+  default     = ["auth_db", "payment_db", "stats_db", "community_db"]
 }
 
 variable "master_username" {
@@ -136,6 +136,12 @@ variable "deletion_protection" {
 }
 
 # RDS Proxy
+
+variable "lambda_worker_security_group_id" {
+  description = "Security group ID for Lambda worker (optional, for SQS consumer access to RDS Proxy)"
+  type        = string
+  default     = ""
+}
 
 variable "enable_rds_proxy" {
   description = "Enable RDS Proxy for connection pooling"

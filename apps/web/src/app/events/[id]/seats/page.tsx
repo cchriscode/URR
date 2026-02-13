@@ -78,14 +78,19 @@ export default function SeatsPage() {
   const [booking, setBooking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [eventTitle, setEventTitle] = useState<string>("");
-  const { status } = useQueuePolling(eventId, !!eventId);
+  // One-time queue guard: check if user is still queued (not continuous polling)
+  const [queueChecked, setQueueChecked] = useState(false);
+  const { status: queueStatus } = useQueuePolling(eventId, !queueChecked);
 
-  // Redirect to queue if user is still queued (not admitted)
   useEffect(() => {
-    if (status?.queued || status?.status === "queued") {
+    if (!queueStatus) return;
+    if (queueStatus.queued || queueStatus.status === "queued") {
       router.replace(`/queue/${eventId}`);
+    } else {
+      // Admitted — stop polling
+      setQueueChecked(true);
     }
-  }, [status, eventId, router]);
+  }, [queueStatus, eventId, router]);
 
   useEffect(() => {
     if (!eventId) return;

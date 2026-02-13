@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { AuthGuard } from "@/components/auth-guard";
-import { paymentsApi } from "@/lib/api-client";
+import { membershipsApi, paymentsApi } from "@/lib/api-client";
 
 const METHODS = [
   { id: "naver_pay", label: "네이버페이", icon: "N", iconCls: "bg-green-500 text-white" },
@@ -28,10 +28,43 @@ export default function MembershipPaymentPage() {
   const [method, setMethod] = useState<MethodId | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [priceLoading, setPriceLoading] = useState(true);
 
   const artistName = searchParams.get("artistName") ?? "아티스트";
-  const price = Number(searchParams.get("price") ?? "30000");
   const artistId = searchParams.get("artistId") ?? "";
+
+  // Fetch the actual price from the backend instead of trusting URL params.
+  // This prevents price manipulation via URL query string editing.
+  const [price, setPrice] = useState<number>(0);
+
+  useEffect(() => {
+    if (!artistId) {
+      // Fallback: if no artistId, use URL param but backend MUST validate during payment
+      const urlPrice = Number(searchParams.get("price") ?? "30000");
+      setPrice(urlPrice);
+      setPriceLoading(false);
+      return;
+    }
+
+    membershipsApi
+      .benefits(artistId)
+      .then((res) => {
+        const data = res.data;
+        const serverPrice =
+          data?.membership_price ?? data?.membershipPrice ?? data?.price;
+        if (serverPrice != null && serverPrice > 0) {
+          setPrice(Number(serverPrice));
+        } else {
+          // Fallback to URL param if benefits endpoint does not include price
+          setPrice(Number(searchParams.get("price") ?? "30000"));
+        }
+      })
+      .catch(() => {
+        // Fallback to URL param on error; backend validates during payment processing
+        setPrice(Number(searchParams.get("price") ?? "30000"));
+      })
+      .finally(() => setPriceLoading(false));
+  }, [artistId, searchParams]);
 
   const handlePay = async () => {
     if (!method || !params.membershipId) return;
@@ -75,6 +108,19 @@ export default function MembershipPaymentPage() {
       setBusy(false);
     }
   };
+
+  if (priceLoading) {
+    return (
+      <AuthGuard>
+        <div className="flex items-center justify-center py-20">
+          <div className="text-center">
+            <div className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-sky-500 border-t-transparent" />
+            <p className="mt-3 text-sm text-slate-500">결제 정보 확인 중...</p>
+          </div>
+        </div>
+      </AuthGuard>
+    );
+  }
 
   return (
     <AuthGuard>

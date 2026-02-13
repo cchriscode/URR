@@ -74,7 +74,9 @@ public class PaymentController {
         @RequestParam(defaultValue = "0") int offset
     ) {
         AuthUser user = jwtTokenParser.requireUser(authorization);
-        return paymentService.myPayments(user.userId(), limit, offset);
+        int safeLimit = Math.min(Math.max(limit, 1), 100);
+        int safeOffset = Math.max(offset, 0);
+        return paymentService.myPayments(user.userId(), safeLimit, safeOffset);
     }
 
     @PostMapping("/process")

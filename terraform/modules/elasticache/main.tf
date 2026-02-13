@@ -16,7 +16,7 @@ resource "aws_security_group" "redis" {
   }
 }
 
-# Allow inbound from EKS nodes only
+# Allow inbound from EKS nodes
 resource "aws_security_group_rule" "redis_ingress_from_eks" {
   type                     = "ingress"
   from_port                = 6379
@@ -25,6 +25,18 @@ resource "aws_security_group_rule" "redis_ingress_from_eks" {
   source_security_group_id = var.eks_node_security_group_id
   security_group_id        = aws_security_group.redis.id
   description              = "Allow Redis from EKS nodes"
+}
+
+# Allow inbound from Lambda worker (ticket-worker processes SQS events)
+resource "aws_security_group_rule" "redis_ingress_from_lambda" {
+  count                    = var.lambda_worker_security_group_id != "" ? 1 : 0
+  type                     = "ingress"
+  from_port                = 6379
+  to_port                  = 6379
+  protocol                 = "tcp"
+  source_security_group_id = var.lambda_worker_security_group_id
+  security_group_id        = aws_security_group.redis.id
+  description              = "Allow Redis from Lambda worker"
 }
 
 # ─────────────────────────────────────────────────────────────────────────────

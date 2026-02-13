@@ -4,7 +4,7 @@ import { FormEvent, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { authApi } from "@/lib/api-client";
-import { setToken, setUser } from "@/lib/storage";
+import { setUser } from "@/lib/storage";
 export default function RegisterPage() {
   const router = useRouter();
   const [form, setForm] = useState({ email: "", password: "", name: "", phone: "" });
@@ -17,7 +17,6 @@ export default function RegisterPage() {
     setError(null);
     try {
       const { data } = await authApi.register(form);
-      setToken(data.token);
       setUser(data.user);
       router.push("/");
     } catch (err: unknown) {
@@ -28,7 +27,7 @@ export default function RegisterPage() {
         (resp?.status === 409
           ? "이미 등록된 이메일입니다."
           : resp?.status === 400
-          ? "입력 정보를 확인해주세요. (비밀번호 6자 이상)"
+          ? "입력 정보를 확인해주세요. (비밀번호 8자 이상)"
           : `회원가입 실패 (${resp?.status ?? "network error"})`);
       setError(msg);
     } finally {
@@ -71,11 +70,11 @@ export default function RegisterPage() {
             <input
               className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
               type="password"
-              placeholder="6자 이상"
+              placeholder="8자 이상"
               value={form.password}
               onChange={(e) => setForm({ ...form, password: e.target.value })}
               required
-              minLength={6}
+              minLength={8}
             />
           </div>
           <div>

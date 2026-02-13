@@ -33,6 +33,9 @@ SERVICES=(
   "ticket-service:tiketi-spring-ticket-service:local"
   "payment-service:tiketi-spring-payment-service:local"
   "stats-service:tiketi-spring-stats-service:local"
+  "queue-service:tiketi-spring-queue-service:local"
+  "community-service:tiketi-spring-community-service:local"
+  "catalog-service:tiketi-spring-catalog-service:local"
 )
 
 for entry in "${SERVICES[@]}"; do

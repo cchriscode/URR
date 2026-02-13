@@ -12,5 +12,12 @@ resources:
   - stats-service/service.yaml
   - auth-service/deployment.yaml
   - auth-service/service.yaml
+  - queue-service/deployment.yaml
+  - queue-service/service.yaml
+  - catalog-service/deployment.yaml
+  - catalog-service/service.yaml
+  - community-service/deployment.yaml
+  - community-service/service.yaml
   - frontend/deployment.yaml
   - frontend/service.yaml
+  - network-policies.yaml

@@ -1,0 +1,27 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: tiketi-spring
+
+resources:
+  - ../../base
+  - pdb.yaml
+  - hpa.yaml
+  - kafka.yaml
+  - redis.yaml
+
+configMapGenerator:
+  - name: spring-prod-config
+    envs:
+      - config.env
+
+secretGenerator:
+  - name: spring-prod-secret
+    envs:
+      - secrets.env
+
+generatorOptions:
+  disableNameSuffixHash: true
+
+patches:
+  - path: patches/replicas.yaml
+  - path: patches/services-env.yaml

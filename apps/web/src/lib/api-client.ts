@@ -1,17 +1,28 @@
 "use client";
 
 import axios from "axios";
-import { clearAuth, getToken } from "@/lib/storage";
+import type { AxiosRequestConfig } from "axios";
+import { clearAuth } from "@/lib/storage";
 import type { QueueStatus } from "@/lib/types";
 
 function resolveBaseUrl() {
+  // Build-time env var (baked into JS bundle by Next.js)
   if (process.env.NEXT_PUBLIC_API_URL) {
     return process.env.NEXT_PUBLIC_API_URL;
   }
+
+  // SSR fallback (server-side rendering without env var)
   if (typeof window === "undefined") {
     return "http://localhost:3001";
   }
 
+  // Runtime: check if window.__API_URL is injected (K8s environments)
+  const w = window as unknown as Record<string, unknown>;
+  if (typeof w.__API_URL === "string" && w.__API_URL) {
+    return w.__API_URL;
+  }
+
+  // Local development: auto-detect gateway port
   const hostname = window.location.hostname;
   if (hostname === "localhost" || hostname === "127.0.0.1") {
     return "http://localhost:3001";
@@ -19,31 +30,103 @@ function resolveBaseUrl() {
   if (/^(172\.|192\.168\.|10\.)/.test(hostname)) {
     return `http://${hostname}:3001`;
   }
+
+  // Production: same-origin relative path (CloudFront/ALB reverse proxy)
   return "";
 }
 
 const http = axios.create({
-  baseURL: `${resolveBaseUrl()}/api`,
+  baseURL: `${resolveBaseUrl()}/api/v1`,
   headers: { "Content-Type": "application/json" },
+  withCredentials: true,
+  timeout: 15000,
 });
 
+function getCookie(name: string): string | null {
+  if (typeof document === "undefined") return null;
+  const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+// --- Silent refresh logic ---
+let isRefreshing = false;
+let failedQueue: Array<{
+  resolve: (value: unknown) => void;
+  reject: (reason: unknown) => void;
+  config: AxiosRequestConfig;
+}> = [];
+
+function processQueue(success: boolean) {
+  failedQueue.forEach(({ resolve, reject, config }) => {
+    if (success) {
+      resolve(http(config));
+    } else {
+      reject(new Error("Session expired"));
+    }
+  });
+  failedQueue = [];
+}
+
 http.interceptors.request.use((config) => {
-  const token = getToken();
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+  // Attach queue entry token for Lambda@Edge and Gateway VWR verification
+  const entryToken = getCookie("tiketi-entry-token");
+  if (entryToken) {
+    config.headers["x-queue-entry-token"] = entryToken;
   }
   return config;
 });
 
 http.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      clearAuth();
-      if (typeof window !== "undefined") {
-        window.location.href = "/login";
+  async (error) => {
+    const originalRequest = error.config;
+
+    // Only attempt refresh on 401 and not already retried
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      // Don't attempt refresh for auth endpoints themselves
+      const url = originalRequest.url || "";
+      if (url.includes("/auth/login") || url.includes("/auth/register") || url.includes("/auth/refresh")) {
+        return Promise.reject(error);
+      }
+
+      if (isRefreshing) {
+        // Queue this request while refresh is in progress
+        return new Promise((resolve, reject) => {
+          failedQueue.push({ resolve, reject, config: originalRequest });
+        });
+      }
+
+      originalRequest._retry = true;
+      isRefreshing = true;
+
+      try {
+        await http.post("/auth/refresh");
+        processQueue(true);
+        // Retry the original request (new cookie is set automatically)
+        return http(originalRequest);
+      } catch {
+        processQueue(false);
+        clearAuth();
+        if (typeof window !== "undefined") {
+          window.location.href = "/login";
+        }
+        return Promise.reject(error);
+      } finally {
+        isRefreshing = false;
       }
     }
+
+    // 429 Too Many Requests: retry with exponential backoff (up to 2 retries)
+    if (error.response?.status === 429) {
+      const retryCount = originalRequest._retryCount ?? 0;
+      if (retryCount < 2) {
+        originalRequest._retryCount = retryCount + 1;
+        const delay = Math.min(1000 * Math.pow(2, retryCount), 4000);
+        await new Promise((r) => setTimeout(r, delay));
+        return http(originalRequest);
+      }
+    }
+
     return Promise.reject(error);
   }
 );
@@ -53,6 +136,8 @@ export const authApi = {
     http.post("/auth/register", payload),
   login: (payload: { email: string; password: string }) => http.post("/auth/login", payload),
   me: () => http.get("/auth/me"),
+  refresh: () => http.post("/auth/refresh"),
+  logout: () => http.post("/auth/logout"),
 };
 
 export const eventsApi = {

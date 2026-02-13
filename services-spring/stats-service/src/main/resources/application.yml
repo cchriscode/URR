@@ -1,8 +1,19 @@
 spring:
   application:
     name: stats-service
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: stats-service-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "com.tiketi.paymentservice.messaging.event,com.tiketi.ticketservice.messaging.event,java.util,java.lang"
+        spring.json.use.type.headers: false
+        spring.json.value.default.type: java.util.LinkedHashMap
   datasource:
-    url: ${STATS_DB_URL:jdbc:postgresql://localhost:5432/stats_db}
+    url: ${STATS_DB_URL:jdbc:postgresql://localhost:5436/stats_db}
     username: ${STATS_DB_USERNAME:tiketi_user}
     password: ${STATS_DB_PASSWORD:tiketi_password}
   jpa:
@@ -17,7 +28,26 @@ server:
   port: ${PORT:3004}
 
 management:
+  server:
+    port: ${MANAGEMENT_PORT:}
+  endpoint:
+    health:
+      show-details: always
+      show-components: always
+  health:
+    db:
+      enabled: true
   endpoints:
     web:
       exposure:
         include: health,info,prometheus
+  tracing:
+    sampling:
+      probability: ${TRACING_SAMPLING_PROBABILITY:1.0}
+  zipkin:
+    tracing:
+      endpoint: ${ZIPKIN_ENDPOINT:http://localhost:9411/api/v2/spans}
+
+logging:
+  pattern:
+    level: "%5p [${spring.application.name:},%X{traceId:-},%X{spanId:-}]"

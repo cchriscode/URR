@@ -2,23 +2,7 @@
 
 import type { AuthUser } from "@/lib/types";
 
-const TOKEN_KEY = "token";
 const USER_KEY = "user";
-
-export function getToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem(TOKEN_KEY);
-}
-
-export function setToken(token: string): void {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(TOKEN_KEY, token);
-}
-
-export function clearToken(): void {
-  if (typeof window === "undefined") return;
-  localStorage.removeItem(TOKEN_KEY);
-}
 
 export function getUser(): AuthUser | null {
   if (typeof window === "undefined") return null;
@@ -42,6 +26,5 @@ export function clearUser(): void {
 }
 
 export function clearAuth(): void {
-  clearToken();
   clearUser();
 }

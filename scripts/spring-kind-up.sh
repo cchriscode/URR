@@ -66,10 +66,14 @@ NAMESPACE="tiketi-spring"
 DEPLOYMENTS=(
   postgres-spring
   dragonfly-spring
+  kafka-spring
   auth-service
   ticket-service
+  catalog-service
   payment-service
   stats-service
+  queue-service
+  community-service
   gateway-service
   frontend
   loki

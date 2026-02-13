@@ -9,7 +9,6 @@ import { getUser } from "@/lib/storage";
 export default function NewsEditPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const user = getUser();
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [isPinned, setIsPinned] = useState(false);
@@ -19,6 +18,7 @@ export default function NewsEditPage() {
 
   useEffect(() => {
     if (!params.id) return;
+    const user = getUser();
     newsApi
       .byId(params.id)
       .then((res) => {
@@ -38,7 +38,7 @@ export default function NewsEditPage() {
       })
       .catch(() => router.replace("/news"))
       .finally(() => setLoading(false));
-  }, [params.id, router, user]);
+  }, [params.id, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,7 +52,7 @@ export default function NewsEditPage() {
       await newsApi.update(params.id, {
         title: title.trim(),
         content: content.trim(),
-        is_pinned: user?.role === "admin" ? isPinned : undefined,
+        is_pinned: getUser()?.role === "admin" ? isPinned : undefined,
       });
       router.push(`/news/${params.id}`);
     } catch {
@@ -95,7 +95,7 @@ export default function NewsEditPage() {
             />
           </div>
 
-          {user?.role === "admin" && (
+          {getUser()?.role === "admin" && (
             <label className="flex items-center gap-2 text-sm text-slate-700">
               <input
                 type="checkbox"

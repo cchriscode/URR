@@ -17,7 +17,7 @@ public class JwtTokenParser {
 
     private final SecretKey key;
 
-    public JwtTokenParser(@Value("${JWT_SECRET:dev-only-secret-change-in-production-f8a7b6c5d4e3f2a1}") String secret) {
+    public JwtTokenParser(@Value("${JWT_SECRET}") String secret) {
         this.key = buildKey(secret);
     }
 
@@ -46,9 +46,7 @@ public class JwtTokenParser {
         } catch (Exception ignored) {
             byte[] raw = secret.getBytes(StandardCharsets.UTF_8);
             if (raw.length < 32) {
-                byte[] padded = new byte[32];
-                System.arraycopy(raw, 0, padded, 0, raw.length);
-                return Keys.hmacShaKeyFor(padded);
+                throw new IllegalArgumentException("JWT_SECRET must be at least 32 bytes");
             }
             return Keys.hmacShaKeyFor(raw);
         }

@@ -42,7 +42,7 @@ sleep 1
 # ── Check port availability ───────────────────────────────────────
 
 echo -e "${CYAN}Checking port availability ...${RESET}"
-REQUIRED_PORTS=(3000 3001 3002 3003 3004 3005)
+REQUIRED_PORTS=(3000 3001 3002 3003 3004 3005 3007 3008)
 PORTS_IN_USE=()
 
 for port in "${REQUIRED_PORTS[@]}"; do
@@ -75,6 +75,8 @@ FORWARDS=(
   "Ticket:svc/ticket-service:3002:3002"
   "Payment:svc/payment-service:3003:3003"
   "Stats:svc/stats-service:3004:3004"
+  "Queue:svc/queue-service:3007:3007"
+  "Community:svc/community-service:3008:3008"
   "Frontend:svc/frontend-service:3000:3000"
 )
 
@@ -111,9 +113,8 @@ for fwd in "${FORWARDS[@]}"; do
   REST2="${REST#*:}"
   LOCAL_PORT="${REST2%%:*}"
 
-  # Try /actuator/health then /health
-  if curl -sf --max-time 3 "http://localhost:$LOCAL_PORT/actuator/health" >/dev/null 2>&1 \
-    || curl -sf --max-time 3 "http://localhost:$LOCAL_PORT/health" >/dev/null 2>&1; then
+  # Health check via custom /health endpoint (actuator is on management port 9090)
+  if curl -sf --max-time 3 "http://localhost:$LOCAL_PORT/health" >/dev/null 2>&1; then
     echo -e "${GREEN}  OK: $NAME (port $LOCAL_PORT)${RESET}"
   else
     echo -e "${YELLOW}  WARN: $NAME (port $LOCAL_PORT) - not responding yet${RESET}"
@@ -141,6 +142,8 @@ echo -e "${WHITE}  Auth Service:    http://localhost:3005${RESET}"
 echo -e "${WHITE}  Ticket Service:  http://localhost:3002${RESET}"
 echo -e "${WHITE}  Payment Service: http://localhost:3003${RESET}"
 echo -e "${WHITE}  Stats Service:   http://localhost:3004${RESET}"
+echo -e "${WHITE}  Queue Service:   http://localhost:3007${RESET}"
+echo -e "${WHITE}  Community Svc:   http://localhost:3008${RESET}"
 echo ""
 echo -e "${GRAY}  Port-forwards run in the background.${RESET}"
 echo -e "${GRAY}  To stop: pkill -f 'kubectl port-forward'${RESET}"

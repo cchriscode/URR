@@ -20,7 +20,13 @@ function PaymentSuccessContent() {
     paymentsApi
       .confirm({ paymentKey, orderId, amount: Number(amount) })
       .then(() => setConfirming(false))
-      .catch(() => {
+      .catch((err: unknown) => {
+        const resp = (err as { response?: { status?: number; data?: { message?: string } } }).response;
+        // Already confirmed (e.g. page refresh) — treat as success
+        if (resp?.status === 400 && resp?.data?.message?.includes("already confirmed")) {
+          setConfirming(false);
+          return;
+        }
         setError("결제 확인에 실패했습니다. 고객센터에 문의해주세요.");
         setConfirming(false);
       });

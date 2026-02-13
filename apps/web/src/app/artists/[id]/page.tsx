@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { artistsApi, membershipsApi } from "@/lib/api-client";
-import { getToken, getUser } from "@/lib/storage";
-import { formatPrice } from "@/lib/format";
+import { getUser } from "@/lib/storage";
+import { formatDate, formatDateTime, formatPrice } from "@/lib/format";
 import type { Artist, ArtistMembership, MembershipPointLog, MembershipTier } from "@/lib/types";
 
 const tierConfig: Record<MembershipTier, { label: string; emoji: string; cls: string; border: string }> = {
@@ -38,21 +39,10 @@ interface ArtistEvent {
   pre_sale_schedule?: PreSaleSchedule;
 }
 
-function formatDateTime(d?: string) {
-  if (!d) return "";
-  return new Date(d).toLocaleString("ko-KR", { dateStyle: "medium", timeStyle: "short" });
-}
-
-function formatDate(d?: string) {
-  if (!d) return "";
-  return new Date(d).toLocaleDateString("ko-KR");
-}
-
 export default function ArtistDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const token = getToken();
-  const user = getUser();
+  const artistId = params.id ?? "";
   const [artist, setArtist] = useState<Artist | null>(null);
   const [memberCount, setMemberCount] = useState(0);
   const [events, setEvents] = useState<ArtistEvent[]>([]);
@@ -63,40 +53,56 @@ export default function ArtistDetailPage() {
   const [subError, setSubError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!params.id) return;
+    if (!artistId) return;
+    let cancelled = false;
+    const loggedIn = !!getUser();
+    setLoading(true);
 
-    const fetchArtist = artistsApi.detail(params.id).then((res) => {
+    const fetchArtist = artistsApi.detail(artistId).then((res) => {
+      if (cancelled) return;
       setArtist(res.data.artist ?? null);
       setMemberCount(res.data.memberCount ?? 0);
       setEvents(res.data.events ?? []);
     });
 
-    const fetchMembership = token
-      ? membershipsApi.myForArtist(params.id).then((res) => {
+    const fetchMembership = loggedIn
+      ? membershipsApi.myForArtist(artistId).then((res) => {
+          if (cancelled) return;
           const m = res.data.membership;
-          if (m && m.id) setMembership(m);
+          if (m && m.id) {
+            setMembership(m);
+          } else {
+            setMembership(null);
+          }
           setPointHistory(res.data.pointHistory ?? []);
-        }).catch(() => {})
+        }).catch(() => {
+          if (cancelled) return;
+          setMembership(null);
+          setPointHistory([]);
+        })
       : Promise.resolve();
 
     Promise.all([fetchArtist, fetchMembership])
       .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [params.id, token]);
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [artistId]);
 
   const handleSubscribe = async () => {
-    if (!params.id) return;
+    if (!artistId) return;
     setSubscribing(true);
     setSubError(null);
     try {
-      const res = await membershipsApi.subscribe(params.id);
+      const res = await membershipsApi.subscribe(artistId);
       const data = res.data;
       if (data.membershipId && data.status === "pending") {
-        // Redirect to payment page
         const qs = new URLSearchParams({
           artistName: data.artistName ?? artist?.name ?? "",
           price: String(data.price ?? artist?.membership_price ?? 30000),
-          artistId: params.id,
+          artistId,
         });
         router.push(`/membership-payment/${data.membershipId}?${qs.toString()}`);
       } else if (data.membership) {
@@ -162,9 +168,9 @@ export default function ArtistDetailPage() {
 
       {/* Artist header */}
       <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
-        <div className="h-48 bg-slate-100 flex items-center justify-center overflow-hidden">
+        <div className="relative h-48 bg-slate-100 flex items-center justify-center overflow-hidden">
           {artist.image_url ? (
-            <img src={artist.image_url} alt={artist.name} className="w-full h-full object-cover" />
+            <Image src={artist.image_url} alt={artist.name} className="w-full h-full object-cover" fill sizes="100vw" />
           ) : (
             <span className="text-6xl font-bold text-slate-200">{artist.name.charAt(0)}</span>
           )}
@@ -185,7 +191,7 @@ export default function ArtistDetailPage() {
       <div className="rounded-2xl border border-slate-200 bg-white p-6 space-y-4">
         <h2 className="text-lg font-bold text-slate-900">멤버십</h2>
 
-        {!token ? (
+        {!getUser() ? (
           <div className="rounded-lg bg-slate-50 border border-slate-200 p-4 text-center">
             <p className="text-sm text-slate-500 mb-2">로그인 후 멤버십을 가입할 수 있습니다</p>
             <Link href="/login" className="text-sm text-sky-500 hover:text-sky-600 font-medium">

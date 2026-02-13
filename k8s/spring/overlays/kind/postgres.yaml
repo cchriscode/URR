@@ -8,6 +8,7 @@ data:
     CREATE DATABASE ticket_db;
     CREATE DATABASE payment_db;
     CREATE DATABASE stats_db;
+    CREATE DATABASE community_db;
 ---
 apiVersion: apps/v1
 kind: Deployment

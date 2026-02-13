@@ -53,7 +53,7 @@ if ($javaStopped -gt 0) {
 }
 
 # Stop Gradle daemons
-$services = @("auth-service", "ticket-service", "payment-service", "stats-service", "gateway-service")
+$services = @("auth-service", "ticket-service", "payment-service", "stats-service", "gateway-service", "queue-service", "community-service")
 foreach ($svc in $services) {
     $gradlew = Join-Path $repoRoot "services-spring\$svc\gradlew.bat"
     if (Test-Path $gradlew) {
@@ -133,7 +133,10 @@ if ($deleteImages -eq "y" -or $deleteImages -eq "Y") {
         "tiketi-spring-auth-service:local",
         "tiketi-spring-ticket-service:local",
         "tiketi-spring-payment-service:local",
-        "tiketi-spring-stats-service:local"
+        "tiketi-spring-stats-service:local",
+        "tiketi-spring-queue-service:local",
+        "tiketi-spring-community-service:local",
+        "tiketi-spring-frontend:local"
     )
 
     foreach ($image in $images) {

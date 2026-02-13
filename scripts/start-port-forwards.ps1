@@ -39,7 +39,7 @@ Start-Sleep -Seconds 1
 # ── Check port availability ──────────────────────────────────────
 
 Write-Host "Checking port availability ..." -ForegroundColor Cyan
-$requiredPorts = @(3000, 3001, 3002, 3003, 3004, 3005)
+$requiredPorts = @(3000, 3001, 3002, 3003, 3004, 3005, 3007, 3008)
 $portsInUse = @()
 
 foreach ($port in $requiredPorts) {
@@ -67,12 +67,14 @@ Write-Host "Starting port-forwards ..." -ForegroundColor Green
 Write-Host ""
 
 $forwards = @(
-    @{ Name = "Gateway";  Service = "svc/gateway-service";   LocalPort = 3001; RemotePort = 3001 },
-    @{ Name = "Auth";     Service = "svc/auth-service";      LocalPort = 3005; RemotePort = 3005 },
-    @{ Name = "Ticket";   Service = "svc/ticket-service";    LocalPort = 3002; RemotePort = 3002 },
-    @{ Name = "Payment";  Service = "svc/payment-service";   LocalPort = 3003; RemotePort = 3003 },
-    @{ Name = "Stats";    Service = "svc/stats-service";     LocalPort = 3004; RemotePort = 3004 },
-    @{ Name = "Frontend"; Service = "svc/frontend-service";  LocalPort = 3000; RemotePort = 3000 }
+    @{ Name = "Gateway";    Service = "svc/gateway-service";    LocalPort = 3001; RemotePort = 3001 },
+    @{ Name = "Auth";       Service = "svc/auth-service";       LocalPort = 3005; RemotePort = 3005 },
+    @{ Name = "Ticket";     Service = "svc/ticket-service";     LocalPort = 3002; RemotePort = 3002 },
+    @{ Name = "Payment";    Service = "svc/payment-service";    LocalPort = 3003; RemotePort = 3003 },
+    @{ Name = "Stats";      Service = "svc/stats-service";      LocalPort = 3004; RemotePort = 3004 },
+    @{ Name = "Queue";      Service = "svc/queue-service";      LocalPort = 3007; RemotePort = 3007 },
+    @{ Name = "Community";  Service = "svc/community-service";  LocalPort = 3008; RemotePort = 3008 },
+    @{ Name = "Frontend";   Service = "svc/frontend-service";   LocalPort = 3000; RemotePort = 3000 }
 )
 
 $index = 1
@@ -92,16 +94,11 @@ Start-Sleep -Seconds 5
 $allHealthy = $true
 foreach ($fwd in $forwards) {
     try {
-        $response = Invoke-WebRequest -Uri "http://localhost:$($fwd.LocalPort)/actuator/health" -UseBasicParsing -TimeoutSec 3 -ErrorAction Stop
+        $response = Invoke-WebRequest -Uri "http://localhost:$($fwd.LocalPort)/health" -UseBasicParsing -TimeoutSec 3 -ErrorAction Stop
         Write-Host "  OK: $($fwd.Name) (port $($fwd.LocalPort))" -ForegroundColor Green
     } catch {
-        try {
-            $response = Invoke-WebRequest -Uri "http://localhost:$($fwd.LocalPort)/health" -UseBasicParsing -TimeoutSec 3 -ErrorAction Stop
-            Write-Host "  OK: $($fwd.Name) (port $($fwd.LocalPort))" -ForegroundColor Green
-        } catch {
-            Write-Host "  WARN: $($fwd.Name) (port $($fwd.LocalPort)) - not responding yet" -ForegroundColor Yellow
-            $allHealthy = $false
-        }
+        Write-Host "  WARN: $($fwd.Name) (port $($fwd.LocalPort)) - not responding yet" -ForegroundColor Yellow
+        $allHealthy = $false
     }
 }
 
@@ -125,6 +122,8 @@ Write-Host "  Auth Service:    http://localhost:3005" -ForegroundColor White
 Write-Host "  Ticket Service:  http://localhost:3002" -ForegroundColor White
 Write-Host "  Payment Service: http://localhost:3003" -ForegroundColor White
 Write-Host "  Stats Service:   http://localhost:3004" -ForegroundColor White
+Write-Host "  Queue Service:   http://localhost:3007" -ForegroundColor White
+Write-Host "  Community Svc:   http://localhost:3008" -ForegroundColor White
 Write-Host ""
 Write-Host "  Port-forwards run in minimized PowerShell windows." -ForegroundColor Gray
 Write-Host "  Close those windows to stop port-forwarding." -ForegroundColor Gray

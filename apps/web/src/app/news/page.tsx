@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { newsApi } from "@/lib/api-client";
-import { getToken } from "@/lib/storage";
+import { getUser } from "@/lib/storage";
 
 interface NewsItem {
   id: string;
@@ -18,7 +18,7 @@ interface NewsItem {
 export default function NewsPage() {
   const [items, setItems] = useState<NewsItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const token = getToken();
+  const user = getUser();
 
   useEffect(() => {
     newsApi
@@ -32,7 +32,7 @@ export default function NewsPage() {
     <div className="max-w-2xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-slate-900">공지사항</h1>
-        {token && (
+        {user && (
           <Link
             href="/news/create"
             className="rounded-lg bg-sky-500 px-4 py-2 text-sm font-medium text-white hover:bg-sky-600 transition-colors"

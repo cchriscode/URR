@@ -62,6 +62,17 @@ export function useCountdown(
   useEffect(() => {
     if (!targetDate || !ready) return;
 
+    // If already expired at mount/effect time, mark it and skip the interval.
+    // onExpire should only fire on a live active→expired transition while the
+    // user is on the page — NOT on remount with stale data.  This prevents an
+    // infinite loop: onExpire→fetchEvents→remount→onExpire→…
+    const initial = getTimeLeft();
+    if (initial.isExpired) {
+      expiredRef.current = true;
+      setTimeLeft(initial);
+      return;
+    }
+
     const tick = () => {
       const tl = getTimeLeft();
       setTimeLeft(tl);

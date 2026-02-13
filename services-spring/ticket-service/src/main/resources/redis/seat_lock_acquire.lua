@@ -1,8 +1,10 @@
--- KEYS[1] = seat:{eventId}:{seatId}  (HASH: status, userId, token, heldAt)
+-- KEYS[1] = seat:{eventId}:{seatId}      (HASH: status, userId, token, heldAt)
+-- KEYS[2] = seat:{eventId}:{seatId}:token_seq  (fencing token counter)
 -- ARGV[1] = userId
 -- ARGV[2] = ttl (seconds)
 
 local seatKey = KEYS[1]
+local tokenSeqKey = KEYS[2]
 local userId = ARGV[1]
 local ttl = tonumber(ARGV[2])
 
@@ -20,14 +22,14 @@ if status == 'HELD' or status == 'CONFIRMED' then
 end
 
 -- 2. Generate monotonically increasing fencing token
-local token = redis.call('INCR', seatKey .. ':token_seq')
+local token = redis.call('INCR', tokenSeqKey)
 
 -- 3. Atomic state transition: AVAILABLE -> HELD
 redis.call('HMSET', seatKey,
     'status', 'HELD',
     'userId', userId,
     'token', token,
-    'heldAt', redis.call('TIME')[1]
+    'heldAt', tostring(redis.call('TIME')[1])
 )
 redis.call('EXPIRE', seatKey, ttl)
 

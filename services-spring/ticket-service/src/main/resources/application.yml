@@ -1,8 +1,25 @@
 spring:
   application:
     name: ticket-service
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      acks: all
+      properties:
+        spring.json.add.type.headers: false
+    consumer:
+      group-id: ticket-service-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "com.tiketi.paymentservice.messaging.event,com.tiketi.ticketservice.messaging.event,java.util,java.lang"
+        spring.json.use.type.headers: false
+        spring.json.value.default.type: java.util.LinkedHashMap
   datasource:
-    url: ${TICKET_DB_URL:jdbc:postgresql://localhost:5432/ticket_db}
+    url: ${TICKET_DB_URL:jdbc:postgresql://localhost:5434/ticket_db}
     username: ${TICKET_DB_USERNAME:tiketi_user}
     password: ${TICKET_DB_PASSWORD:tiketi_password}
   jpa:
@@ -21,31 +38,68 @@ server:
   port: ${PORT:3002}
 
 management:
+  server:
+    port: ${MANAGEMENT_PORT:}
+  endpoint:
+    health:
+      show-details: always
+      show-components: always
+  health:
+    db:
+      enabled: true
+    redis:
+      enabled: true
   endpoints:
     web:
       exposure:
         include: health,info,prometheus
+  tracing:
+    sampling:
+      probability: ${TRACING_SAMPLING_PROBABILITY:1.0}
+  zipkin:
+    tracing:
+      endpoint: ${ZIPKIN_ENDPOINT:http://localhost:9411/api/v2/spans}
+
+logging:
+  pattern:
+    level: "%5p [${spring.application.name:},%X{traceId:-},%X{spanId:-}]"
 
 reservation:
   cleanup:
     interval-ms: ${RESERVATION_CLEANUP_INTERVAL_MS:30000}
+  reconciliation:
+    interval-ms: ${RESERVATION_RECONCILIATION_INTERVAL_MS:300000}
 event:
   status:
     interval-ms: ${EVENT_STATUS_INTERVAL_MS:60000}
-queue:
-  admission:
-    interval-ms: ${QUEUE_ADMISSION_INTERVAL_MS:1000}
-    batch-size: ${QUEUE_ADMISSION_BATCH_SIZE:100}
-  stale-cleanup:
-    interval-ms: ${QUEUE_STALE_CLEANUP_INTERVAL_MS:30000}
-  entry-token:
-    secret: ${QUEUE_ENTRY_TOKEN_SECRET:dev-secret-key-change-in-production-min-32-chars}
-    ttl-seconds: ${QUEUE_ENTRY_TOKEN_TTL_SECONDS:600}
-
 internal:
   auth-service-url: ${AUTH_SERVICE_URL:http://localhost:3005}
+
+kafka:
+  topic:
+    replication-factor: ${KAFKA_TOPIC_REPLICATION_FACTOR:1}
 
 aws:
   region: ${AWS_REGION:}
   s3:
     bucket: ${AWS_S3_BUCKET:}
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      internalService:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+        slow-call-duration-threshold: 3s
+        slow-call-rate-threshold: 80
+  retry:
+    instances:
+      internalService:
+        max-attempts: 3
+        wait-duration: 500ms
+        exponential-backoff-multiplier: 2
+        retry-exceptions:
+          - org.springframework.web.client.ResourceAccessException
+          - java.net.ConnectException

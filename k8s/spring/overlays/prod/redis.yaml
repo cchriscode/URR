@@ -1,0 +1,206 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-cluster-config
+data:
+  redis.conf: |
+    cluster-enabled yes
+    cluster-config-file nodes.conf
+    cluster-node-timeout 5000
+    appendonly yes
+    appendfsync everysec
+    maxmemory 200mb
+    maxmemory-policy allkeys-lru
+    save 900 1
+    save 300 10
+    save 60 10000
+    tcp-keepalive 60
+    hz 10
+    dynamic-hz yes
+    protected-mode no
+    bind 0.0.0.0
+    port 6379
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-cluster
+  labels:
+    app: redis-cluster
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  ports:
+    - name: client
+      port: 6379
+      targetPort: 6379
+    - name: gossip
+      port: 16379
+      targetPort: 16379
+  selector:
+    app: redis-cluster
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-cluster-external
+  labels:
+    app: redis-cluster
+spec:
+  type: ClusterIP
+  ports:
+    - name: client
+      port: 6379
+      targetPort: 6379
+  selector:
+    app: redis-cluster
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis-cluster
+  labels:
+    app: redis-cluster
+spec:
+  serviceName: redis-cluster
+  replicas: 6
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      app: redis-cluster
+  template:
+    metadata:
+      labels:
+        app: redis-cluster
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - redis-cluster
+                topologyKey: kubernetes.io/hostname
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: redis
+          image: redis:7.2-alpine
+          ports:
+            - containerPort: 6379
+              name: client
+            - containerPort: 16379
+              name: gossip
+          command:
+            - redis-server
+            - /etc/redis/redis.conf
+            - --cluster-announce-ip
+            - $(POD_IP)
+          env:
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: config
+              mountPath: /etc/redis
+          readinessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 3
+      volumes:
+        - name: config
+          configMap:
+            name: redis-cluster-config
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 1Gi
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: redis-cluster-init
+  labels:
+    app: redis-cluster-init
+spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 5
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: cluster-init
+          image: redis:7.2-alpine
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+
+              echo "Waiting for all 6 Redis pods to become ready..."
+              for i in 0 1 2 3 4 5; do
+                HOST="redis-cluster-${i}.redis-cluster"
+                until redis-cli -h "$HOST" -p 6379 ping 2>/dev/null | grep -q PONG; do
+                  echo "Waiting for ${HOST}..."
+                  sleep 3
+                done
+                echo "${HOST} is ready"
+              done
+
+              echo "Checking if cluster is already formed..."
+              CLUSTER_INFO=$(redis-cli -h redis-cluster-0.redis-cluster cluster info 2>/dev/null || true)
+              if echo "$CLUSTER_INFO" | grep -q "cluster_state:ok"; then
+                echo "Cluster already formed. Exiting."
+                exit 0
+              fi
+
+              echo "Resolving pod IPs..."
+              NODES=""
+              for i in 0 1 2 3 4 5; do
+                HOST="redis-cluster-${i}.redis-cluster"
+                IP=$(getent hosts "$HOST" | awk '{ print $1 }')
+                NODES="${NODES} ${IP}:6379"
+              done
+
+              echo "Creating Redis Cluster with nodes: ${NODES}"
+              echo "yes" | redis-cli --cluster create ${NODES} --cluster-replicas 1
+
+              echo "Verifying cluster..."
+              redis-cli -h redis-cluster-0.redis-cluster cluster info
+              redis-cli -h redis-cluster-0.redis-cluster cluster nodes
+              echo "Redis Cluster initialization complete."
