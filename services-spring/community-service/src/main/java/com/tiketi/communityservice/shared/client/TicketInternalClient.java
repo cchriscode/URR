@@ -32,19 +32,28 @@ public class TicketInternalClient {
     }
 
     @CircuitBreaker(name = "internalService", fallbackMethod = "awardMembershipPointsFallback")
-    // No @Retry: POST is not idempotent — retry could cause duplicate point awards
     public void awardMembershipPoints(String userId, String actionType, int points,
                                        String description, UUID referenceId) {
+        awardMembershipPoints(userId, null, actionType, points, description, referenceId);
+    }
+
+    @CircuitBreaker(name = "internalService", fallbackMethod = "awardMembershipPointsArtistFallback")
+    // No @Retry: POST is not idempotent — retry could cause duplicate point awards
+    public void awardMembershipPoints(String userId, UUID artistId, String actionType,
+                                       int points, String description, UUID referenceId) {
+        Map<String, Object> body = new java.util.HashMap<>();
+        body.put("userId", userId);
+        body.put("actionType", actionType);
+        body.put("points", points);
+        body.put("description", description);
+        body.put("referenceId", referenceId);
+        if (artistId != null) {
+            body.put("artistId", artistId);
+        }
         restClient.post()
             .uri("/internal/memberships/award-points")
             .header("Authorization", "Bearer " + internalApiToken)
-            .body(Map.of(
-                "userId", userId,
-                "actionType", actionType,
-                "points", points,
-                "description", description,
-                "referenceId", referenceId
-            ))
+            .body(body)
             .retrieve()
             .toBodilessEntity();
     }
@@ -53,5 +62,13 @@ public class TicketInternalClient {
     private void awardMembershipPointsFallback(String userId, String actionType, int points,
                                                 String description, UUID referenceId, Throwable t) {
         log.warn("Circuit breaker: awardMembershipPoints failed for user {}: {}", userId, t.getMessage());
+    }
+
+    @SuppressWarnings("unused")
+    private void awardMembershipPointsArtistFallback(String userId, UUID artistId, String actionType,
+                                                      int points, String description, UUID referenceId,
+                                                      Throwable t) {
+        log.warn("Circuit breaker: awardMembershipPoints failed for user {} artist {}: {}",
+                userId, artistId, t.getMessage());
     }
 }

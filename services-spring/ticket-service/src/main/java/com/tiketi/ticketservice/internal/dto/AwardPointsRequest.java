@@ -7,5 +7,6 @@ public record AwardPointsRequest(
     String actionType,
     int points,
     String description,
-    UUID referenceId
+    UUID referenceId,
+    UUID artistId
 ) {}

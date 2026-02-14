@@ -60,14 +60,14 @@ export function SiteHeader() {
             아티스트
           </Link>
           <Link
-            href="/news"
+            href="/community"
             className={`rounded-lg px-3 py-1.5 transition-colors ${
-              pathname === "/news"
+              pathname.startsWith("/community")
                 ? "bg-sky-50 text-sky-600 font-medium"
                 : "text-slate-600 hover:text-sky-500 hover:bg-slate-50"
             }`}
           >
-            News
+            커뮤니티
           </Link>
           {user ? (
             <>

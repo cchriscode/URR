@@ -29,9 +29,15 @@ public class InternalMembershipController {
             @RequestHeader(value = "Authorization", required = false) String authorization) {
         internalTokenValidator.requireValidToken(authorization);
         try {
-            membershipService.awardPointsToAllMemberships(
-                request.userId(), request.actionType(), request.points(),
-                request.description(), request.referenceId());
+            if (request.artistId() != null) {
+                membershipService.awardPointsForArtist(
+                    request.userId(), request.artistId(), request.actionType(),
+                    request.points(), request.description(), request.referenceId());
+            } else {
+                membershipService.awardPointsToAllMemberships(
+                    request.userId(), request.actionType(), request.points(),
+                    request.description(), request.referenceId());
+            }
             return Map.of("ok", true);
         } catch (Exception e) {
             log.warn("Points award failed: {}", e.getMessage());

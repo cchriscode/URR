@@ -192,6 +192,22 @@ export const statsApi = {
   userBehavior: (days?: number) => http.get("/stats/user-behavior", { params: { days: days ?? 30 } }),
 };
 
+export const communityApi = {
+  posts: (params?: Record<string, string | number>) => http.get("/community/posts", { params }),
+  postDetail: (id: string) => http.get(`/community/posts/${id}`),
+  createPost: (payload: { title: string; content: string; artist_id: string }) =>
+    http.post("/community/posts", payload),
+  updatePost: (id: string, payload: { title: string; content: string }) =>
+    http.put(`/community/posts/${id}`, payload),
+  deletePost: (id: string) => http.delete(`/community/posts/${id}`),
+  comments: (postId: string, params?: Record<string, string | number>) =>
+    http.get(`/community/posts/${postId}/comments`, { params }),
+  createComment: (postId: string, payload: { content: string }) =>
+    http.post(`/community/posts/${postId}/comments`, payload),
+  deleteComment: (postId: string, commentId: string) =>
+    http.delete(`/community/posts/${postId}/comments/${commentId}`),
+};
+
 export const newsApi = {
   list: () => http.get("/news"),
   byId: (id: string) => http.get(`/news/${id}`),

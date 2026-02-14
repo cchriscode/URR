@@ -226,3 +226,26 @@ export interface EventStats {
   total_revenue: number;
   seat_utilization?: number;
 }
+
+export interface CommunityPost {
+  id: string;
+  artist_id: string;
+  author_id: string;
+  author_name: string;
+  title: string;
+  content: string;
+  views: number;
+  comment_count: number;
+  is_pinned: boolean;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface CommunityComment {
+  id: string;
+  post_id: string;
+  author_id: string;
+  author_name: string;
+  content: string;
+  created_at: string;
+}

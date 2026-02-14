@@ -45,6 +45,10 @@ spring:
             uri: ${CATALOG_SERVICE_URL:http://localhost:3009}
             predicates:
               - Path=/api/v1/admin/**,/api/admin/**
+          - id: community
+            uri: ${COMMUNITY_SERVICE_URL:http://localhost:3008}
+            predicates:
+              - Path=/api/v1/community/**,/api/community/**
           - id: news
             uri: ${COMMUNITY_SERVICE_URL:http://localhost:3008}
             predicates:
