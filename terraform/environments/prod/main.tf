@@ -10,7 +10,7 @@ terraform {
 
   backend "s3" {
     bucket         = "tiketi-terraform-state-prod"
-    key            = "prod/queue-infra/terraform.tfstate"
+    key            = "prod/terraform.tfstate"
     region         = "ap-northeast-2"
     dynamodb_table = "tiketi-terraform-locks"
     encrypt        = true
@@ -43,23 +43,199 @@ provider "aws" {
   }
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# SQS FIFO Queue
-# ─────────────────────────────────────────────────────────────────────────────
+# ═════════════════════════════════════════════════════════════════════════════
+# 1. IAM Roles (no dependencies)
+# ═════════════════════════════════════════════════════════════════════════════
+
+module "iam" {
+  source = "../../modules/iam"
+
+  name_prefix              = var.name_prefix
+  sqs_queue_arn            = module.sqs.queue_arn
+  db_credentials_secret_arn = module.secrets.rds_credentials_secret_arn
+}
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 2. VPC (no dependencies)
+# ═════════════════════════════════════════════════════════════════════════════
+
+module "vpc" {
+  source = "../../modules/vpc"
+
+  name_prefix = var.name_prefix
+  vpc_cidr    = var.vpc_cidr
+  environment = var.environment
+}
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 3. Secrets Manager (depends on: RDS endpoint for secret version)
+# ═════════════════════════════════════════════════════════════════════════════
+
+module "secrets" {
+  source = "../../modules/secrets"
+
+  name_prefix  = var.name_prefix
+  rds_username = "tiketi_admin"
+  rds_endpoint = module.rds.db_instance_address
+}
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 4. VPC Endpoints (depends on: VPC)
+# ═════════════════════════════════════════════════════════════════════════════
+
+module "vpc_endpoints" {
+  source = "../../modules/vpc-endpoints"
+
+  name_prefix    = var.name_prefix
+  vpc_id         = module.vpc.vpc_id
+  vpc_cidr       = module.vpc.vpc_cidr
+  region         = var.aws_region
+  app_subnet_ids = module.vpc.app_subnet_ids
+  route_table_ids = module.vpc.route_table_ids
+}
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 5. EKS Cluster (depends on: VPC, IAM)
+# ═════════════════════════════════════════════════════════════════════════════
+
+module "eks" {
+  source = "../../modules/eks"
+
+  name_prefix        = var.name_prefix
+  vpc_id             = module.vpc.vpc_id
+  app_subnet_ids     = module.vpc.app_subnet_ids
+  public_subnet_ids  = module.vpc.public_subnet_ids
+  eks_cluster_role_arn = module.iam.eks_cluster_role_arn
+  eks_node_role_arn  = module.iam.eks_node_role_arn
+
+  cluster_version                   = var.eks_cluster_version
+  cluster_endpoint_public_access    = var.eks_cluster_endpoint_public_access
+  cluster_endpoint_public_access_cidrs = var.eks_cluster_endpoint_public_access_cidrs
+  kms_key_arn                       = var.kms_key_arn
+  node_group_desired_size           = var.eks_node_desired_size
+  node_group_min_size               = var.eks_node_min_size
+  node_group_max_size               = var.eks_node_max_size
+  node_instance_types               = var.eks_node_instance_types
+  node_capacity_type                = var.eks_node_capacity_type
+}
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 6. RDS PostgreSQL (depends on: VPC, IAM, EKS, Secrets)
+# ═════════════════════════════════════════════════════════════════════════════
+
+module "rds" {
+  source = "../../modules/rds"
+
+  name_prefix                 = var.name_prefix
+  vpc_id                      = module.vpc.vpc_id
+  db_subnet_ids               = module.vpc.db_subnet_ids
+  app_subnet_ids              = module.vpc.app_subnet_ids
+  eks_node_security_group_id  = module.eks.node_security_group_id
+  master_password             = module.secrets.rds_password
+  db_credentials_secret_arn   = module.secrets.rds_credentials_secret_arn
+  rds_proxy_role_arn          = module.iam.rds_proxy_role_arn
+  monitoring_role_arn         = module.iam.rds_monitoring_role_arn
+
+  engine_version       = var.rds_engine_version
+  instance_class       = var.rds_instance_class
+  allocated_storage    = var.rds_allocated_storage
+  multi_az             = true
+  enable_rds_proxy     = true
+  deletion_protection  = true
+}
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 7. ElastiCache Redis (depends on: VPC, EKS, Secrets)
+# ═════════════════════════════════════════════════════════════════════════════
+
+module "elasticache" {
+  source = "../../modules/elasticache"
+
+  name_prefix                = var.name_prefix
+  vpc_id                     = module.vpc.vpc_id
+  cache_subnet_ids           = module.vpc.cache_subnet_ids
+  eks_node_security_group_id = module.eks.node_security_group_id
+  preferred_azs              = module.vpc.availability_zones
+
+  auth_token_enabled = true
+  auth_token         = module.secrets.redis_auth_token
+  num_cache_clusters = 2
+}
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 8. Amazon MSK - Kafka (depends on: VPC, EKS)
+# ═════════════════════════════════════════════════════════════════════════════
+
+module "msk" {
+  source = "../../modules/msk"
+
+  name_prefix                = var.name_prefix
+  vpc_id                     = module.vpc.vpc_id
+  streaming_subnet_ids       = module.vpc.streaming_subnet_ids
+  eks_node_security_group_id = module.eks.node_security_group_id
+
+  kafka_version          = "3.6.0"
+  number_of_broker_nodes = 2
+  broker_instance_type   = var.msk_broker_instance_type
+  broker_ebs_volume_size = var.msk_broker_ebs_volume_size
+  default_partitions     = 3
+
+  # Topics auto-created by Spring Kafka:
+  # - payment-events
+  # - reservation-events
+  # - transfer-events
+  # - membership-events
+
+  enable_tls       = true
+  enable_iam_auth  = true
+  enable_plaintext = false
+}
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 9. ALB (depends on: VPC, EKS)
+# ═════════════════════════════════════════════════════════════════════════════
+
+module "alb" {
+  source = "../../modules/alb"
+
+  name_prefix                = var.name_prefix
+  vpc_id                     = module.vpc.vpc_id
+  public_subnet_ids          = module.vpc.public_subnet_ids
+  eks_node_security_group_id = module.eks.node_security_group_id
+  certificate_arn            = var.certificate_arn
+  enable_deletion_protection = true
+}
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 10. S3 Buckets (depends on: CloudFront ARN for bucket policy)
+# ═════════════════════════════════════════════════════════════════════════════
+
+module "s3" {
+  source = "../../modules/s3"
+
+  name_prefix                = var.name_prefix
+  environment                = var.environment
+  cloudfront_distribution_arn = module.cloudfront.distribution_arn
+  cors_allowed_origins       = var.cors_allowed_origins
+}
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 11. SQS FIFO Queue (depends on: IAM)
+# ═════════════════════════════════════════════════════════════════════════════
 
 module "sqs" {
   source = "../../modules/sqs"
 
-  name_prefix            = var.name_prefix
-  allowed_sender_role_arns = var.eks_node_role_arns
-  lambda_worker_role_arn = var.lambda_worker_role_arn
+  name_prefix              = var.name_prefix
+  allowed_sender_role_arns = [module.iam.eks_node_role_arn]
+  lambda_worker_role_arn   = module.iam.lambda_worker_role_arn
   enable_cloudwatch_alarms = true
-  sns_topic_arn          = var.sns_topic_arn
+  sns_topic_arn            = var.sns_topic_arn
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# CloudFront + Lambda@Edge
-# ─────────────────────────────────────────────────────────────────────────────
+# ═════════════════════════════════════════════════════════════════════════════
+# 12. CloudFront + Lambda@Edge (depends on: ALB, IAM, Secrets, S3)
+# ═════════════════════════════════════════════════════════════════════════════
 
 module "cloudfront" {
   source = "../../modules/cloudfront"
@@ -70,53 +246,58 @@ module "cloudfront" {
   }
 
   name_prefix                    = var.name_prefix
-  alb_dns_name                   = var.alb_dns_name
-  lambda_edge_role_arn           = var.lambda_edge_role_arn
+  alb_dns_name                   = module.alb.alb_dns_name
+  lambda_edge_role_arn           = module.iam.lambda_edge_role_arn
   lambda_source_dir              = "${path.root}/../../lambda/edge-queue-check"
-  queue_entry_token_secret       = var.queue_entry_token_secret
+  queue_entry_token_secret       = module.secrets.queue_entry_token_secret_value
   cloudfront_custom_header_value = var.cloudfront_custom_header_value
   aliases                        = var.domain_aliases
   certificate_arn                = var.certificate_arn
   price_class                    = "PriceClass_200"
+
+  s3_bucket_name                 = module.s3.frontend_bucket_name
+  s3_bucket_regional_domain_name = module.s3.frontend_bucket_regional_domain_name
+  cors_allowed_origins           = var.cors_allowed_origins
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Lambda Worker (SQS Consumer)
-# ─────────────────────────────────────────────────────────────────────────────
+# ═════════════════════════════════════════════════════════════════════════════
+# 13. Lambda Worker - SQS Consumer (depends on: VPC, RDS, ElastiCache, SQS, IAM)
+# ═════════════════════════════════════════════════════════════════════════════
 
 module "lambda_worker" {
   source = "../../modules/lambda-worker"
 
-  name_prefix                    = var.name_prefix
-  lambda_worker_role_arn         = var.lambda_worker_role_arn
-  lambda_source_dir              = "${path.root}/../../lambda/ticket-worker"
-  lambda_timeout                 = 30
-  lambda_memory_size             = 256
+  name_prefix            = var.name_prefix
+  lambda_worker_role_arn = module.iam.lambda_worker_role_arn
+  lambda_source_dir      = "${path.root}/../../lambda/ticket-worker"
+  lambda_timeout         = 30
+  lambda_memory_size     = 256
   reserved_concurrent_executions = 10
 
   # VPC
-  vpc_id                         = var.vpc_id
-  vpc_cidr                       = var.vpc_cidr
-  subnet_ids                     = var.private_subnet_ids
-  rds_proxy_security_group_id    = var.rds_proxy_security_group_id
-  redis_security_group_id        = var.redis_security_group_id
+  vpc_id                      = module.vpc.vpc_id
+  vpc_cidr                    = module.vpc.vpc_cidr
+  subnet_ids                  = module.vpc.streaming_subnet_ids
+  rds_proxy_security_group_id = module.rds.rds_proxy_security_group_id
+  redis_security_group_id     = module.elasticache.security_group_id
 
   # Environment
-  db_proxy_endpoint = var.db_proxy_endpoint
-  redis_endpoint    = var.redis_endpoint
-  redis_auth_token  = var.redis_auth_token
+  db_proxy_endpoint = module.rds.rds_proxy_endpoint
+  redis_endpoint    = module.elasticache.primary_endpoint_address
+  redis_auth_token  = module.secrets.redis_auth_token
   environment       = var.environment
 
   additional_env_vars = {
-    TICKET_SERVICE_URL = "http://ticket-service.tiketi-spring.svc.cluster.local:3002"
-    INTERNAL_API_TOKEN = var.internal_api_token
+    TICKET_SERVICE_URL      = "http://ticket-service.tiketi-spring.svc.cluster.local:3002"
+    INTERNAL_API_TOKEN      = var.internal_api_token
+    KAFKA_BOOTSTRAP_SERVERS = module.msk.bootstrap_brokers_tls
   }
 
   # SQS
-  sqs_queue_arn            = module.sqs.queue_arn
-  sqs_batch_size           = 10
+  sqs_queue_arn               = module.sqs.queue_arn
+  sqs_batch_size              = 10
   sqs_batching_window_seconds = 5
-  max_concurrency          = 10
+  max_concurrency             = 10
 
   # Monitoring
   enable_xray_tracing      = true

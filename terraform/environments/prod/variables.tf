@@ -1,3 +1,7 @@
+# ═════════════════════════════════════════════════════════════════════════════
+# General
+# ═════════════════════════════════════════════════════════════════════════════
+
 variable "aws_region" {
   description = "AWS region"
   type        = string
@@ -16,85 +20,137 @@ variable "name_prefix" {
   default     = "tiketi-prod"
 }
 
+# ═════════════════════════════════════════════════════════════════════════════
 # VPC
-variable "vpc_id" {
-  description = "VPC ID"
-  type        = string
-}
+# ═════════════════════════════════════════════════════════════════════════════
 
 variable "vpc_cidr" {
   description = "VPC CIDR block"
   type        = string
+  default     = "10.0.0.0/16"
 }
 
-variable "private_subnet_ids" {
-  description = "Private subnet IDs"
+# ═════════════════════════════════════════════════════════════════════════════
+# EKS
+# ═════════════════════════════════════════════════════════════════════════════
+
+variable "eks_cluster_version" {
+  description = "Kubernetes version for EKS cluster"
+  type        = string
+  default     = "1.31"
+}
+
+variable "eks_cluster_endpoint_public_access" {
+  description = "Whether the EKS API server endpoint is publicly accessible"
+  type        = bool
+  default     = true
+}
+
+variable "eks_cluster_endpoint_public_access_cidrs" {
+  description = "CIDR blocks allowed to access the EKS API server endpoint"
   type        = list(string)
+  default     = ["0.0.0.0/0"]
 }
 
-variable "public_subnet_ids" {
-  description = "Public subnet IDs"
+variable "kms_key_arn" {
+  description = "KMS key ARN for EKS secrets encryption (null = AWS managed key)"
+  type        = string
+  default     = null
+}
+
+variable "eks_node_desired_size" {
+  description = "Desired number of EKS worker nodes"
+  type        = number
+  default     = 3
+}
+
+variable "eks_node_min_size" {
+  description = "Minimum number of EKS worker nodes"
+  type        = number
+  default     = 2
+}
+
+variable "eks_node_max_size" {
+  description = "Maximum number of EKS worker nodes"
+  type        = number
+  default     = 5
+}
+
+variable "eks_node_instance_types" {
+  description = "EC2 instance types for EKS node group"
   type        = list(string)
+  default     = ["t3.medium"]
 }
 
-# ALB
-variable "alb_dns_name" {
-  description = "ALB DNS name"
+variable "eks_node_capacity_type" {
+  description = "EKS node capacity type (ON_DEMAND or SPOT)"
   type        = string
+  default     = "ON_DEMAND"
 }
 
-# Security Groups
-variable "rds_proxy_security_group_id" {
-  description = "Security group ID for RDS Proxy"
+# ═════════════════════════════════════════════════════════════════════════════
+# RDS
+# ═════════════════════════════════════════════════════════════════════════════
+
+variable "rds_engine_version" {
+  description = "PostgreSQL engine version"
   type        = string
+  default     = "16.4"
 }
 
-variable "redis_security_group_id" {
-  description = "Security group ID for Redis"
+variable "rds_instance_class" {
+  description = "RDS instance class"
   type        = string
+  default     = "db.t3.medium"
 }
 
-# Database
-variable "db_proxy_endpoint" {
-  description = "RDS Proxy endpoint"
+variable "rds_allocated_storage" {
+  description = "RDS allocated storage in GB"
+  type        = number
+  default     = 50
+}
+
+# ═════════════════════════════════════════════════════════════════════════════
+# MSK (Kafka)
+# ═════════════════════════════════════════════════════════════════════════════
+
+variable "msk_broker_instance_type" {
+  description = "MSK broker instance type"
   type        = string
+  default     = "kafka.t3.small"
 }
 
-# Redis
-variable "redis_endpoint" {
-  description = "Redis primary endpoint"
-  type        = string
+variable "msk_broker_ebs_volume_size" {
+  description = "MSK broker EBS volume size in GB"
+  type        = number
+  default     = 50
 }
 
-variable "redis_auth_token" {
-  description = "Redis AUTH token"
-  type        = string
-  sensitive   = true
-}
+# ═════════════════════════════════════════════════════════════════════════════
+# Domain & TLS
+# ═════════════════════════════════════════════════════════════════════════════
 
-# IAM
-variable "lambda_edge_role_arn" {
-  description = "Lambda@Edge IAM role ARN"
-  type        = string
-}
-
-variable "lambda_worker_role_arn" {
-  description = "Lambda Worker IAM role ARN"
-  type        = string
-}
-
-variable "eks_node_role_arns" {
-  description = "EKS node role ARNs (for SQS send permissions)"
+variable "domain_aliases" {
+  description = "CloudFront domain aliases"
   type        = list(string)
   default     = []
 }
 
-# Secrets
-variable "queue_entry_token_secret" {
-  description = "HMAC secret for queue entry token JWT"
+variable "certificate_arn" {
+  description = "ACM certificate ARN (us-east-1 for CloudFront, ap-northeast-2 for ALB)"
   type        = string
-  sensitive   = true
+  default     = ""
 }
+
+variable "cors_allowed_origins" {
+  description = "Allowed origins for CORS (e.g. [\"https://tiketi.com\"])"
+  type        = list(string)
+  default     = []
+}
+
+# ═════════════════════════════════════════════════════════════════════════════
+# Secrets (external inputs)
+# ═════════════════════════════════════════════════════════════════════════════
 
 variable "cloudfront_custom_header_value" {
   description = "Secret header value for CloudFront → ALB verification"
@@ -108,22 +164,12 @@ variable "internal_api_token" {
   sensitive   = true
 }
 
-# Domain
-variable "domain_aliases" {
-  description = "CloudFront domain aliases"
-  type        = list(string)
-  default     = []
-}
+# ═════════════════════════════════════════════════════════════════════════════
+# Monitoring
+# ═════════════════════════════════════════════════════════════════════════════
 
-variable "certificate_arn" {
-  description = "ACM certificate ARN (us-east-1)"
-  type        = string
-  default     = ""
-}
-
-# SNS
 variable "sns_topic_arn" {
-  description = "SNS topic ARN for alarms"
+  description = "SNS topic ARN for CloudWatch alarm notifications"
   type        = string
   default     = ""
 }
