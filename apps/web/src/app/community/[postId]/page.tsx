@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { communityApi, artistsApi } from "@/lib/api-client";
-import { getUser } from "@/lib/storage";
+import { useAuth } from "@/lib/auth-context";
 import { formatDateTime } from "@/lib/format";
 import type { CommunityPost, CommunityComment } from "@/lib/types";
 
@@ -12,7 +12,7 @@ export default function PostDetailPage() {
   const params = useParams();
   const router = useRouter();
   const postId = params.postId as string;
-  const user = getUser();
+  const { user } = useAuth();
 
   const [post, setPost] = useState<CommunityPost | null>(null);
   const [comments, setComments] = useState<CommunityComment[]>([]);

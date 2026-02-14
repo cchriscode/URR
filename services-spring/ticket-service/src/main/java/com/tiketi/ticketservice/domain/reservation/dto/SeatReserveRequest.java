@@ -6,6 +6,7 @@ import java.util.UUID;
 
 public record SeatReserveRequest(
     @NotNull UUID eventId,
-    @NotNull List<UUID> seatIds
+    @NotNull List<UUID> seatIds,
+    String idempotencyKey
 ) {
 }

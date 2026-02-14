@@ -4,9 +4,11 @@ import { FormEvent, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { authApi } from "@/lib/api-client";
-import { setUser } from "@/lib/storage";
+import { useAuth } from "@/lib/auth-context";
+
 export default function RegisterPage() {
   const router = useRouter();
+  const { refresh: refreshAuth } = useAuth();
   const [form, setForm] = useState({ email: "", password: "", name: "", phone: "" });
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -16,8 +18,8 @@ export default function RegisterPage() {
     setLoading(true);
     setError(null);
     try {
-      const { data } = await authApi.register(form);
-      setUser(data.user);
+      await authApi.register(form);
+      refreshAuth();
       router.push("/");
     } catch (err: unknown) {
       const resp = (err as { response?: { status?: number; data?: { message?: string; error?: string } } }).response;

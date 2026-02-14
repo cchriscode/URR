@@ -5,7 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { artistsApi, membershipsApi } from "@/lib/api-client";
-import { getUser } from "@/lib/storage";
+import { useAuth } from "@/lib/auth-context";
 import { formatDate, formatDateTime, formatPrice } from "@/lib/format";
 import type { Artist, ArtistMembership, MembershipPointLog, MembershipTier } from "@/lib/types";
 
@@ -51,11 +51,12 @@ export default function ArtistDetailPage() {
   const [loading, setLoading] = useState(true);
   const [subscribing, setSubscribing] = useState(false);
   const [subError, setSubError] = useState<string | null>(null);
+  const { user } = useAuth();
 
   useEffect(() => {
     if (!artistId) return;
     let cancelled = false;
-    const loggedIn = !!getUser();
+    const loggedIn = !!user;
     setLoading(true);
 
     const fetchArtist = artistsApi.detail(artistId).then((res) => {
@@ -89,7 +90,7 @@ export default function ArtistDetailPage() {
       });
 
     return () => { cancelled = true; };
-  }, [artistId]);
+  }, [artistId, user]);
 
   const handleSubscribe = async () => {
     if (!artistId) return;
@@ -191,7 +192,7 @@ export default function ArtistDetailPage() {
       <div className="rounded-2xl border border-slate-200 bg-white p-6 space-y-4">
         <h2 className="text-lg font-bold text-slate-900">멤버십</h2>
 
-        {!getUser() ? (
+        {!user ? (
           <div className="rounded-lg bg-slate-50 border border-slate-200 p-4 text-center">
             <p className="text-sm text-slate-500 mb-2">로그인 후 멤버십을 가입할 수 있습니다</p>
             <Link href="/login" className="text-sm text-sky-500 hover:text-sky-600 font-medium">

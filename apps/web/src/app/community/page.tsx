@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState, useCallback } from "react";
 import { communityApi, artistsApi } from "@/lib/api-client";
-import { getUser } from "@/lib/storage";
+import { useAuth } from "@/lib/auth-context";
 import { formatDate } from "@/lib/format";
 import type { CommunityPost, Artist } from "@/lib/types";
 
@@ -14,7 +14,7 @@ export default function CommunityPage() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
-  const user = getUser();
+  const { user } = useAuth();
 
   useEffect(() => {
     artistsApi

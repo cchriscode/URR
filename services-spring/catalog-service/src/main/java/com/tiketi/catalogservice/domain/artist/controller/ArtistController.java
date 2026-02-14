@@ -3,12 +3,12 @@ package com.tiketi.catalogservice.domain.artist.controller;
 import com.tiketi.catalogservice.shared.security.JwtTokenParser;
 import com.tiketi.catalogservice.domain.artist.service.ArtistService;
 import com.tiketi.catalogservice.domain.artist.service.SpotifyService;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -41,10 +41,8 @@ public class ArtistController {
     }
 
     @PostMapping("/enrich")
-    public Map<String, Object> enrich(
-        @RequestHeader(value = "Authorization", required = false) String authorization
-    ) {
-        jwtTokenParser.requireAdmin(authorization);
+    public Map<String, Object> enrich(HttpServletRequest request) {
+        jwtTokenParser.requireAdmin(request);
         return spotifyService.enrichArtists();
     }
 }

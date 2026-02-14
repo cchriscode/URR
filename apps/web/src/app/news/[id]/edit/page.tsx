@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { AuthGuard } from "@/components/auth-guard";
 import { newsApi } from "@/lib/api-client";
-import { getUser } from "@/lib/storage";
+import { useAuth } from "@/lib/auth-context";
 
 export default function NewsEditPage() {
   const params = useParams<{ id: string }>();
@@ -15,10 +15,10 @@ export default function NewsEditPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { user } = useAuth();
 
   useEffect(() => {
     if (!params.id) return;
-    const user = getUser();
     newsApi
       .byId(params.id)
       .then((res) => {
@@ -38,7 +38,7 @@ export default function NewsEditPage() {
       })
       .catch(() => router.replace("/news"))
       .finally(() => setLoading(false));
-  }, [params.id, router]);
+  }, [params.id, router, user]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,7 +52,7 @@ export default function NewsEditPage() {
       await newsApi.update(params.id, {
         title: title.trim(),
         content: content.trim(),
-        is_pinned: getUser()?.role === "admin" ? isPinned : undefined,
+        is_pinned: user?.role === "admin" ? isPinned : undefined,
       });
       router.push(`/news/${params.id}`);
     } catch {
@@ -95,7 +95,7 @@ export default function NewsEditPage() {
             />
           </div>
 
-          {getUser()?.role === "admin" && (
+          {user?.role === "admin" && (
             <label className="flex items-center gap-2 text-sm text-slate-700">
               <input
                 type="checkbox"

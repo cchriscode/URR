@@ -4,6 +4,7 @@ import com.tiketi.communityservice.dto.CommentCreateRequest;
 import com.tiketi.communityservice.service.CommentService;
 import com.tiketi.communityservice.shared.security.AuthUser;
 import com.tiketi.communityservice.shared.security.JwtTokenParser;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.Map;
 import java.util.UUID;
@@ -35,8 +36,8 @@ public class CommentController {
     public ResponseEntity<Map<String, Object>> create(
             @PathVariable UUID postId,
             @Valid @RequestBody CommentCreateRequest request,
-            @RequestHeader(value = "Authorization", required = false) String authorization) {
-        AuthUser user = jwtTokenParser.requireUser(authorization);
+            HttpServletRequest httpRequest) {
+        AuthUser user = jwtTokenParser.requireUser(httpRequest);
         return ResponseEntity.status(HttpStatus.CREATED).body(commentService.create(postId, request, user));
     }
 
@@ -44,8 +45,8 @@ public class CommentController {
     public ResponseEntity<Map<String, Object>> delete(
             @PathVariable UUID postId,
             @PathVariable UUID commentId,
-            @RequestHeader(value = "Authorization", required = false) String authorization) {
-        AuthUser user = jwtTokenParser.requireUser(authorization);
+            HttpServletRequest httpRequest) {
+        AuthUser user = jwtTokenParser.requireUser(httpRequest);
         return ResponseEntity.ok(commentService.delete(commentId, user));
     }
 }

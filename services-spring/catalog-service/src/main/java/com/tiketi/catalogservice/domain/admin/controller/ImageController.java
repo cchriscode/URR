@@ -2,9 +2,9 @@ package com.tiketi.catalogservice.domain.admin.controller;
 
 import com.tiketi.catalogservice.domain.admin.service.ImageUploadService;
 import com.tiketi.catalogservice.shared.security.JwtTokenParser;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -24,9 +24,9 @@ public class ImageController {
 
     @PostMapping("/upload")
     public Map<String, String> upload(
-        @RequestHeader(value = "Authorization", required = false) String authorization,
+        HttpServletRequest request,
         @RequestParam("image") MultipartFile image) {
-        jwtTokenParser.requireAdmin(authorization);
+        jwtTokenParser.requireAdmin(request);
         return imageUploadService.upload(image);
     }
 }

@@ -8,6 +8,7 @@ import com.tiketi.ticketservice.domain.seat.service.SeatLockService;
 import com.tiketi.ticketservice.shared.client.PaymentInternalClient;
 import com.tiketi.ticketservice.messaging.TicketEventProducer;
 import com.tiketi.ticketservice.messaging.event.ReservationCancelledEvent;
+import com.tiketi.ticketservice.shared.metrics.BusinessMetrics;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -38,21 +39,33 @@ public class ReservationService {
     private final MembershipService membershipService;
     private final SeatLockService seatLockService;
     private final TicketEventProducer ticketEventProducer;
+    private final BusinessMetrics metrics;
 
     public ReservationService(JdbcTemplate jdbcTemplate, NamedParameterJdbcTemplate namedParameterJdbcTemplate,
                               MembershipService membershipService, SeatLockService seatLockService,
-                              TicketEventProducer ticketEventProducer) {
+                              TicketEventProducer ticketEventProducer, BusinessMetrics metrics) {
         this.jdbcTemplate = jdbcTemplate;
         this.namedParameterJdbcTemplate = namedParameterJdbcTemplate;
         this.membershipService = membershipService;
         this.seatLockService = seatLockService;
         this.ticketEventProducer = ticketEventProducer;
+        this.metrics = metrics;
     }
 
     @Transactional
     public Map<String, Object> reserveSeats(String userId, SeatReserveRequest request) {
         if (request.seatIds() == null || request.seatIds().isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Please select at least one seat");
+        }
+
+        // Idempotency check: return existing reservation if key matches
+        if (request.idempotencyKey() != null && !request.idempotencyKey().isBlank()) {
+            List<Map<String, Object>> existing = jdbcTemplate.queryForList(
+                "SELECT id, reservation_number, total_amount, status, payment_status, expires_at FROM reservations WHERE idempotency_key = ?",
+                request.idempotencyKey());
+            if (!existing.isEmpty()) {
+                return Map.of("message", "Seat reserved temporarily", "reservation", existing.getFirst());
+            }
         }
         if (request.seatIds().size() > MAX_SEATS_PER_RESERVATION) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Only one seat can be selected");
@@ -124,10 +137,12 @@ public class ReservationService {
         String reservationNumber = "TK" + System.currentTimeMillis() + "-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
 
         UUID reservationId = jdbcTemplate.queryForObject("""
-            INSERT INTO reservations (user_id, event_id, reservation_number, total_amount, status, payment_status, expires_at)
-            VALUES (CAST(? AS UUID), ?, ?, ?, 'pending', 'pending', ?)
+            INSERT INTO reservations (user_id, event_id, reservation_number, total_amount, status, payment_status, expires_at, idempotency_key)
+            VALUES (CAST(? AS UUID), ?, ?, ?, 'pending', 'pending', ?, ?)
             RETURNING id
-            """, UUID.class, userId, request.eventId(), reservationNumber, totalAmount, Timestamp.from(expiresAt.toInstant()));
+            """, UUID.class, userId, request.eventId(), reservationNumber, totalAmount,
+            Timestamp.from(expiresAt.toInstant()),
+            request.idempotencyKey() != null && !request.idempotencyKey().isBlank() ? request.idempotencyKey() : null);
 
         for (Map<String, Object> seat : seats) {
             jdbcTemplate.update("""
@@ -147,6 +162,7 @@ public class ReservationService {
         reservation.put("seats", seats);
         reservation.put("fencingToken", primaryToken);
 
+        metrics.recordReservationCreated();
         return Map.of("message", "Seat reserved temporarily", "reservation", reservation);
     }
 
@@ -161,6 +177,16 @@ public class ReservationService {
     public Map<String, Object> createReservation(String userId, CreateReservationRequest request) {
         if (request.items() == null || request.items().isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Reservation items are required");
+        }
+
+        // Idempotency check: return existing reservation if key matches
+        if (request.idempotencyKey() != null && !request.idempotencyKey().isBlank()) {
+            List<Map<String, Object>> existing = jdbcTemplate.queryForList(
+                "SELECT id, reservation_number, total_amount, status, payment_status, expires_at FROM reservations WHERE idempotency_key = ?",
+                request.idempotencyKey());
+            if (!existing.isEmpty()) {
+                return Map.of("message", "Reservation created", "reservation", existing.getFirst());
+            }
         }
 
         List<Map<String, Object>> eventRows = jdbcTemplate.queryForList("SELECT id, title FROM events WHERE id = ?", request.eventId());
@@ -208,10 +234,12 @@ public class ReservationService {
         OffsetDateTime expiresAt = OffsetDateTime.now().plusMinutes(5);
 
         UUID reservationId = jdbcTemplate.queryForObject("""
-            INSERT INTO reservations (user_id, event_id, reservation_number, total_amount, status, payment_status, expires_at)
-            VALUES (CAST(? AS UUID), ?, ?, ?, 'pending', 'pending', ?)
+            INSERT INTO reservations (user_id, event_id, reservation_number, total_amount, status, payment_status, expires_at, idempotency_key)
+            VALUES (CAST(? AS UUID), ?, ?, ?, 'pending', 'pending', ?, ?)
             RETURNING id
-            """, UUID.class, userId, request.eventId(), reservationNumber, totalAmount, Timestamp.from(expiresAt.toInstant()));
+            """, UUID.class, userId, request.eventId(), reservationNumber, totalAmount,
+            Timestamp.from(expiresAt.toInstant()),
+            request.idempotencyKey() != null && !request.idempotencyKey().isBlank() ? request.idempotencyKey() : null);
 
         for (Map<String, Object> item : reservationItems) {
             jdbcTemplate.update("""
@@ -230,6 +258,7 @@ public class ReservationService {
         reservation.put("expiresAt", expiresAt);
         reservation.put("items", reservationItems);
 
+        metrics.recordReservationCreated();
         return Map.of("message", "Reservation created", "reservation", reservation);
     }
 
@@ -247,7 +276,7 @@ public class ReservationService {
                   'subtotal', ri.subtotal,
                   'seatLabel', s.seat_label
                 )
-              ) as items
+              )::text as items
             FROM reservations r
             LEFT JOIN events e ON r.event_id = e.id
             JOIN reservation_items ri ON r.id = ri.reservation_id
@@ -278,7 +307,7 @@ public class ReservationService {
                   'rowNumber', s.row_number,
                   'seatNumber', s.seat_number
                 )
-              ) as items
+              )::text as items
             FROM reservations r
             JOIN events e ON r.event_id = e.id
             JOIN reservation_items ri ON r.id = ri.reservation_id
@@ -311,7 +340,7 @@ public class ReservationService {
                   'ticketTypeName', tt.name,
                   'quantity', ri.quantity
                 )
-              ) as seats
+              )::text as seats
             FROM reservations r
             JOIN events e ON r.event_id = e.id
             JOIN reservation_items ri ON r.id = ri.reservation_id
@@ -493,6 +522,8 @@ public class ReservationService {
         // via Kafka event. Do NOT set 'refunded' directly as no actual money movement occurs here.
         jdbcTemplate.update("UPDATE reservations SET status = 'cancelled', payment_status = 'refund_requested', updated_at = NOW() WHERE id = ?",
             reservationId);
+
+        metrics.recordReservationCancelled();
 
         // Publish cancellation event so payment-service can process the actual refund
         if (ticketEventProducer != null) {

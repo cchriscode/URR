@@ -380,37 +380,72 @@ Loki로 로그를 수집하지만, 특정 패턴(ERROR 급증, OOM 발생 등)�
 
 ## 6. 종합 개선 제안
 
-영향도와 긴급도에 따라 우선순위를 분류한다.
+영향도와 긴급도에 따라 우선순위를 분류한다. AWS 배포 시 관리형 서비스로 보완 가능한 항목은 **AWS 보완 방안** 열에 명시한다.
 
 ### 높은 영향도 / 높은 긴급도
 
-| 순번 | 영역 | 개선 항목 | 사유 |
-|------|------|-----------|------|
-| 1 | 보안 | 시크릿 관리 체계 도입 (Sealed Secrets 또는 External Secrets) | 평문 시크릿 파일이 코드 저장소에 포함되어 있어 보안 사고 위험이 높음 |
-| 2 | 인프라 | PostgreSQL 이중화 (최소 primary-replica 구성) | 단일 인스턴스 장애 시 전체 플랫폼 중단 |
-| 3 | 보안 | 내부 API 토큰을 서비스별 개별 발급 + 자동 순환 | 단일 토큰 유출 시 전체 내부 API 접근 가능 |
-| 4 | 백엔드 | 예약 생성 API에 멱등성 키 추가 | 네트워크 재시도로 인한 중복 예약 위험 |
+| 순번 | 영역 | 개선 항목 | 사유 | AWS 보완 방안 |
+|------|------|-----------|------|---------------|
+| 1 | 보안 | 시크릿 관리 체계 도입 (Sealed Secrets 또는 External Secrets) | 평문 시크릿 파일이 코드 저장소에 포함되어 있어 보안 사고 위험이 높음 | **AWS Secrets Manager** + External Secrets Operator로 K8s Secret을 자동 동기화. 자동 순환(rotation) 스케줄 지원 |
+| 2 | 인프라 | PostgreSQL 이중화 (최소 primary-replica 구성) | 단일 인스턴스 장애 시 전체 플랫폼 중단 | **Amazon RDS Multi-AZ** 배포로 해결. 자동 장애 조치(failover), 동기식 대기 복제본, 5개 DB를 단일 RDS 인스턴스 또는 서비스별 개별 RDS로 운영 가능 |
+| 3 | 보안 | 내부 API 토큰을 서비스별 개별 발급 + 자동 순환 | 단일 토큰 유출 시 전체 내부 API 접근 가능 | **AWS Secrets Manager**의 자동 순환 Lambda와 결합하여 서비스별 토큰을 주기적으로 갱신. 또는 **AWS IAM Roles for Service Accounts (IRSA)** 로 토큰 없는 인증 전환 |
+| 4 | 백엔드 | 예약 생성 API에 멱등성 키 추가 | 네트워크 재시도로 인한 중복 예약 위험 | 코드 레벨 개선 필요 (AWS 서비스로 대체 불가) |
 
 ### 높은 영향도 / 보통 긴급도
 
-| 순번 | 영역 | 개선 항목 | 사유 |
-|------|------|-----------|------|
-| 5 | 프론트엔드 | React Query 또는 SWR 도입으로 서버 상태 관리 | API 중복 호출 방지, 캐싱, 낙관적 업데이트 지원 |
-| 6 | 모니터링 | AlertManager 설정 및 핵심 알림 규칙 정의 | 장애 발생 시 자동 감지/통보 불가 |
-| 7 | 인프라 | DB 백업 CronJob 및 복구 절차 수립 | 데이터 손실 시 복구 수단 전무 |
-| 8 | 백엔드 | Catalog 서비스 전용 DB 분리 또는 내부 API 호출로 전환 | DB-per-service 원칙 위반으로 인한 결합도 |
-| 9 | 백엔드 | 대기열 서비스 인메모리 폴백 제거 또는 경고 수준 상향 | 다중 인스턴스에서 데이터 불일치 유발 |
-| 10 | 보안 | Rate Limiter fail-closed 정책 검토 | Redis 장애 시 무제한 트래픽 허용 가능 |
+| 순번 | 영역 | 개선 항목 | 사유 | AWS 보완 방안 |
+|------|------|-----------|------|---------------|
+| 5 | 프론트엔드 | React Query 또는 SWR 도입으로 서버 상태 관리 | API 중복 호출 방지, 캐싱, 낙관적 업데이트 지원 | 코드 레벨 개선. **CloudFront** 캐싱으로 API 응답 캐시는 부분 보완 가능 |
+| 6 | 모니터링 | AlertManager 설정 및 핵심 알림 규칙 정의 | 장애 발생 시 자동 감지/통보 불가 | **Amazon CloudWatch Alarms** + **SNS** 토픽으로 알림 체계 구성. 또는 **Amazon Managed Service for Prometheus (AMP)** + AlertManager 사용 |
+| 7 | 인프라 | DB 백업 CronJob 및 복구 절차 수립 | 데이터 손실 시 복구 수단 전무 | **RDS 자동 백업** (일일 스냅샷 + 트랜잭션 로그, 최대 35일 보존). 수동 스냅샷으로 영구 백업. **Point-in-Time Recovery**로 5분 단위 복원 가능 |
+| 8 | 백엔드 | Catalog 서비스 전용 DB 분리 또는 내부 API 호출로 전환 | DB-per-service 원칙 위반으로 인한 결합도 | 서비스별 **개별 RDS 인스턴스** 생성으로 물리적 분리 용이. RDS 비용 최적화를 위해 `db.t3.micro` 등 소형 인스턴스 활용 |
+| 9 | 백엔드 | 대기열 서비스 인메모리 폴백 제거 또는 경고 수준 상향 | 다중 인스턴스에서 데이터 불일치 유발 | **Amazon ElastiCache for Redis** (클러스터 모드) 사용 시 Multi-AZ 자동 장애 조치로 Redis 다운타임을 최소화하여 폴백 시나리오 자체를 방지 |
+| 10 | 보안 | Rate Limiter fail-closed 정책 검토 | Redis 장애 시 무제한 트래픽 허용 가능 | **AWS WAF** Rate-based Rules로 1차 방어 계층 추가. ElastiCache Multi-AZ로 Redis 가용성 보장하여 fail-open 시나리오 최소화 |
 
 ### 보통 영향도 / 낮은 긴급도
 
-| 순번 | 영역 | 개선 항목 | 사유 |
-|------|------|-----------|------|
-| 11 | 프론트엔드 | 핵심 페이지 SSR 적용 (이벤트 목록, 이벤트 상세) | SEO 및 초기 로드 성능 개선 |
-| 12 | 프론트엔드 | 라우트별 error.tsx, loading.tsx 추가 | 사용자 경험 개선, 레이아웃 시프트 방지 |
-| 13 | 모니터링 | SLO/SLI 정의 및 비즈니스 커스텀 메트릭 추가 | 서비스 품질 객관적 측정 |
-| 14 | 모니터링 | Prometheus ServiceMonitor CRD 전환 | HPA 스케일링 시 자동 타겟 탐지 |
-| 15 | 인프라 | 프로덕션 Ingress + TLS 구성 완성 | 실제 배포를 위한 필수 구성 |
-| 16 | 백엔드 | 서비스 간 데이터 액세스 패턴 통일 | 유지보수 복잡도 감소 |
-| 17 | 보안 | 서비스 간 mTLS 적용 (Istio 또는 Linkerd) | 네트워크 레벨 보안 강화 |
-| 18 | 프론트엔드 | localStorage 인증 정보를 HttpOnly 쿠키로 전환 | XSS 공격 시 토큰 탈취 방지 |
+| 순번 | 영역 | 개선 항목 | 사유 | AWS 보완 방안 |
+|------|------|-----------|------|---------------|
+| 11 | 프론트엔드 | 핵심 페이지 SSR 적용 (이벤트 목록, 이벤트 상세) | SEO 및 초기 로드 성능 개선 | 코드 레벨 개선. **CloudFront + Lambda@Edge**로 SSR 응답 캐싱은 보완 가능 |
+| 12 | 프론트엔드 | 라우트별 error.tsx, loading.tsx 추가 | 사용자 경험 개선, 레이아웃 시프트 방지 | 코드 레벨 개선 (AWS 서비스로 대체 불가) |
+| 13 | 모니터링 | SLO/SLI 정의 및 비즈니스 커스텀 메트릭 추가 | 서비스 품질 객관적 측정 | **CloudWatch Custom Metrics** + **CloudWatch SLO** 기능으로 SLI/SLO 대시보드 구성 가능 |
+| 14 | 모니터링 | Prometheus ServiceMonitor CRD 전환 | HPA 스케일링 시 자동 타겟 탐지 | **AMP (Amazon Managed Prometheus)** 사용 시 EKS 서비스 디스커버리 자동 지원 |
+| 15 | 인프라 | 프로덕션 Ingress + TLS 구성 완성 | 실제 배포를 위한 필수 구성 | **ALB Ingress Controller** + **AWS Certificate Manager (ACM)** 무료 TLS 인증서 자동 갱신. Terraform `aws_lb`, `aws_acm_certificate` 리소스로 구성 (프로젝트 내 `terraform/` 디렉터리에 ALB/CloudFront 설정 이미 존재) |
+| 16 | 백엔드 | 서비스 간 데이터 액세스 패턴 통일 | 유지보수 복잡도 감소 | 코드 레벨 개선 (AWS 서비스로 대체 불가) |
+| 17 | 보안 | 서비스 간 mTLS 적용 (Istio 또는 Linkerd) | 네트워크 레벨 보안 강화 | **AWS App Mesh** (Envoy 기반 서비스 메시) 또는 EKS에서 **Istio** 운영. VPC 내부 통신은 기본 암호화되므로 mTLS 긴급도는 낮아짐 |
+| 18 | 프론트엔드 | localStorage 인증 정보를 HttpOnly 쿠키로 전환 | XSS 공격 시 토큰 탈취 방지 | 코드 레벨 개선. **CloudFront Functions**로 쿠키 보안 속성(Secure, SameSite) 강제 부여는 보조 가능 |
+
+---
+
+## 7. AWS 배포 시 아키텍처 보완 요약
+
+현재 프로젝트는 Kind 클러스터(로컬 개발)와 EKS(프로덕션) 배포를 모두 고려하고 있다. `terraform/` 디렉터리에 ALB, CloudFront, Lambda@Edge 설정이 이미 존재하며, AWS 관리형 서비스를 활용하면 위 미흡점의 상당 부분이 인프라 수준에서 해결된다.
+
+### 핵심 AWS 관리형 서비스 매핑
+
+| 미흡점 카테고리 | AWS 서비스 | 해결 범위 |
+|-----------------|-----------|-----------|
+| DB 단일 장애점 / 백업 없음 | **Amazon RDS Multi-AZ** | 자동 장애 조치, 일일 자동 백업, Point-in-Time Recovery, Read Replica로 읽기 분산 |
+| 시크릿 평문 관리 / 토큰 순환 없음 | **AWS Secrets Manager** | 자동 순환(Lambda 기반), K8s External Secrets Operator 연동, 암호화 저장 |
+| Redis 가용성 (폴백 문제) | **Amazon ElastiCache Multi-AZ** | 자동 장애 조치, 클러스터 모드 샤딩, 인메모리 폴백 불필요 |
+| Kafka 운영 부담 | **Amazon MSK (Managed Kafka)** | 브로커 관리 자동화, Multi-AZ, 자동 스케일링 |
+| TLS 인증서 / Ingress 미완성 | **ACM + ALB Ingress Controller** | 무료 TLS 인증서 자동 갱신, ALB에서 TLS 종료 |
+| 알림 체계 없음 | **CloudWatch Alarms + SNS** | CPU/메모리/에러율 알림, Slack/이메일 통보 |
+| 모니터링 스크래핑 문제 | **AMP + AMG (Managed Grafana)** | 서비스 디스커버리 자동화, 관리형 Grafana 대시보드 |
+| Rate Limiting 보조 | **AWS WAF** | L7 Rate-based Rules, IP 기반 차단, SQL Injection/XSS 방어 |
+| mTLS / 서비스 메시 | **AWS App Mesh** | Envoy 기반 mTLS 자동 적용, 트래픽 관찰성 |
+| 네트워크 보안 | **VPC + Security Groups** | 서브넷 격리(public/private), SG로 포트 수준 접근 제어, VPC 내부 트래픽 암호화 |
+
+### AWS 배포 후에도 코드 레벨 개선이 필요한 항목
+
+다음 항목들은 AWS 인프라로 대체할 수 없으며 코드 변경이 반드시 필요하다:
+
+1. **예약 멱등성 키** --- 애플리케이션 로직에서 중복 요청을 식별해야 함
+2. **React Query / SWR 도입** --- 프론트엔드 상태 관리는 클라이언트 코드 변경
+3. **SSR 적용** --- Next.js 서버 컴포넌트 활용은 코드 아키텍처 변경
+4. **error.tsx / loading.tsx 추가** --- Next.js 라우팅 파일 추가
+5. **데이터 액세스 패턴 통일** --- JPA/JdbcTemplate 혼용 정리
+6. **Catalog 서비스 DB 분리** --- 서비스 코드 리팩터링 (RDS로 물리적 분리는 용이)
+7. **Saga 패턴 구현** --- 분산 트랜잭션 보상 로직은 코드 구현
+8. **localStorage → HttpOnly 쿠키** --- 인증 흐름 코드 변경
+9. **비즈니스 커스텀 메트릭** --- Micrometer 커스텀 카운터/게이지 코드 추가

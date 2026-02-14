@@ -101,7 +101,17 @@ public class AuthController {
     }
 
     @PostMapping("/logout")
-    public Map<String, String> logout(HttpServletResponse response) {
+    public Map<String, String> logout(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            HttpServletResponse response) {
+        // Revoke all refresh tokens for this user
+        try {
+            if (authorization != null && authorization.startsWith("Bearer ")) {
+                authService.revokeAllTokens(authorization);
+            }
+        } catch (Exception e) {
+            // Best effort — still clear cookies even if revocation fails
+        }
         cookieHelper.clearAuthCookies(response);
         return Map.of("message", "Logged out successfully");
     }

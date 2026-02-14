@@ -9,6 +9,8 @@ import com.tiketi.paymentservice.messaging.PaymentEventProducer;
 import com.tiketi.paymentservice.messaging.event.PaymentConfirmedEvent;
 import com.tiketi.paymentservice.messaging.event.PaymentRefundedEvent;
 import java.time.Instant;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import java.time.OffsetDateTime;
 import java.util.HashMap;
 import java.util.List;
@@ -23,6 +25,8 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class PaymentService {
+
+    private static final Logger log = LoggerFactory.getLogger(PaymentService.class);
 
     private final JdbcTemplate jdbcTemplate;
     private final TicketInternalClient ticketInternalClient;
@@ -347,6 +351,25 @@ public class PaymentService {
 
         String orderId = payment.get("order_id") != null ? String.valueOf(payment.get("order_id")) : null;
 
+        // Synchronous confirmation via internal API (primary path)
+        try {
+            switch (paymentType) {
+                case "transfer" -> {
+                    if (referenceId != null) ticketInternalClient.confirmTransfer(referenceId, userId, paymentMethod);
+                }
+                case "membership" -> {
+                    if (referenceId != null) ticketInternalClient.activateMembership(referenceId);
+                }
+                default -> {
+                    if (reservationId != null) ticketInternalClient.confirmReservation(reservationId, paymentMethod);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Synchronous confirmation failed for {} {}, falling back to Kafka: {}",
+                paymentType, reservationId != null ? reservationId : referenceId, e.getMessage());
+        }
+
+        // Kafka event (secondary: stats, notifications, eventual consistency fallback)
         paymentEventProducer.publish(new PaymentConfirmedEvent(
             paymentId, orderId, userId, reservationId, referenceId,
             paymentType, amount, paymentMethod, Instant.now()));

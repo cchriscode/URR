@@ -12,6 +12,7 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.90.21",
     "@tosspayments/payment-sdk": "^1.9.2",
     "axios": "^1.13.5",
     "next": "16.1.6",

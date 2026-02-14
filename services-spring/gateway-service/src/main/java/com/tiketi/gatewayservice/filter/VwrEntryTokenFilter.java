@@ -2,7 +2,6 @@ package com.tiketi.gatewayservice.filter;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.security.Keys;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -34,15 +33,12 @@ public class VwrEntryTokenFilter extends OncePerRequestFilter {
     private static final Set<String> PROTECTED_METHODS = Set.of("POST", "PUT", "PATCH");
 
     private final SecretKey signingKey;
-    private final SecretKey jwtKey;
     private final String cloudFrontSecret;
 
     public VwrEntryTokenFilter(
             @Value("${queue.entry-token.secret}") String secret,
-            @Value("${JWT_SECRET:}") String jwtSecret,
             @Value("${cloudfront.secret:}") String cloudFrontSecret) {
         this.signingKey = buildSigningKey(secret);
-        this.jwtKey = buildJwtKey(jwtSecret);
         this.cloudFrontSecret = (cloudFrontSecret != null && !cloudFrontSecret.isBlank())
                 ? cloudFrontSecret : null;
     }
@@ -90,7 +86,7 @@ public class VwrEntryTokenFilter extends OncePerRequestFilter {
 
             // Validate userId binding: VWR token uid must match Auth JWT subject
             String vwrUserId = vwrClaims.get("uid", String.class);
-            if (vwrUserId != null && jwtKey != null) {
+            if (vwrUserId != null) {
                 String authUserId = extractAuthUserId(request);
                 if (authUserId != null && !vwrUserId.equals(authUserId)) {
                     log.warn("VWR token userId mismatch: token uid={} auth sub={} path={}",
@@ -126,31 +122,9 @@ public class VwrEntryTokenFilter extends OncePerRequestFilter {
     }
 
     private String extractAuthUserId(HttpServletRequest request) {
-        String authHeader = request.getHeader("Authorization");
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) return null;
-        try {
-            Claims claims = Jwts.parser()
-                    .verifyWith(jwtKey)
-                    .build()
-                    .parseSignedClaims(authHeader.substring(7))
-                    .getPayload();
-            return claims.getSubject();
-        } catch (Exception e) {
-            log.debug("Failed to parse auth JWT for VWR validation: {}", e.getMessage());
-            return null;
-        }
-    }
-
-    private static SecretKey buildJwtKey(String secret) {
-        if (secret == null || secret.isBlank()) return null;
-        byte[] keyBytes;
-        try {
-            keyBytes = java.util.Base64.getDecoder().decode(secret);
-        } catch (IllegalArgumentException e) {
-            keyBytes = secret.getBytes(StandardCharsets.UTF_8);
-        }
-        if (keyBytes.length < 32) return null;
-        return Keys.hmacShaKeyFor(keyBytes);
+        // Use X-User-Id injected by JwtAuthFilter (no JWT parsing needed)
+        String userId = request.getHeader(JwtAuthFilter.HEADER_USER_ID);
+        return (userId != null && !userId.isBlank()) ? userId : null;
     }
 
     private static SecretKey buildSigningKey(String secret) {

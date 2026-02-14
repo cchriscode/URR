@@ -4,11 +4,11 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { AuthGuard } from "@/components/auth-guard";
 import { newsApi } from "@/lib/api-client";
-import { getUser } from "@/lib/storage";
+import { useAuth } from "@/lib/auth-context";
 
 export default function NewsCreatePage() {
   const router = useRouter();
-  const user = getUser();
+  const { user } = useAuth();
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [isPinned, setIsPinned] = useState(false);

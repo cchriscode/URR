@@ -64,6 +64,40 @@ public class TicketInternalClient {
                 .body(Map.class);
     }
 
+    @CircuitBreaker(name = "internalService", fallbackMethod = "confirmReservationFallback")
+    @Retry(name = "internalService")
+    public void confirmReservation(UUID reservationId, String paymentMethod) {
+        restClient.post()
+                .uri(uriBuilder -> uriBuilder.path("/internal/reservations/{id}/confirm").build(reservationId))
+                .header("Authorization", "Bearer " + internalToken)
+                .body(Map.of("paymentMethod", paymentMethod))
+                .retrieve()
+                .toBodilessEntity();
+    }
+
+    public void confirmTransfer(UUID transferId, String buyerId, String paymentMethod) {
+        restClient.post()
+                .uri(uriBuilder -> uriBuilder.path("/internal/transfers/{id}/complete").build(transferId))
+                .header("Authorization", "Bearer " + internalToken)
+                .body(Map.of("buyerId", buyerId, "paymentMethod", paymentMethod))
+                .retrieve()
+                .toBodilessEntity();
+    }
+
+    public void activateMembership(UUID membershipId) {
+        restClient.post()
+                .uri(uriBuilder -> uriBuilder.path("/internal/memberships/{id}/activate").build(membershipId))
+                .header("Authorization", "Bearer " + internalToken)
+                .retrieve()
+                .toBodilessEntity();
+    }
+
+    @SuppressWarnings("unused")
+    private void confirmReservationFallback(UUID reservationId, String paymentMethod, Throwable t) {
+        log.error("Circuit breaker: confirmReservation failed for reservation {}: {}", reservationId, t.getMessage());
+        // Don't throw — Kafka event will handle eventual consistency
+    }
+
     @SuppressWarnings("unused")
     private Map<String, Object> validateReservationFallback(UUID reservationId, String userId, Throwable t) {
         log.error("Circuit breaker: validateReservation failed for reservation {}: {}", reservationId, t.getMessage());

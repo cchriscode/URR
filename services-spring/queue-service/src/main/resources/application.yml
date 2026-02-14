@@ -65,6 +65,13 @@ resilience4j:
         permitted-number-of-calls-in-half-open-state: 3
         slow-call-duration-threshold: 3s
         slow-call-rate-threshold: 80
+      redisQueue:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 3
+        record-exceptions:
+          - org.springframework.data.redis.RedisConnectionFailureException
   retry:
     instances:
       internalService:

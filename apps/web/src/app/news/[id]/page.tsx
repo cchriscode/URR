@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { newsApi } from "@/lib/api-client";
-import { getUser } from "@/lib/storage";
+import { useAuth } from "@/lib/auth-context";
 
 interface NewsDetail {
   id: string;
@@ -23,7 +23,7 @@ export default function NewsDetailPage() {
   const [article, setArticle] = useState<NewsDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
-  const user = getUser();
+  const { user } = useAuth();
 
   useEffect(() => {
     if (!params.id) return;

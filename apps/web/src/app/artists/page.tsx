@@ -40,7 +40,6 @@ export default function ArtistsPage() {
               href={`/artists/${artist.id}`}
               className="group block rounded-xl border border-slate-200 bg-white overflow-hidden transition-all hover:border-sky-300 hover:shadow-sm"
             >
-              {/* Image or placeholder */}
               <div className="relative h-40 bg-slate-100 flex items-center justify-center overflow-hidden">
                 {artist.image_url ? (
                   <img

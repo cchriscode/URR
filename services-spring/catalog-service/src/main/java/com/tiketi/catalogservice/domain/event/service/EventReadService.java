@@ -1,5 +1,6 @@
 package com.tiketi.catalogservice.domain.event.service;
 
+import com.tiketi.catalogservice.shared.client.TicketInternalClient;
 import com.tiketi.catalogservice.shared.util.PreSaleSchedule;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -14,11 +15,14 @@ import org.springframework.stereotype.Service;
 public class EventReadService {
 
     private final JdbcTemplate jdbcTemplate;
+    private final TicketInternalClient ticketInternalClient;
 
-    public EventReadService(JdbcTemplate jdbcTemplate) {
+    public EventReadService(JdbcTemplate jdbcTemplate, TicketInternalClient ticketInternalClient) {
         this.jdbcTemplate = jdbcTemplate;
+        this.ticketInternalClient = ticketInternalClient;
     }
 
+    // TODO: listEvents still JOINs ticket_types directly for min/max price aggregation - move to internal API when performance allows
     public Map<String, Object> listEvents(String status, String searchQuery, int page, int limit) {
         int offset = (page - 1) * limit;
 
@@ -94,12 +98,7 @@ public class EventReadService {
             throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "Event not found");
         }
 
-        List<Map<String, Object>> ticketTypes = jdbcTemplate.queryForList("""
-            SELECT id, name, price, total_quantity, available_quantity, description
-            FROM ticket_types
-            WHERE event_id = ?
-            ORDER BY price DESC
-            """, eventId);
+        List<Map<String, Object>> ticketTypes = ticketInternalClient.getTicketTypesByEvent(eventId);
 
         Map<String, Object> event = eventRows.getFirst();
         Map<String, Object> result = new HashMap<>();
@@ -121,22 +120,12 @@ public class EventReadService {
     }
 
     public Map<String, Object> getTicketsByEvent(UUID eventId) {
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
-            SELECT id, name, price, total_quantity, available_quantity, description
-            FROM ticket_types
-            WHERE event_id = ?
-            ORDER BY price DESC
-            """, eventId);
+        List<Map<String, Object>> rows = ticketInternalClient.getTicketTypesByEvent(eventId);
         return Map.of("ticketTypes", rows);
     }
 
     public Map<String, Object> getTicketAvailability(UUID ticketTypeId) {
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-            "SELECT available_quantity, total_quantity FROM ticket_types WHERE id = ?", ticketTypeId);
-        if (rows.isEmpty()) {
-            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "Ticket type not found");
-        }
-        return rows.getFirst();
+        return ticketInternalClient.getTicketTypeAvailability(ticketTypeId);
     }
 
     public Map<String, Object> getSeatLayouts() {

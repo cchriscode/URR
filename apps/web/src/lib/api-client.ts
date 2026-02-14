@@ -107,9 +107,8 @@ http.interceptors.response.use(
       } catch {
         processQueue(false);
         clearAuth();
-        if (typeof window !== "undefined") {
-          window.location.href = "/login";
-        }
+        // Don't redirect here — AuthGuard handles redirects for protected pages.
+        // Redirecting here causes infinite reload loops on /login.
         return Promise.reject(error);
       } finally {
         isRefreshing = false;
@@ -138,6 +137,7 @@ export const authApi = {
   me: () => http.get("/auth/me"),
   refresh: () => http.post("/auth/refresh"),
   logout: () => http.post("/auth/logout"),
+  google: (credential: string) => http.post("/auth/google", { credential }),
 };
 
 export const eventsApi = {
@@ -157,7 +157,11 @@ export const reservationsApi = {
   createTicketOnly: (payload: {
     eventId: string;
     items: Array<{ ticketTypeId: string; quantity: number }>;
-  }) => http.post("/reservations", payload),
+    idempotencyKey?: string;
+  }) => http.post("/reservations", {
+    ...payload,
+    idempotencyKey: payload.idempotencyKey ?? crypto.randomUUID(),
+  }),
   mine: () => http.get("/reservations/my"),
   byId: (id: string) => http.get(`/reservations/${id}`),
   cancel: (id: string) => http.post(`/reservations/${id}/cancel`),
@@ -165,8 +169,11 @@ export const reservationsApi = {
 
 export const seatsApi = {
   byEvent: (eventId: string) => http.get(`/seats/events/${eventId}`),
-  reserve: (payload: { eventId: string; seatIds: string[] }) =>
-    http.post("/seats/reserve", payload),
+  reserve: (payload: { eventId: string; seatIds: string[]; idempotencyKey?: string }) =>
+    http.post("/seats/reserve", {
+      ...payload,
+      idempotencyKey: payload.idempotencyKey ?? crypto.randomUUID(),
+    }),
 };
 
 export const paymentsApi = {

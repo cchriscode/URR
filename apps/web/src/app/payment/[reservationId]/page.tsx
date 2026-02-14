@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { AuthGuard } from "@/components/auth-guard";
 import { paymentsApi, reservationsApi } from "@/lib/api-client";
 import { useCountdown, formatCountdownShort } from "@/hooks/use-countdown";
@@ -30,6 +31,7 @@ type MethodId = (typeof METHODS)[number]["id"];
 export default function PaymentPage() {
   const params = useParams<{ reservationId: string }>();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [info, setInfo] = useState<ReservationInfo | null>(null);
   const [method, setMethod] = useState<MethodId | null>(null);
   const [busy, setBusy] = useState(false);
@@ -82,6 +84,7 @@ export default function PaymentPage() {
           reservationId: params.reservationId,
           paymentMethod: method,
         });
+        queryClient.invalidateQueries({ queryKey: ["reservations"] });
         router.push("/payment/success");
       }
     } catch {

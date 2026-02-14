@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, useCallback } from "react";
-import { eventsApi } from "@/lib/api-client";
+import { useState } from "react";
+import { useEvents } from "@/hooks/use-events";
 import { useCountdown, formatCountdown } from "@/hooks/use-countdown";
 import { formatEventDate, formatPrice } from "@/lib/format";
 import type { EventSummary } from "@/lib/types";
@@ -112,42 +112,12 @@ function EventCard({ event, onExpire }: { event: EventWithPrice; onExpire: () =>
 }
 
 export default function HomePage() {
-  const [events, setEvents] = useState<EventWithPrice[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState("on_sale");
 
-  const fetchEvents = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const params: Record<string, string | number> = { page: 1, limit: 12 };
-      if (filter) params.status = filter;
-      const res = await eventsApi.list(params);
-      setEvents(res.data.events ?? res.data.data ?? []);
-    } catch {
-      setError("이벤트를 불러오는데 실패했습니다.");
-    } finally {
-      setLoading(false);
-    }
-  }, [filter]);
+  const params: Record<string, string | number> = { page: 1, limit: 12 };
+  if (filter) params.status = filter;
 
-  // Silent refresh: updates data in-place without showing the loading spinner.
-  // Used by onExpire callbacks so the grid stays mounted and clickable.
-  const refreshEvents = useCallback(async () => {
-    try {
-      const params: Record<string, string | number> = { page: 1, limit: 12 };
-      if (filter) params.status = filter;
-      const res = await eventsApi.list(params);
-      setEvents(res.data.events ?? res.data.data ?? []);
-    } catch {
-      /* silent — grid keeps showing stale data rather than disappearing */
-    }
-  }, [filter]);
-
-  useEffect(() => {
-    fetchEvents();
-  }, [fetchEvents]);
+  const { data: events = [], isLoading, error, refetch } = useEvents(params);
 
   return (
     <div className="space-y-6">
@@ -178,26 +148,26 @@ export default function HomePage() {
       </div>
 
       {/* Events grid */}
-      {loading ? (
+      {isLoading ? (
         <div className="flex justify-center py-16">
           <div className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-sky-500 border-t-transparent" />
         </div>
       ) : error ? (
-        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-600">{error}</div>
+        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-600">이벤트를 불러오는데 실패했습니다.</div>
       ) : events.length === 0 ? (
         <div className="rounded-xl bg-white border border-slate-200 p-10 text-center">
           <p className="text-slate-400">이벤트가 없습니다</p>
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {events.map((event) => (
+          {events.map((event: EventWithPrice) => (
             <EventCard
               key={event.id}
               event={event}
               onExpire={
                 event.status === "upcoming"
                   ? () => setFilter("on_sale")
-                  : refreshEvents
+                  : () => refetch()
               }
             />
           ))}

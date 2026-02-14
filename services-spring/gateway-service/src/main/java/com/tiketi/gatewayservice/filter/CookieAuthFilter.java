@@ -15,7 +15,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 @Component
-@Order(-1)
+@Order(-2)
 public class CookieAuthFilter extends OncePerRequestFilter {
 
     private static final String ACCESS_TOKEN_COOKIE = "access_token";

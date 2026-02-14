@@ -7,6 +7,7 @@ import java.util.UUID;
 
 public record CreateReservationRequest(
     @NotNull UUID eventId,
-    @NotNull @Valid List<ReservationItemRequest> items
+    @NotNull @Valid List<ReservationItemRequest> items,
+    String idempotencyKey
 ) {
 }

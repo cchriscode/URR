@@ -4,9 +4,11 @@ import com.tiketi.catalogservice.domain.admin.dto.AdminEventRequest;
 import com.tiketi.catalogservice.domain.admin.dto.AdminReservationStatusRequest;
 import com.tiketi.catalogservice.domain.admin.dto.AdminTicketTypeRequest;
 import com.tiketi.catalogservice.domain.admin.dto.AdminTicketUpdateRequest;
+import com.tiketi.catalogservice.shared.audit.AuditLog;
 import com.tiketi.catalogservice.shared.security.AuthUser;
 import com.tiketi.catalogservice.shared.security.JwtTokenParser;
 import com.tiketi.catalogservice.domain.admin.service.AdminService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.Map;
 import java.util.UUID;
@@ -19,7 +21,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -37,110 +38,119 @@ public class AdminController {
     }
 
     @GetMapping({"/dashboard", "/dashboard/stats"})
-    public Map<String, Object> dashboard(@RequestHeader(value = "Authorization", required = false) String authorization) {
-        jwtTokenParser.requireAdmin(authorization);
+    public Map<String, Object> dashboard(HttpServletRequest request) {
+        jwtTokenParser.requireAdmin(request);
         return adminService.dashboardStats();
     }
 
     @GetMapping("/seat-layouts")
-    public Map<String, Object> seatLayouts(@RequestHeader(value = "Authorization", required = false) String authorization) {
-        jwtTokenParser.requireAdmin(authorization);
+    public Map<String, Object> seatLayouts(HttpServletRequest request) {
+        jwtTokenParser.requireAdmin(request);
         return adminService.seatLayouts();
     }
 
+    @AuditLog(action = "CREATE_EVENT", resourceType = "event")
     @PostMapping("/events")
     public ResponseEntity<Map<String, Object>> createEvent(
-        @RequestHeader(value = "Authorization", required = false) String authorization,
-        @Valid @RequestBody AdminEventRequest request
+        HttpServletRequest request,
+        @Valid @RequestBody AdminEventRequest body
     ) {
-        AuthUser admin = jwtTokenParser.requireAdmin(authorization);
-        return ResponseEntity.status(HttpStatus.CREATED).body(adminService.createEvent(request, admin.userId()));
+        AuthUser admin = jwtTokenParser.requireAdmin(request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(adminService.createEvent(body, admin.userId()));
     }
 
+    @AuditLog(action = "UPDATE_EVENT", resourceType = "event")
     @PutMapping("/events/{id}")
     public Map<String, Object> updateEvent(
         @PathVariable UUID id,
-        @RequestHeader(value = "Authorization", required = false) String authorization,
-        @Valid @RequestBody AdminEventRequest request
+        HttpServletRequest request,
+        @Valid @RequestBody AdminEventRequest body
     ) {
-        jwtTokenParser.requireAdmin(authorization);
-        return adminService.updateEvent(id, request);
+        jwtTokenParser.requireAdmin(request);
+        return adminService.updateEvent(id, body);
     }
 
+    @AuditLog(action = "CANCEL_EVENT", resourceType = "event")
     @PostMapping("/events/{id}/cancel")
     public Map<String, Object> cancelEvent(
         @PathVariable UUID id,
-        @RequestHeader(value = "Authorization", required = false) String authorization
+        HttpServletRequest request
     ) {
-        jwtTokenParser.requireAdmin(authorization);
+        jwtTokenParser.requireAdmin(request);
         return adminService.cancelEvent(id);
     }
 
+    @AuditLog(action = "DELETE_EVENT", resourceType = "event")
     @DeleteMapping("/events/{id}")
     public Map<String, Object> deleteEvent(
         @PathVariable UUID id,
-        @RequestHeader(value = "Authorization", required = false) String authorization
+        HttpServletRequest request
     ) {
-        jwtTokenParser.requireAdmin(authorization);
+        jwtTokenParser.requireAdmin(request);
         return adminService.deleteEvent(id);
     }
 
+    @AuditLog(action = "GENERATE_SEATS", resourceType = "event")
     @PostMapping("/events/{id}/generate-seats")
     public Map<String, Object> generateSeats(
         @PathVariable UUID id,
-        @RequestHeader(value = "Authorization", required = false) String authorization
+        HttpServletRequest request
     ) {
-        jwtTokenParser.requireAdmin(authorization);
+        jwtTokenParser.requireAdmin(request);
         return adminService.generateSeats(id);
     }
 
+    @AuditLog(action = "DELETE_SEATS", resourceType = "event")
     @DeleteMapping("/events/{id}/seats")
     public Map<String, Object> deleteSeats(
         @PathVariable UUID id,
-        @RequestHeader(value = "Authorization", required = false) String authorization
+        HttpServletRequest request
     ) {
-        jwtTokenParser.requireAdmin(authorization);
+        jwtTokenParser.requireAdmin(request);
         return adminService.deleteSeats(id);
     }
 
+    @AuditLog(action = "CREATE_TICKET_TYPE", resourceType = "ticket_type")
     @PostMapping("/events/{eventId}/tickets")
     public ResponseEntity<Map<String, Object>> createTicket(
         @PathVariable UUID eventId,
-        @RequestHeader(value = "Authorization", required = false) String authorization,
-        @Valid @RequestBody AdminTicketTypeRequest request
+        HttpServletRequest request,
+        @Valid @RequestBody AdminTicketTypeRequest body
     ) {
-        jwtTokenParser.requireAdmin(authorization);
-        return ResponseEntity.status(HttpStatus.CREATED).body(adminService.createTicketType(eventId, request));
+        jwtTokenParser.requireAdmin(request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(adminService.createTicketType(eventId, body));
     }
 
+    @AuditLog(action = "UPDATE_TICKET_TYPE", resourceType = "ticket_type")
     @PutMapping("/tickets/{id}")
     public Map<String, Object> updateTicket(
         @PathVariable UUID id,
-        @RequestHeader(value = "Authorization", required = false) String authorization,
-        @Valid @RequestBody AdminTicketUpdateRequest request
+        HttpServletRequest request,
+        @Valid @RequestBody AdminTicketUpdateRequest body
     ) {
-        jwtTokenParser.requireAdmin(authorization);
-        return adminService.updateTicketType(id, request);
+        jwtTokenParser.requireAdmin(request);
+        return adminService.updateTicketType(id, body);
     }
 
     @GetMapping("/reservations")
     public Map<String, Object> reservations(
-        @RequestHeader(value = "Authorization", required = false) String authorization,
+        HttpServletRequest request,
         @RequestParam(required = false) Integer page,
         @RequestParam(required = false) Integer limit,
         @RequestParam(required = false) String status
     ) {
-        jwtTokenParser.requireAdmin(authorization);
+        jwtTokenParser.requireAdmin(request);
         return adminService.listReservations(page, limit, status);
     }
 
+    @AuditLog(action = "UPDATE_RESERVATION_STATUS", resourceType = "reservation")
     @PatchMapping("/reservations/{id}/status")
     public Map<String, Object> updateReservationStatus(
         @PathVariable UUID id,
-        @RequestHeader(value = "Authorization", required = false) String authorization,
-        @RequestBody AdminReservationStatusRequest request
+        HttpServletRequest request,
+        @RequestBody AdminReservationStatusRequest body
     ) {
-        jwtTokenParser.requireAdmin(authorization);
-        return adminService.updateReservationStatus(id, request);
+        jwtTokenParser.requireAdmin(request);
+        return adminService.updateReservationStatus(id, body);
     }
 }

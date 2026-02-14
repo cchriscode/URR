@@ -3,6 +3,7 @@
 import { useEffect, useState, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { paymentsApi } from "@/lib/api-client";
 
 function PaymentSuccessContent() {
@@ -12,8 +13,14 @@ function PaymentSuccessContent() {
   const amount = searchParams.get("amount");
   const isTossCallback = !!(paymentKey && orderId && amount);
 
+  const queryClient = useQueryClient();
   const [confirming, setConfirming] = useState(isTossCallback);
   const [error, setError] = useState<string | null>(null);
+
+  // Invalidate reservations cache so my-reservations page shows fresh data
+  useEffect(() => {
+    queryClient.invalidateQueries({ queryKey: ["reservations"] });
+  }, [queryClient]);
 
   useEffect(() => {
     if (!isTossCallback) return;

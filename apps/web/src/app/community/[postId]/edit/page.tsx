@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { communityApi } from "@/lib/api-client";
-import { getUser } from "@/lib/storage";
+import { useAuth } from "@/lib/auth-context";
 import { AuthGuard } from "@/components/auth-guard";
 import type { CommunityPost } from "@/lib/types";
 
@@ -11,7 +11,7 @@ function EditForm() {
   const params = useParams();
   const router = useRouter();
   const postId = params.postId as string;
-  const user = getUser();
+  const { user } = useAuth();
   const userId = user?.id ?? user?.userId;
 
   const [post, setPost] = useState<CommunityPost | null>(null);

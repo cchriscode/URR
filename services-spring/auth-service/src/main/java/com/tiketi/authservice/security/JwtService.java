@@ -8,7 +8,11 @@ import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import java.nio.charset.StandardCharsets;
 import java.security.Key;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.Date;
+import java.util.HexFormat;
+import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -42,6 +46,10 @@ public class JwtService {
     }
 
     public String generateRefreshToken(UserEntity user) {
+        return generateRefreshToken(user, UUID.randomUUID());
+    }
+
+    public String generateRefreshToken(UserEntity user, UUID familyId) {
         long expirationMillis = jwtProperties.refreshTokenExpirationSeconds() * 1000;
         Date now = new Date();
         Date expiry = new Date(now.getTime() + expirationMillis);
@@ -50,10 +58,26 @@ public class JwtService {
             .subject(user.getId().toString())
             .claim("userId", user.getId().toString())
             .claim("type", "refresh")
+            .claim("familyId", familyId.toString())
+            .id(UUID.randomUUID().toString())
             .issuedAt(now)
             .expiration(expiry)
             .signWith(signingKey())
             .compact();
+    }
+
+    public long getRefreshTokenExpirationSeconds() {
+        return jwtProperties.refreshTokenExpirationSeconds();
+    }
+
+    public static String hashToken(String token) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(token.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(hash);
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException("SHA-256 not available", e);
+        }
     }
 
     public Claims parse(String token) {

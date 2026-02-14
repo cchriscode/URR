@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { communityApi, artistsApi } from "@/lib/api-client";
-import { getUser } from "@/lib/storage";
+import { useAuth } from "@/lib/auth-context";
 import { AuthGuard } from "@/components/auth-guard";
 import type { Artist } from "@/lib/types";
 
@@ -11,7 +11,7 @@ function WriteForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const preselectedArtistId = searchParams.get("artistId") ?? "";
-  const user = getUser();
+  const { user } = useAuth();
 
   const [artists, setArtists] = useState<Artist[]>([]);
   const [artistId, setArtistId] = useState(preselectedArtistId);

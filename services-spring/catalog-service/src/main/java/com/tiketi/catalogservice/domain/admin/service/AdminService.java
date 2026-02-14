@@ -38,22 +38,13 @@ public class AdminService {
 
     public Map<String, Object> dashboardStats() {
         int totalEvents = intValue(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM events", Integer.class));
-        int totalReservations = intValue(jdbcTemplate.queryForObject(
-            "SELECT COUNT(*) FROM reservations WHERE status <> 'cancelled'", Integer.class));
-        int totalRevenue = intValue(jdbcTemplate.queryForObject(
-            "SELECT COALESCE(SUM(total_amount), 0) FROM reservations WHERE payment_status = 'completed'", Integer.class));
-        int todayReservations = intValue(jdbcTemplate.queryForObject(
-            "SELECT COUNT(*) FROM reservations WHERE DATE(created_at) = CURRENT_DATE AND status <> 'cancelled'", Integer.class));
 
-        List<Map<String, Object>> recent = jdbcTemplate.queryForList("""
-            SELECT
-              r.id, r.user_id, r.reservation_number, r.total_amount, r.status, r.created_at,
-              e.title AS event_title
-            FROM reservations r
-            LEFT JOIN events e ON r.event_id = e.id
-            ORDER BY r.created_at DESC
-            LIMIT 10
-            """);
+        Map<String, Object> reservationStats = ticketInternalClient.getReservationStats();
+        int totalReservations = intValue(reservationStats.get("totalReservations"));
+        int totalRevenue = intValue(reservationStats.get("totalRevenue"));
+        int todayReservations = intValue(reservationStats.get("todayReservations"));
+
+        List<Map<String, Object>> recent = ticketInternalClient.getRecentReservations();
 
         hydrateUserInfo(recent);
 
@@ -69,9 +60,7 @@ public class AdminService {
     }
 
     public Map<String, Object> seatLayouts() {
-        List<Map<String, Object>> layouts = jdbcTemplate.queryForList(
-            "SELECT id, name, description, total_seats, layout_config FROM seat_layouts ORDER BY name");
-        return Map.of("layouts", layouts);
+        return ticketInternalClient.getSeatLayouts();
     }
 
     @Transactional
@@ -108,10 +97,7 @@ public class AdminService {
 
         if (request.ticketTypes() != null && !request.ticketTypes().isEmpty()) {
             for (AdminTicketTypeRequest ticketType : request.ticketTypes()) {
-                jdbcTemplate.update("""
-                    INSERT INTO ticket_types (event_id, name, price, total_quantity, available_quantity, description)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                    """, eventId, ticketType.name(), ticketType.price(), ticketType.totalQuantity(), ticketType.totalQuantity(), ticketType.description());
+                ticketInternalClient.createTicketType(eventId, ticketType.name(), ticketType.price(), ticketType.totalQuantity(), ticketType.description());
             }
         }
 
@@ -168,38 +154,18 @@ public class AdminService {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Event not found or already cancelled");
         }
 
-        List<Map<String, Object>> cancelledReservations = jdbcTemplate.queryForList("""
-            UPDATE reservations
-            SET status = 'cancelled',
-                payment_status = CASE WHEN payment_status = 'completed' THEN 'refunded' ELSE payment_status END,
-                updated_at = NOW()
-            WHERE event_id = ? AND status IN ('pending', 'confirmed')
-            RETURNING id
-            """, eventId);
-
-        jdbcTemplate.update("""
-            UPDATE seats
-            SET status = 'available', updated_at = NOW()
-            WHERE event_id = ? AND status = 'locked'
-            """, eventId);
+        int cancelledCount = ticketInternalClient.cancelReservationsByEvent(eventId);
 
         return Map.of(
             "message", "Event cancelled successfully. Reservations were cancelled and refundable cases marked refunded.",
             "event", eventRows.getFirst(),
-            "cancelledReservations", cancelledReservations.size()
+            "cancelledReservations", cancelledCount
         );
     }
 
     @Transactional
     public Map<String, Object> deleteEvent(UUID eventId) {
-        List<Map<String, Object>> cancelledReservations = jdbcTemplate.queryForList("""
-            UPDATE reservations
-            SET status = 'cancelled',
-                payment_status = CASE WHEN payment_status = 'completed' THEN 'refunded' ELSE payment_status END,
-                updated_at = NOW()
-            WHERE event_id = ? AND status <> 'cancelled'
-            RETURNING id
-            """, eventId);
+        int cancelledCount = ticketInternalClient.cancelAllReservationsByEvent(eventId);
 
         List<Map<String, Object>> deletedEvent = jdbcTemplate.queryForList(
             "DELETE FROM events WHERE id = ? RETURNING id, title", eventId);
@@ -207,7 +173,7 @@ public class AdminService {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Event not found");
         }
 
-        return Map.of("message", "Event deleted successfully", "cancelledReservations", cancelledReservations.size());
+        return Map.of("message", "Event deleted successfully", "cancelledReservations", cancelledCount);
     }
 
     public Map<String, Object> generateSeats(UUID eventId) {
@@ -230,12 +196,7 @@ public class AdminService {
     }
 
     public Map<String, Object> deleteSeats(UUID eventId) {
-        int activeReservations = intValue(jdbcTemplate.queryForObject("""
-            SELECT COUNT(*)
-            FROM reservations r
-            JOIN reservation_items ri ON r.id = ri.reservation_id
-            WHERE r.event_id = ? AND ri.seat_id IS NOT NULL AND r.status <> 'cancelled'
-            """, Integer.class, eventId));
+        int activeReservations = ticketInternalClient.getActiveSeatReservationCount(eventId);
         if (activeReservations > 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot delete seats with active reservations");
         }
@@ -244,122 +205,46 @@ public class AdminService {
         return Map.of("message", "Seats deleted successfully", "seatsDeleted", deleted);
     }
 
-    @Transactional
     public Map<String, Object> createTicketType(UUID eventId, AdminTicketTypeRequest request) {
-        Map<String, Object> ticketType = jdbcTemplate.queryForList("""
-            INSERT INTO ticket_types (event_id, name, price, total_quantity, available_quantity, description)
-            VALUES (?, ?, ?, ?, ?, ?)
-            RETURNING *
-            """, eventId, request.name(), request.price(), request.totalQuantity(), request.totalQuantity(), request.description())
-            .stream().findFirst()
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Failed to create ticket type"));
-
-        return Map.of("message", "Ticket type created", "ticketType", ticketType);
+        Map<String, Object> result = ticketInternalClient.createTicketType(
+            eventId, request.name(), request.price(), request.totalQuantity(), request.description());
+        return Map.of("message", "Ticket type created", "ticketType", result.get("ticketType"));
     }
 
-    @Transactional
     public Map<String, Object> updateTicketType(UUID ticketTypeId, AdminTicketUpdateRequest request) {
-        List<Map<String, Object>> currentRows = jdbcTemplate.queryForList(
-            "SELECT total_quantity, available_quantity, event_id FROM ticket_types WHERE id = ?", ticketTypeId);
-        if (currentRows.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Ticket type not found");
-        }
-
-        Map<String, Object> current = currentRows.getFirst();
-        int sold = intValue(current.get("total_quantity")) - intValue(current.get("available_quantity"));
-        int newAvailable = request.totalQuantity() - sold;
-        if (newAvailable < 0) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot set quantity below sold amount");
-        }
-
-        Map<String, Object> updated = jdbcTemplate.queryForList("""
-            UPDATE ticket_types
-            SET name = ?, price = ?, total_quantity = ?, available_quantity = ?, description = ?, updated_at = NOW()
-            WHERE id = ?
-            RETURNING *
-            """, request.name(), request.price(), request.totalQuantity(), newAvailable, request.description(), ticketTypeId)
-            .stream().findFirst()
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Failed to update ticket type"));
-
-        return Map.of("message", "Ticket type updated", "ticketType", updated);
+        Map<String, Object> result = ticketInternalClient.updateTicketType(
+            ticketTypeId, request.name(), request.price(), request.totalQuantity(), request.description());
+        return Map.of("message", "Ticket type updated", "ticketType", result.get("ticketType"));
     }
 
+    @SuppressWarnings("unchecked")
     public Map<String, Object> listReservations(Integer page, Integer limit, String status) {
         int safePage = page == null || page < 1 ? 1 : page;
         int safeLimit = limit == null || limit < 1 ? 20 : Math.min(limit, 100);
-        int offset = (safePage - 1) * safeLimit;
 
-        StringBuilder query = new StringBuilder("""
-            SELECT
-              r.id, r.user_id, r.reservation_number, r.total_amount, r.status, r.payment_status,
-              r.created_at, e.title AS event_title, e.venue, e.event_date
-            FROM reservations r
-            LEFT JOIN events e ON r.event_id = e.id
-            """);
+        Map<String, Object> result = ticketInternalClient.listReservations(safePage, safeLimit, status);
 
-        if (status != null && !status.isBlank()) {
-            query.append(" WHERE r.status = ?");
-        }
-        query.append(" ORDER BY r.created_at DESC LIMIT ? OFFSET ?");
-
-        List<Map<String, Object>> reservations;
-        if (status != null && !status.isBlank()) {
-            reservations = jdbcTemplate.queryForList(query.toString(), status, safeLimit, offset);
-        } else {
-            reservations = jdbcTemplate.queryForList(query.toString(), safeLimit, offset);
-        }
+        List<Map<String, Object>> reservations = result.get("reservations") instanceof List<?> list
+            ? (List<Map<String, Object>>) list
+            : List.of();
 
         hydrateUserInfo(reservations);
 
-        int total;
-        if (status != null && !status.isBlank()) {
-            total = intValue(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM reservations WHERE status = ?", Integer.class, status));
-        } else {
-            total = intValue(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM reservations", Integer.class));
-        }
-
-        Map<String, Object> pagination = new HashMap<>();
-        pagination.put("page", safePage);
-        pagination.put("limit", safeLimit);
-        pagination.put("total", total);
-        pagination.put("totalPages", (int) Math.ceil((double) total / safeLimit));
-
-        return Map.of("reservations", reservations, "pagination", pagination);
+        Map<String, Object> response = new HashMap<>();
+        response.put("reservations", reservations);
+        response.put("pagination", result.get("pagination"));
+        return response;
     }
 
-    @Transactional
     public Map<String, Object> updateReservationStatus(UUID reservationId, AdminReservationStatusRequest request) {
         if ((request.status() == null || request.status().isBlank())
             && (request.paymentStatus() == null || request.paymentStatus().isBlank())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "No status fields to update");
         }
 
-        StringBuilder sql = new StringBuilder("UPDATE reservations SET ");
-        Map<String, Object> params = new HashMap<>();
-        int setCount = 0;
-        if (request.status() != null && !request.status().isBlank()) {
-            sql.append("status = :status");
-            params.put("status", request.status());
-            setCount++;
-        }
-        if (request.paymentStatus() != null && !request.paymentStatus().isBlank()) {
-            if (setCount > 0) {
-                sql.append(", ");
-            }
-            sql.append("payment_status = :paymentStatus");
-            params.put("paymentStatus", request.paymentStatus());
-        }
-        sql.append(", updated_at = NOW() WHERE id = :id RETURNING *");
-        params.put("id", reservationId);
-
-        org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate named =
-            new org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate(jdbcTemplate);
-
-        List<Map<String, Object>> rows = named.queryForList(sql.toString(), params);
-        if (rows.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Reservation not found");
-        }
-        return Map.of("message", "Reservation status updated", "reservation", rows.getFirst());
+        Map<String, Object> result = ticketInternalClient.updateReservationStatus(
+            reservationId, request.status(), request.paymentStatus());
+        return Map.of("message", "Reservation status updated", "reservation", result.get("reservation"));
     }
 
     private void hydrateUserInfo(List<Map<String, Object>> reservations) {

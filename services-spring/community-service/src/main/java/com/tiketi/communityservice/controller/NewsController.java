@@ -5,6 +5,7 @@ import com.tiketi.communityservice.dto.NewsUpdateRequest;
 import com.tiketi.communityservice.shared.security.AuthUser;
 import com.tiketi.communityservice.shared.security.JwtTokenParser;
 import com.tiketi.communityservice.service.NewsService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.Map;
 import java.util.UUID;
@@ -16,7 +17,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -48,29 +48,29 @@ public class NewsController {
 
     @PostMapping
     public ResponseEntity<Map<String, Object>> create(
-        @RequestHeader(value = "Authorization", required = false) String authorization,
+        HttpServletRequest httpRequest,
         @Valid @RequestBody NewsCreateRequest request
     ) {
-        AuthUser user = jwtTokenParser.requireAdmin(authorization);
+        AuthUser user = jwtTokenParser.requireAdmin(httpRequest);
         return ResponseEntity.status(HttpStatus.CREATED).body(newsService.create(request, user));
     }
 
     @PutMapping("/{id}")
     public Map<String, Object> update(
         @PathVariable UUID id,
-        @RequestHeader(value = "Authorization", required = false) String authorization,
+        HttpServletRequest httpRequest,
         @Valid @RequestBody NewsUpdateRequest request
     ) {
-        AuthUser user = jwtTokenParser.requireAdmin(authorization);
+        AuthUser user = jwtTokenParser.requireAdmin(httpRequest);
         return newsService.update(id, request, user);
     }
 
     @DeleteMapping("/{id}")
     public Map<String, Object> delete(
         @PathVariable UUID id,
-        @RequestHeader(value = "Authorization", required = false) String authorization
+        HttpServletRequest httpRequest
     ) {
-        AuthUser user = jwtTokenParser.requireAdmin(authorization);
+        AuthUser user = jwtTokenParser.requireAdmin(httpRequest);
         return newsService.delete(id, user);
     }
 }

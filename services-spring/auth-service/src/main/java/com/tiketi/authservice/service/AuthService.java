@@ -11,7 +11,9 @@ import com.tiketi.authservice.dto.MeResponse;
 import com.tiketi.authservice.dto.RegisterRequest;
 import com.tiketi.authservice.dto.UserPayload;
 import com.tiketi.authservice.dto.VerifyTokenResponse;
+import com.tiketi.authservice.domain.RefreshTokenEntity;
 import com.tiketi.authservice.exception.ApiException;
+import com.tiketi.authservice.repository.RefreshTokenRepository;
 import com.tiketi.authservice.repository.UserRepository;
 import com.tiketi.authservice.security.JwtService;
 import io.jsonwebtoken.Claims;
@@ -34,17 +36,20 @@ public class AuthService {
     private static final Logger log = LoggerFactory.getLogger(AuthService.class);
 
     private final UserRepository userRepository;
+    private final RefreshTokenRepository refreshTokenRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final GoogleIdTokenVerifier googleIdTokenVerifier;
 
     public AuthService(
         UserRepository userRepository,
+        RefreshTokenRepository refreshTokenRepository,
         PasswordEncoder passwordEncoder,
         JwtService jwtService,
         @Value("${GOOGLE_CLIENT_ID:}") String googleClientId
     ) {
         this.userRepository = userRepository;
+        this.refreshTokenRepository = refreshTokenRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         if (googleClientId != null && !googleClientId.isBlank()) {
@@ -71,7 +76,9 @@ public class AuthService {
 
         UserEntity saved = userRepository.save(user);
         String token = jwtService.generateToken(saved);
-        String refreshToken = jwtService.generateRefreshToken(saved);
+        UUID familyId = UUID.randomUUID();
+        String refreshToken = jwtService.generateRefreshToken(saved, familyId);
+        storeRefreshToken(saved.getId(), refreshToken, familyId);
 
         return new AuthResponse("Registration completed", token, refreshToken, UserPayload.from(saved));
     }
@@ -97,11 +104,13 @@ public class AuthService {
         }
 
         String token = jwtService.generateToken(user);
-        String refreshToken = jwtService.generateRefreshToken(user);
+        UUID familyId = UUID.randomUUID();
+        String refreshToken = jwtService.generateRefreshToken(user, familyId);
+        storeRefreshToken(user.getId(), refreshToken, familyId);
         return new AuthResponse("Login successful", token, refreshToken, UserPayload.from(user));
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public AuthResponse refreshToken(String refreshTokenValue) {
         Claims claims;
         try {
@@ -115,11 +124,31 @@ public class AuthService {
             throw new ApiException("Invalid refresh token");
         }
 
+        // Token rotation: check DB for reuse detection
+        String tokenHash = JwtService.hashToken(refreshTokenValue);
+        var storedToken = refreshTokenRepository.findByTokenHash(tokenHash).orElse(null);
+
+        if (storedToken != null) {
+            if (storedToken.isRevoked()) {
+                // Token reuse detected — revoke entire family (potential theft)
+                log.warn("Refresh token reuse detected for user={}, family={}", userId, storedToken.getFamilyId());
+                refreshTokenRepository.revokeAllByFamilyId(storedToken.getFamilyId());
+                throw new ApiException("Token reuse detected. All sessions revoked for security.");
+            }
+            // Revoke this token (single use)
+            storedToken.setRevokedAt(java.time.Instant.now());
+            refreshTokenRepository.save(storedToken);
+        }
+        // If token not in DB (pre-migration token), allow refresh but store the new one
+
         UserEntity user = userRepository.findById(UUID.fromString(userId))
             .orElseThrow(() -> new ApiException("User not found"));
 
+        UUID familyId = storedToken != null ? storedToken.getFamilyId() : UUID.randomUUID();
         String newAccessToken = jwtService.generateToken(user);
-        String newRefreshToken = jwtService.generateRefreshToken(user);
+        String newRefreshToken = jwtService.generateRefreshToken(user, familyId);
+        storeRefreshToken(user.getId(), newRefreshToken, familyId);
+
         return new AuthResponse("Token refreshed", newAccessToken, newRefreshToken, UserPayload.from(user));
     }
 
@@ -209,7 +238,9 @@ public class AuthService {
         }
 
         String token = jwtService.generateToken(user);
-        String refreshToken = jwtService.generateRefreshToken(user);
+        UUID familyId = UUID.randomUUID();
+        String refreshToken = jwtService.generateRefreshToken(user, familyId);
+        storeRefreshToken(user.getId(), refreshToken, familyId);
 
         Map<String, Object> userPayload = new LinkedHashMap<>();
         userPayload.put("id", user.getId().toString());
@@ -246,6 +277,23 @@ public class AuthService {
         out.put("name", user.getName());
         out.put("role", user.getRole().name());
         return out;
+    }
+
+    @Transactional
+    public void revokeAllTokens(String bearerToken) {
+        String token = extractToken(bearerToken);
+        String userId = jwtService.extractUserId(token);
+        refreshTokenRepository.revokeAllByUserId(UUID.fromString(userId));
+    }
+
+    private void storeRefreshToken(UUID userId, String rawToken, UUID familyId) {
+        RefreshTokenEntity entity = new RefreshTokenEntity();
+        entity.setUserId(userId);
+        entity.setTokenHash(JwtService.hashToken(rawToken));
+        entity.setFamilyId(familyId);
+        entity.setExpiresAt(java.time.Instant.now().plusSeconds(jwtService.getRefreshTokenExpirationSeconds()));
+        entity.setCreatedAt(java.time.Instant.now());
+        refreshTokenRepository.save(entity);
     }
 
     private String extractToken(String bearerToken) {

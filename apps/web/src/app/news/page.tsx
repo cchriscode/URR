@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { newsApi } from "@/lib/api-client";
-import { getUser } from "@/lib/storage";
+import { useAuth } from "@/lib/auth-context";
 
 interface NewsItem {
   id: string;
@@ -18,7 +18,7 @@ interface NewsItem {
 export default function NewsPage() {
   const [items, setItems] = useState<NewsItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const user = getUser();
+  const { user } = useAuth();
 
   useEffect(() => {
     newsApi

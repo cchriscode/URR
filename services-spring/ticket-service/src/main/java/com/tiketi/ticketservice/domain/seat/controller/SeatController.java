@@ -5,6 +5,7 @@ import com.tiketi.ticketservice.shared.security.AuthUser;
 import com.tiketi.ticketservice.shared.security.JwtTokenParser;
 import com.tiketi.ticketservice.shared.service.CatalogReadService;
 import com.tiketi.ticketservice.domain.reservation.service.ReservationService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.Map;
 import java.util.UUID;
@@ -12,7 +13,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -42,19 +42,19 @@ public class SeatController {
 
     @PostMapping("/reserve")
     public Map<String, Object> reserve(
-        @RequestHeader(value = "Authorization", required = false) String authorization,
-        @Valid @RequestBody SeatReserveRequest request
+        HttpServletRequest request,
+        @Valid @RequestBody SeatReserveRequest body
     ) {
-        AuthUser user = jwtTokenParser.requireUser(authorization);
-        return reservationService.reserveSeats(user.userId(), request);
+        AuthUser user = jwtTokenParser.requireUser(request);
+        return reservationService.reserveSeats(user.userId(), body);
     }
 
     @GetMapping("/reservation/{reservationId}")
     public Map<String, Object> reservationDetail(
         @PathVariable UUID reservationId,
-        @RequestHeader(value = "Authorization", required = false) String authorization
+        HttpServletRequest request
     ) {
-        AuthUser user = jwtTokenParser.requireUser(authorization);
+        AuthUser user = jwtTokenParser.requireUser(request);
         return reservationService.getSeatReservationDetail(user.userId(), reservationId);
     }
 }

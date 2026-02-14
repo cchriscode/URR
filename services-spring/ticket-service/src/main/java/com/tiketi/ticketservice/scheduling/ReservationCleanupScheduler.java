@@ -1,6 +1,7 @@
 package com.tiketi.ticketservice.scheduling;
 
 import com.tiketi.ticketservice.domain.seat.service.SeatLockService;
+import com.tiketi.ticketservice.shared.metrics.BusinessMetrics;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -18,10 +19,13 @@ public class ReservationCleanupScheduler {
 
     private final JdbcTemplate jdbcTemplate;
     private final SeatLockService seatLockService;
+    private final BusinessMetrics metrics;
 
-    public ReservationCleanupScheduler(JdbcTemplate jdbcTemplate, SeatLockService seatLockService) {
+    public ReservationCleanupScheduler(JdbcTemplate jdbcTemplate, SeatLockService seatLockService,
+                                        BusinessMetrics metrics) {
         this.jdbcTemplate = jdbcTemplate;
         this.seatLockService = seatLockService;
+        this.metrics = metrics;
     }
 
     /**
@@ -84,6 +88,7 @@ public class ReservationCleanupScheduler {
                         "UPDATE reservations SET status = 'expired', updated_at = NOW() WHERE id = ?",
                         reservationId);
 
+                    metrics.recordReservationExpired();
                     log.info("Reservation cleanup: expired reservation {} with {} items", reservationId, items.size());
                 } catch (Exception e) {
                     log.error("Reservation cleanup: failed to expire reservation {}: {}", reservationId, e.getMessage(), e);

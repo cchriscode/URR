@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { AuthGuard } from "@/components/auth-guard";
 import { transfersApi, artistsApi, reservationsApi } from "@/lib/api-client";
-import { getUser } from "@/lib/storage";
+import { useAuth } from "@/lib/auth-context";
 import { formatEventDate } from "@/lib/format";
 import type { TicketTransfer, Artist } from "@/lib/types";
 
@@ -26,7 +26,7 @@ export default function TransfersPage() {
   const [myReservations, setMyReservations] = useState<MyReservation[]>([]);
   const [loadingRes, setLoadingRes] = useState(false);
   const [registering, setRegistering] = useState<string | null>(null);
-  const currentUser = getUser();
+  const { user: currentUser } = useAuth();
 
   useEffect(() => {
     artistsApi

@@ -5,6 +5,7 @@ import java.util.UUID;
 
 public record ReservationConfirmedEvent(
     String type,
+    UUID sagaId,
     UUID reservationId,
     String userId,
     UUID eventId,
@@ -14,7 +15,7 @@ public record ReservationConfirmedEvent(
 ) {
     public ReservationConfirmedEvent(UUID reservationId, String userId, UUID eventId,
                                       int totalAmount, String paymentMethod, Instant timestamp) {
-        this("RESERVATION_CONFIRMED", reservationId, userId, eventId, totalAmount,
+        this("RESERVATION_CONFIRMED", null, reservationId, userId, eventId, totalAmount,
              paymentMethod, timestamp);
     }
 }

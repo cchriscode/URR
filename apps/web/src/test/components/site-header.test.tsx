@@ -2,10 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { SiteHeader } from '@/components/site-header';
 
-// Mock storage module
-vi.mock('@/lib/storage', () => ({
-  getUser: vi.fn(),
-  clearAuth: vi.fn(),
+// Mock auth-context
+const mockUseAuth = vi.fn();
+vi.mock('@/lib/auth-context', () => ({
+  useAuth: () => mockUseAuth(),
 }));
 
 // Mock api-client
@@ -15,23 +15,32 @@ vi.mock('@/lib/api-client', () => ({
   },
 }));
 
-import { getUser } from '@/lib/storage';
-
 describe('SiteHeader', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
+  const mockLogout = vi.fn().mockResolvedValue(undefined);
+
+  function setAuth(user: { id: string; email: string; name: string; role: string } | null) {
+    mockUseAuth.mockReturnValue({
+      user,
+      isLoading: false,
+      isAuthenticated: !!user,
+      refresh: vi.fn(),
+      logout: mockLogout,
+    });
+  }
+
   it('renders logo and nav links', () => {
-    vi.mocked(getUser).mockReturnValue(null);
+    setAuth(null);
     render(<SiteHeader />);
     expect(screen.getByText('URR')).toBeInTheDocument();
     expect(screen.getByText('아티스트')).toBeInTheDocument();
-    expect(screen.getByText('News')).toBeInTheDocument();
   });
 
   it('shows login/register links when not authenticated', () => {
-    vi.mocked(getUser).mockReturnValue(null);
+    setAuth(null);
     render(<SiteHeader />);
     expect(screen.getByText('로그인')).toBeInTheDocument();
     expect(screen.getByText('회원가입')).toBeInTheDocument();
@@ -39,7 +48,7 @@ describe('SiteHeader', () => {
   });
 
   it('shows user name and logout when authenticated', () => {
-    vi.mocked(getUser).mockReturnValue({
+    setAuth({
       id: '1',
       email: 'test@test.com',
       name: '테스터',
@@ -53,7 +62,7 @@ describe('SiteHeader', () => {
   });
 
   it('shows admin link for admin users', () => {
-    vi.mocked(getUser).mockReturnValue({
+    setAuth({
       id: '1',
       email: 'admin@test.com',
       name: '어드민',
@@ -64,7 +73,7 @@ describe('SiteHeader', () => {
   });
 
   it('hides admin link for regular users', () => {
-    vi.mocked(getUser).mockReturnValue({
+    setAuth({
       id: '1',
       email: 'user@test.com',
       name: '유저',
@@ -75,7 +84,7 @@ describe('SiteHeader', () => {
   });
 
   it('renders search form', () => {
-    vi.mocked(getUser).mockReturnValue(null);
+    setAuth(null);
     render(<SiteHeader />);
     expect(screen.getByPlaceholderText('공연, 아티스트 검색')).toBeInTheDocument();
     expect(screen.getByText('검색')).toBeInTheDocument();

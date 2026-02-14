@@ -5,6 +5,7 @@ import java.util.UUID;
 
 public record ReservationCreatedEvent(
     String type,
+    UUID sagaId,
     UUID reservationId,
     String userId,
     UUID eventId,
@@ -13,6 +14,6 @@ public record ReservationCreatedEvent(
 ) {
     public ReservationCreatedEvent(UUID reservationId, String userId, UUID eventId,
                                     int totalAmount, Instant timestamp) {
-        this("RESERVATION_CREATED", reservationId, userId, eventId, totalAmount, timestamp);
+        this("RESERVATION_CREATED", null, reservationId, userId, eventId, totalAmount, timestamp);
     }
 }

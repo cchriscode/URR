@@ -7,6 +7,7 @@ import static org.mockito.Mockito.*;
 import com.tiketi.ticketservice.domain.membership.service.MembershipService;
 import com.tiketi.ticketservice.domain.seat.service.SeatLockService;
 import com.tiketi.ticketservice.messaging.TicketEventProducer;
+import com.tiketi.ticketservice.shared.metrics.BusinessMetrics;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -29,12 +30,13 @@ class ReservationServiceTest {
     @Mock private MembershipService membershipService;
     @Mock private SeatLockService seatLockService;
     @Mock private TicketEventProducer ticketEventProducer;
+    @Mock private BusinessMetrics metrics;
 
     private ReservationService reservationService;
 
     @BeforeEach
     void setUp() {
-        reservationService = new ReservationService(jdbcTemplate, namedParameterJdbcTemplate, membershipService, seatLockService, ticketEventProducer);
+        reservationService = new ReservationService(jdbcTemplate, namedParameterJdbcTemplate, membershipService, seatLockService, ticketEventProducer, metrics);
     }
 
     @Test

@@ -5,6 +5,7 @@ import com.tiketi.communityservice.dto.PostUpdateRequest;
 import com.tiketi.communityservice.service.PostService;
 import com.tiketi.communityservice.shared.security.AuthUser;
 import com.tiketi.communityservice.shared.security.JwtTokenParser;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.Map;
 import java.util.UUID;
@@ -40,8 +41,8 @@ public class CommunityPostController {
     @PostMapping
     public ResponseEntity<Map<String, Object>> create(
             @Valid @RequestBody PostCreateRequest request,
-            @RequestHeader(value = "Authorization", required = false) String authorization) {
-        AuthUser user = jwtTokenParser.requireUser(authorization);
+            HttpServletRequest httpRequest) {
+        AuthUser user = jwtTokenParser.requireUser(httpRequest);
         return ResponseEntity.status(HttpStatus.CREATED).body(postService.create(request, user));
     }
 
@@ -49,16 +50,16 @@ public class CommunityPostController {
     public ResponseEntity<Map<String, Object>> update(
             @PathVariable UUID id,
             @Valid @RequestBody PostUpdateRequest request,
-            @RequestHeader(value = "Authorization", required = false) String authorization) {
-        AuthUser user = jwtTokenParser.requireUser(authorization);
+            HttpServletRequest httpRequest) {
+        AuthUser user = jwtTokenParser.requireUser(httpRequest);
         return ResponseEntity.ok(postService.update(id, request, user));
     }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Map<String, Object>> delete(
             @PathVariable UUID id,
-            @RequestHeader(value = "Authorization", required = false) String authorization) {
-        AuthUser user = jwtTokenParser.requireUser(authorization);
+            HttpServletRequest httpRequest) {
+        AuthUser user = jwtTokenParser.requireUser(httpRequest);
         return ResponseEntity.ok(postService.delete(id, user));
     }
 }

@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
 import { AuthGuard } from "@/components/auth-guard";
 import { reservationsApi, transfersApi } from "@/lib/api-client";
+import { useMyReservations } from "@/hooks/use-reservations";
 import { useCountdown, formatCountdownShort } from "@/hooks/use-countdown";
 import { formatEventDate } from "@/lib/format";
 
@@ -117,27 +117,13 @@ function ReservationRow({
 }
 
 export default function MyReservationsPage() {
-  const [items, setItems] = useState<Reservation[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  const loadItems = () => {
-    setLoading(true);
-    reservationsApi
-      .mine()
-      .then((res) => setItems(res.data.reservations ?? res.data.data ?? []))
-      .catch(() => setItems([]))
-      .finally(() => setLoading(false));
-  };
-
-  useEffect(() => {
-    loadItems();
-  }, []);
+  const { data: items = [], isLoading, isError, refetch } = useMyReservations();
 
   const handleCancel = async (id: string) => {
     if (!confirm("예매를 취소하시겠습니까?")) return;
     try {
       await reservationsApi.cancel(id);
-      loadItems();
+      refetch();
     } catch {
       alert("취소에 실패했습니다.");
     }
@@ -148,7 +134,7 @@ export default function MyReservationsPage() {
     try {
       await transfersApi.create(id);
       alert("양도 등록이 완료되었습니다.");
-      loadItems();
+      refetch();
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
       alert(msg ?? "양도 등록에 실패했습니다. 해당 아티스트의 Silver 이상 멤버십이 필요합니다.");
@@ -160,9 +146,19 @@ export default function MyReservationsPage() {
       <div className="max-w-2xl mx-auto">
         <h1 className="text-2xl font-bold text-slate-900 mb-6">내 예매</h1>
 
-        {loading ? (
+        {isLoading ? (
           <div className="flex justify-center py-16">
             <div className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-sky-500 border-t-transparent" />
+          </div>
+        ) : isError ? (
+          <div className="rounded-2xl border border-red-200 bg-red-50 p-10 text-center">
+            <p className="text-red-500 text-sm">예매 내역을 불러오지 못했습니다</p>
+            <button
+              onClick={() => refetch()}
+              className="mt-3 inline-block text-sm text-sky-500 hover:text-sky-600"
+            >
+              다시 시도
+            </button>
           </div>
         ) : items.length === 0 ? (
           <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center">
@@ -173,13 +169,13 @@ export default function MyReservationsPage() {
           </div>
         ) : (
           <div className="space-y-3">
-            {items.map((item) => (
+            {items.map((item: Reservation) => (
               <ReservationRow
                 key={item.id}
                 item={item}
                 onCancel={handleCancel}
                 onTransfer={handleTransfer}
-                onExpire={loadItems}
+                onExpire={() => refetch()}
               />
             ))}
           </div>

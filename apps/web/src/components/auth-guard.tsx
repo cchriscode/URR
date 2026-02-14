@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getUser } from "@/lib/storage";
-import { authApi } from "@/lib/api-client";
+import { useAuth } from "@/lib/auth-context";
+import { useEffect } from "react";
 
 interface Props {
   children: React.ReactNode;
@@ -12,58 +11,20 @@ interface Props {
 
 export function AuthGuard({ children, adminOnly = false }: Props) {
   const router = useRouter();
-  const [verified, setVerified] = useState(false);
+  const { user, isLoading } = useAuth();
 
   useEffect(() => {
-    // Read user inside effect to avoid object-reference dep changes
-    const user = getUser();
-
+    if (isLoading) return;
     if (!user) {
       router.replace("/login");
       return;
     }
-
     if (adminOnly && user.role !== "admin") {
       router.replace("/");
-      return;
     }
+  }, [user, isLoading, adminOnly, router]);
 
-    // Short-term cache: skip /auth/me if verified within last 30 seconds
-    const cacheKey = "auth-me-ts";
-    const cached = sessionStorage.getItem(cacheKey);
-    if (cached && Date.now() - Number(cached) < 30_000) {
-      setVerified(true);
-      return;
-    }
-
-    // Server-side verification via /me endpoint (cookie-based auth).
-    authApi
-      .me()
-      .then((res) => {
-        const serverUser = res.data?.user ?? res.data;
-        if (adminOnly && serverUser.role !== "admin") {
-          router.replace("/");
-        } else {
-          sessionStorage.setItem(cacheKey, String(Date.now()));
-          setVerified(true);
-        }
-      })
-      .catch(() => {
-        // For non-401 errors (network, 429, 500): trust local user data as fallback.
-        // Still set the cache so we don't hammer /auth/me on every navigation.
-        const localUser = getUser();
-        if (localUser === null) {
-          router.replace("/login");
-        } else if (adminOnly && localUser.role !== "admin") {
-          router.replace("/");
-        } else {
-          sessionStorage.setItem(cacheKey, String(Date.now()));
-          setVerified(true);
-        }
-      });
-  }, [adminOnly, router]);
-
-  if (!verified) {
+  if (isLoading || !user) {
     return (
       <div className="flex items-center justify-center py-20" role="status" aria-label="인증 확인 중">
         <div className="text-center">
@@ -72,6 +33,10 @@ export function AuthGuard({ children, adminOnly = false }: Props) {
         </div>
       </div>
     );
+  }
+
+  if (adminOnly && user.role !== "admin") {
+    return null;
   }
 
   return <>{children}</>;

@@ -1,18 +1,15 @@
 package com.tiketi.queueservice.service;
 
 import com.tiketi.queueservice.shared.client.TicketInternalClient;
+import com.tiketi.queueservice.shared.metrics.QueueMetrics;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
 import java.util.HashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicLong;
 import javax.crypto.SecretKey;
 import org.slf4j.Logger;
@@ -33,9 +30,7 @@ public class QueueService {
     private final int activeTtlSeconds;
     private final SecretKey entryTokenKey;
     private final int entryTokenTtlSeconds;
-
-    private final ConcurrentMap<String, LinkedHashSet<String>> fallbackQueue = new ConcurrentHashMap<>();
-    private final ConcurrentMap<String, Set<String>> fallbackActive = new ConcurrentHashMap<>();
+    private final QueueMetrics queueMetrics;
 
     // Throughput tracking for wait estimation
     private final AtomicLong recentAdmissions = new AtomicLong(0);
@@ -46,6 +41,7 @@ public class QueueService {
         StringRedisTemplate redisTemplate,
         TicketInternalClient ticketInternalClient,
         SqsPublisher sqsPublisher,
+        QueueMetrics queueMetrics,
         @Value("${QUEUE_THRESHOLD:1000}") int threshold,
         @Value("${QUEUE_ACTIVE_TTL_SECONDS:600}") int activeTtlSeconds,
         @Value("${queue.entry-token.secret}") String entryTokenSecret,
@@ -54,6 +50,7 @@ public class QueueService {
         this.redisTemplate = redisTemplate;
         this.ticketInternalClient = ticketInternalClient;
         this.sqsPublisher = sqsPublisher;
+        this.queueMetrics = queueMetrics;
         this.threshold = threshold;
         this.activeTtlSeconds = activeTtlSeconds;
         this.entryTokenKey = Keys.hmacShaKeyFor(entryTokenSecret.getBytes(StandardCharsets.UTF_8));
@@ -81,6 +78,7 @@ public class QueueService {
         if (queueSize > 0 || currentUsers >= threshold) {
             addToQueue(eventId, userId);
             trackActiveEvent(eventId);
+            queueMetrics.recordQueueJoined();
             int position = getQueuePosition(eventId, userId);
             queueSize = getQueueSize(eventId);
             return buildQueuedResponse(position, queueSize, eventInfo, eventId);
@@ -88,6 +86,7 @@ public class QueueService {
 
         addActiveUser(eventId, userId);
         trackActiveEvent(eventId);
+        queueMetrics.recordQueueAdmitted();
         return buildActiveResponse(eventInfo, eventId, userId);
     }
 
@@ -144,6 +143,7 @@ public class QueueService {
     public Map<String, Object> leave(UUID eventId, String userId) {
         removeFromQueue(eventId, userId);
         removeActiveUser(eventId, userId);
+        queueMetrics.recordQueueLeft();
         return Map.of("message", "Left queue");
     }
 
@@ -287,100 +287,53 @@ public class QueueService {
     // -- Active users: ZSET with expiry-timestamp scores --
 
     private boolean isActiveUser(UUID eventId, String userId) {
-        try {
-            Double score = redisTemplate.opsForZSet().score(activeKey(eventId), userId);
-            if (score == null) return false;
-            return score > System.currentTimeMillis();
-        } catch (Exception ex) {
-            log.warn("Redis unavailable - falling back to in-memory queue. This mode is NOT suitable for multi-instance deployment.");
-            return fallbackActive.getOrDefault(activeKey(eventId), Set.of()).contains(userId);
-        }
+        Double score = redisTemplate.opsForZSet().score(activeKey(eventId), userId);
+        if (score == null) return false;
+        return score > System.currentTimeMillis();
     }
 
     private int getCurrentUsers(UUID eventId) {
-        try {
-            Long count = redisTemplate.opsForZSet().count(activeKey(eventId),
-                System.currentTimeMillis(), Double.POSITIVE_INFINITY);
-            return count == null ? 0 : count.intValue();
-        } catch (Exception ex) {
-            log.warn("Redis unavailable - falling back to in-memory queue. This mode is NOT suitable for multi-instance deployment.");
-            return fallbackActive.getOrDefault(activeKey(eventId), Set.of()).size();
-        }
+        Long count = redisTemplate.opsForZSet().count(activeKey(eventId),
+            System.currentTimeMillis(), Double.POSITIVE_INFINITY);
+        return count == null ? 0 : count.intValue();
     }
 
     private void addActiveUser(UUID eventId, String userId) {
-        try {
-            long expiryScore = System.currentTimeMillis() + (activeTtlSeconds * 1000L);
-            redisTemplate.opsForZSet().add(activeKey(eventId), userId, expiryScore);
-            touchActiveUser(eventId, userId);
-        } catch (Exception ex) {
-            log.warn("Redis unavailable - falling back to in-memory queue. This mode is NOT suitable for multi-instance deployment.");
-            fallbackActive.computeIfAbsent(activeKey(eventId), key -> ConcurrentHashMap.newKeySet()).add(userId);
-        }
+        long expiryScore = System.currentTimeMillis() + (activeTtlSeconds * 1000L);
+        redisTemplate.opsForZSet().add(activeKey(eventId), userId, expiryScore);
+        touchActiveUser(eventId, userId);
     }
 
     private void removeActiveUser(UUID eventId, String userId) {
-        try {
-            redisTemplate.opsForZSet().remove(activeKey(eventId), userId);
-            redisTemplate.opsForZSet().remove(activeSeenKey(eventId), userId);
-        } catch (Exception ex) {
-            log.warn("Redis unavailable - falling back to in-memory queue. This mode is NOT suitable for multi-instance deployment.");
-            fallbackActive.computeIfAbsent(activeKey(eventId), key -> ConcurrentHashMap.newKeySet()).remove(userId);
-        }
+        redisTemplate.opsForZSet().remove(activeKey(eventId), userId);
+        redisTemplate.opsForZSet().remove(activeSeenKey(eventId), userId);
     }
 
-    // -- Queue operations (unchanged ZSET) --
+    // -- Queue operations (ZSET) --
 
     private boolean isInQueue(UUID eventId, String userId) {
-        try {
-            Double score = redisTemplate.opsForZSet().score(queueKey(eventId), userId);
-            return score != null;
-        } catch (Exception ex) {
-            log.warn("Redis unavailable - falling back to in-memory queue. This mode is NOT suitable for multi-instance deployment.");
-            return fallbackQueue.getOrDefault(queueKey(eventId), new LinkedHashSet<>()).contains(userId);
-        }
+        Double score = redisTemplate.opsForZSet().score(queueKey(eventId), userId);
+        return score != null;
     }
 
     private int getQueuePosition(UUID eventId, String userId) {
-        try {
-            Long rank = redisTemplate.opsForZSet().rank(queueKey(eventId), userId);
-            return rank == null ? 0 : rank.intValue() + 1;
-        } catch (Exception ex) {
-            log.warn("Redis unavailable - falling back to in-memory queue. This mode is NOT suitable for multi-instance deployment.");
-            List<String> list = new java.util.ArrayList<>(fallbackQueue.getOrDefault(queueKey(eventId), new LinkedHashSet<>()));
-            int idx = list.indexOf(userId);
-            return idx < 0 ? 0 : idx + 1;
-        }
+        Long rank = redisTemplate.opsForZSet().rank(queueKey(eventId), userId);
+        return rank == null ? 0 : rank.intValue() + 1;
     }
 
     private int getQueueSize(UUID eventId) {
-        try {
-            Long size = redisTemplate.opsForZSet().size(queueKey(eventId));
-            return size == null ? 0 : size.intValue();
-        } catch (Exception ex) {
-            log.warn("Redis unavailable - falling back to in-memory queue. This mode is NOT suitable for multi-instance deployment.");
-            return fallbackQueue.getOrDefault(queueKey(eventId), new LinkedHashSet<>()).size();
-        }
+        Long size = redisTemplate.opsForZSet().size(queueKey(eventId));
+        return size == null ? 0 : size.intValue();
     }
 
     private void addToQueue(UUID eventId, String userId) {
-        try {
-            redisTemplate.opsForZSet().add(queueKey(eventId), userId, System.currentTimeMillis());
-            touchQueueUser(eventId, userId);
-        } catch (Exception ex) {
-            log.warn("Redis unavailable - falling back to in-memory queue. This mode is NOT suitable for multi-instance deployment.");
-            fallbackQueue.computeIfAbsent(queueKey(eventId), key -> new LinkedHashSet<>()).add(userId);
-        }
+        redisTemplate.opsForZSet().add(queueKey(eventId), userId, System.currentTimeMillis());
+        touchQueueUser(eventId, userId);
     }
 
     private void removeFromQueue(UUID eventId, String userId) {
-        try {
-            redisTemplate.opsForZSet().remove(queueKey(eventId), userId);
-            redisTemplate.opsForZSet().remove(queueSeenKey(eventId), userId);
-        } catch (Exception ex) {
-            log.warn("Redis unavailable - falling back to in-memory queue. This mode is NOT suitable for multi-instance deployment.");
-            fallbackQueue.computeIfAbsent(queueKey(eventId), key -> new LinkedHashSet<>()).remove(userId);
-        }
+        redisTemplate.opsForZSet().remove(queueKey(eventId), userId);
+        redisTemplate.opsForZSet().remove(queueSeenKey(eventId), userId);
     }
 
     // -- Heartbeat touch --
@@ -404,14 +357,9 @@ public class QueueService {
     // -- Clear --
 
     private void clearQueue(UUID eventId) {
-        try {
-            redisTemplate.delete(List.of(
-                queueKey(eventId), activeKey(eventId),
-                queueSeenKey(eventId), activeSeenKey(eventId)));
-            redisTemplate.opsForSet().remove("queue:active-events", eventId.toString());
-        } catch (Exception ex) {
-            fallbackQueue.remove(queueKey(eventId));
-            fallbackActive.remove(activeKey(eventId));
-        }
+        redisTemplate.delete(List.of(
+            queueKey(eventId), activeKey(eventId),
+            queueSeenKey(eventId), activeSeenKey(eventId)));
+        redisTemplate.opsForSet().remove("queue:active-events", eventId.toString());
     }
 }

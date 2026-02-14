@@ -3,13 +3,12 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { clearAuth, getUser } from "@/lib/storage";
-import { authApi } from "@/lib/api-client";
+import { useAuth } from "@/lib/auth-context";
 
 export function SiteHeader() {
   const pathname = usePathname();
   const router = useRouter();
-  const user = getUser();
+  const { user, logout } = useAuth();
   const [searchText, setSearchText] = useState("");
 
   const handleSearch = (e: React.FormEvent) => {
@@ -118,8 +117,7 @@ export function SiteHeader() {
                 type="button"
                 className="ml-1 rounded-lg border border-slate-200 px-3 py-1.5 text-slate-600 hover:border-sky-300 hover:text-sky-500 transition-colors"
                 onClick={async () => {
-                  try { await authApi.logout(); } catch {}
-                  clearAuth();
+                  await logout();
                   router.push("/login");
                 }}
               >
