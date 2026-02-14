@@ -50,7 +50,7 @@
 
 #### 게이트웨이: JWT 검증 + 헤더 주입
 
-> `services-spring/gateway-service/src/main/java/com/tiketi/gatewayservice/filter/JwtAuthFilter.java`
+> `services-spring/gateway-service/src/main/java/guru/urr/gatewayservice/filter/JwtAuthFilter.java`
 
 ```java
 @Component
@@ -86,7 +86,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
 #### 다운스트림 서비스: 헤더만 읽기
 
-> `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/shared/security/JwtTokenParser.java`
+> `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/shared/security/JwtTokenParser.java`
 
 ```java
 @Component
@@ -171,7 +171,7 @@ queue:active-events     SET                          활성 이벤트 목록
 
 #### 대기열 진입 판단
 
-> `services-spring/queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:60-91`
+> `services-spring/queue-service/src/main/java/guru/urr/queueservice/service/QueueService.java:60-91`
 
 ```java
 public Map<String, Object> check(UUID eventId, String userId) {
@@ -232,7 +232,7 @@ return {admitted, activeCount + admitted}
 
 #### 동적 폴링 간격
 
-> `services-spring/queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:231-238`
+> `services-spring/queue-service/src/main/java/guru/urr/queueservice/service/QueueService.java:231-238`
 
 ```java
 // 대기열 앞쪽일수록 자주 폴링, 뒤쪽일수록 느리게
@@ -247,7 +247,7 @@ private int calculateNextPoll(int position) {
 
 #### Entry Token 발급
 
-> `services-spring/queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:215-227`
+> `services-spring/queue-service/src/main/java/guru/urr/queueservice/service/QueueService.java:215-227`
 
 ```java
 // active 유저에게만 발급되는 JWT (별도 시크릿)
@@ -263,7 +263,7 @@ private String generateEntryToken(String eventId, String userId) {
 
 이 토큰 없이 좌석 예매/결제 API를 호출하면 게이트웨이의 `VwrEntryTokenFilter`가 403을 반환한다.
 
-> `services-spring/gateway-service/src/main/java/com/tiketi/gatewayservice/filter/VwrEntryTokenFilter.java:113-114`
+> `services-spring/gateway-service/src/main/java/guru/urr/gatewayservice/filter/VwrEntryTokenFilter.java:113-114`
 
 ```java
 private boolean isProtectedPath(String path) {
@@ -300,7 +300,7 @@ Phase 3: UPDATE WHERE version  ← 최종 무결성 보장
 
 ### 핵심 코드
 
-> `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/domain/reservation/service/ReservationService.java:56-133`
+> `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/domain/reservation/service/ReservationService.java:56-133`
 
 #### Phase 1: Redis Lua 분산 락 (라인 74-89)
 
@@ -411,7 +411,7 @@ redis.call('HSET', seatKey, 'status', 'CONFIRMED')
 return 1
 ```
 
-> `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/domain/seat/service/SeatLockService.java:81-99`
+> `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/domain/seat/service/SeatLockService.java:81-99`
 
 ```java
 public boolean verifyForPayment(UUID eventId, UUID seatId, String userId, long token) {
@@ -452,7 +452,7 @@ reserve: (payload) => http.post("/seats/reserve", {
 
 ### 구현: 백엔드 (API 레벨)
 
-> `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/domain/reservation/service/ReservationService.java:62-69`
+> `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/domain/reservation/service/ReservationService.java:62-69`
 
 ```java
 // 좌석 예약 시
@@ -481,7 +481,7 @@ CREATE UNIQUE INDEX idx_reservations_idempotency_key
 
 ### 구현: Kafka 컨슈머 레벨
 
-> `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/messaging/PaymentEventConsumer.java:49-93`
+> `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/messaging/PaymentEventConsumer.java:49-93`
 
 ```java
 @KafkaListener(topics = "payment-events", groupId = "ticket-service-group")
@@ -579,7 +579,7 @@ Kafka로 비동기 처리하면:
 
 #### 이벤트 발행 (Producer)
 
-> `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/messaging/TicketEventProducer.java`
+> `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/messaging/TicketEventProducer.java`
 
 ```java
 @Component
@@ -608,7 +608,7 @@ public class TicketEventProducer {
 
 #### 이벤트 수신 (Consumer)
 
-> `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/messaging/PaymentEventConsumer.java`
+> `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/messaging/PaymentEventConsumer.java`
 
 ```java
 @KafkaListener(topics = "payment-events", groupId = "ticket-service-group")
@@ -635,7 +635,7 @@ public void handlePaymentEvent(Map<String, Object> event) {
 
 #### 취소 → 환불 흐름
 
-> `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/domain/reservation/service/ReservationService.java:482-535`
+> `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/domain/reservation/service/ReservationService.java:482-535`
 
 ```java
 public Map<String, Object> cancelReservation(String userId, UUID reservationId) {

@@ -12,7 +12,7 @@ export function middleware(request: NextRequest) {
     "script-src 'self' 'unsafe-inline' https://accounts.google.com https://apis.google.com",
     `style-src 'self' 'unsafe-inline' 'nonce-${nonce}' https://accounts.google.com`,
     "img-src 'self' data: https:",
-    "connect-src 'self' http://localhost:* https://*.tiketi.com https://accounts.google.com",
+    "connect-src 'self' http://localhost:* https://*.urr.guru https://accounts.google.com",
     "frame-src https://accounts.google.com",
     "frame-ancestors 'none'",
   ].join("; ");

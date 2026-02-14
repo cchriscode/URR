@@ -1,6 +1,6 @@
 # mTLS Strategy for URR Ticketing Platform
 
-**Audience:** DevOps engineers implementing service mesh mTLS on the URR (tiketi) Kubernetes cluster.
+**Audience:** DevOps engineers implementing service mesh mTLS on the URR (urr) Kubernetes cluster.
 **Last updated:** 2026-02-13
 
 ---
@@ -22,14 +22,14 @@
 
 | Service            | Port | Namespace      | Role                        |
 |--------------------|------|----------------|-----------------------------|
-| gateway-service    | 3001 | tiketi-spring  | API gateway, route dispatch |
-| auth-service       | 3005 | tiketi-spring  | Authentication, JWT issuing |
-| ticket-service     | 3002 | tiketi-spring  | Booking, reservations, seats|
-| catalog-service    | 3009 | tiketi-spring  | Events, artists, admin      |
-| payment-service    | 3003 | tiketi-spring  | Payment processing          |
-| stats-service      | 3004 | tiketi-spring  | Analytics and metrics       |
-| queue-service      | 3007 | tiketi-spring  | Virtual waiting room        |
-| community-service  | 3008 | tiketi-spring  | News, community features    |
+| gateway-service    | 3001 | urr-spring  | API gateway, route dispatch |
+| auth-service       | 3005 | urr-spring  | Authentication, JWT issuing |
+| ticket-service     | 3002 | urr-spring  | Booking, reservations, seats|
+| catalog-service    | 3009 | urr-spring  | Events, artists, admin      |
+| payment-service    | 3003 | urr-spring  | Payment processing          |
+| stats-service      | 3004 | urr-spring  | Analytics and metrics       |
+| queue-service      | 3007 | urr-spring  | Virtual waiting room        |
+| community-service  | 3008 | urr-spring  | News, community features    |
 
 ### Internal Communication Patterns
 
@@ -110,7 +110,7 @@ Istio adds mTLS to the platform **without application code changes**. The Envoy 
 
 All inter-service arrows carry mTLS-encrypted traffic.
 Envoy sidecars present SPIFFE identities:
-  spiffe://cluster.local/ns/tiketi-spring/sa/payment-service
+  spiffe://cluster.local/ns/urr-spring/sa/payment-service
 ```
 
 ---
@@ -122,7 +122,7 @@ Envoy sidecars present SPIFFE identities:
 - Kubernetes cluster version 1.26 or later
 - `kubectl` and `istioctl` CLI tools installed
 - Cluster admin access
-- Existing `tiketi-spring` namespace with all 8 services running
+- Existing `urr-spring` namespace with all 8 services running
 
 ### Phase 1: Install Istio (Day 1)
 
@@ -202,7 +202,7 @@ spec:
 **Step 2.1 -- Label the namespace for automatic sidecar injection.**
 
 ```bash
-kubectl label namespace tiketi-spring istio-injection=enabled
+kubectl label namespace urr-spring istio-injection=enabled
 ```
 
 **Step 2.2 -- Restart deployments to inject sidecars.** Roll each service one at a time. Start with low-risk services.
@@ -219,15 +219,15 @@ Recommended rollout order:
 8. `gateway-service` (last, as it routes to everything)
 
 ```bash
-kubectl rollout restart deployment/stats-service -n tiketi-spring
-kubectl rollout status deployment/stats-service -n tiketi-spring --timeout=120s
+kubectl rollout restart deployment/stats-service -n urr-spring
+kubectl rollout status deployment/stats-service -n urr-spring --timeout=120s
 ```
 
 Repeat for each service. After each restart, verify:
 
 ```bash
 # Confirm sidecar is running (should show 2/2 containers)
-kubectl get pods -n tiketi-spring -l app=stats-service
+kubectl get pods -n urr-spring -l app=stats-service
 
 # Confirm mTLS negotiation is active
 istioctl proxy-status
@@ -236,7 +236,7 @@ istioctl proxy-status
 **Step 2.3 -- Verify sidecar injection on all pods.**
 
 ```bash
-kubectl get pods -n tiketi-spring -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{range .spec.containers[*]}{.name}{","}{end}{"\n"}{end}'
+kubectl get pods -n urr-spring -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{range .spec.containers[*]}{.name}{","}{end}{"\n"}{end}'
 ```
 
 Every pod should list two containers: the application container and `istio-proxy`.
@@ -253,7 +253,7 @@ apiVersion: security.istio.io/v1
 kind: PeerAuthentication
 metadata:
   name: default
-  namespace: tiketi-spring
+  namespace: urr-spring
 spec:
   mtls:
     mode: PERMISSIVE
@@ -265,11 +265,11 @@ Run the following checks for each critical call path:
 
 ```bash
 # Check payment-service -> ticket-service (reservation validation)
-kubectl exec -n tiketi-spring deploy/payment-service -c istio-proxy -- \
+kubectl exec -n urr-spring deploy/payment-service -c istio-proxy -- \
   pilot-agent request GET /stats/prometheus 2>/dev/null | grep istio_requests_total
 
 # Use istioctl to verify mTLS status between specific services
-istioctl x describe pod <payment-service-pod> -n tiketi-spring
+istioctl x describe pod <payment-service-pod> -n urr-spring
 ```
 
 **Step 3.3 -- Monitor for plaintext fallback.** In Kiali or via Prometheus, watch for connections that are NOT using mTLS. All intra-mesh traffic should show mTLS after sidecars are injected on both ends.
@@ -286,7 +286,7 @@ apiVersion: security.istio.io/v1
 kind: PeerAuthentication
 metadata:
   name: default
-  namespace: tiketi-spring
+  namespace: urr-spring
 spec:
   mtls:
     mode: STRICT
@@ -296,7 +296,7 @@ spec:
 kubectl apply -f k8s/spring/base/istio/peer-authentication.yaml
 ```
 
-After applying, any plaintext connection to a service in the `tiketi-spring` namespace will be rejected.
+After applying, any plaintext connection to a service in the `urr-spring` namespace will be rejected.
 
 **Step 4.2 -- Exclude external dependencies from mTLS.** Services that connect to infrastructure (PostgreSQL, Redis/Dragonfly, Kafka, Zipkin) outside the mesh need `DestinationRule` overrides if those targets do not have sidecars:
 
@@ -306,9 +306,9 @@ apiVersion: networking.istio.io/v1
 kind: DestinationRule
 metadata:
   name: postgres-no-mtls
-  namespace: tiketi-spring
+  namespace: urr-spring
 spec:
-  host: postgres-spring.tiketi-spring.svc.cluster.local
+  host: postgres-spring.urr-spring.svc.cluster.local
   trafficPolicy:
     tls:
       mode: DISABLE
@@ -317,9 +317,9 @@ apiVersion: networking.istio.io/v1
 kind: DestinationRule
 metadata:
   name: dragonfly-no-mtls
-  namespace: tiketi-spring
+  namespace: urr-spring
 spec:
-  host: dragonfly-spring.tiketi-spring.svc.cluster.local
+  host: dragonfly-spring.urr-spring.svc.cluster.local
   trafficPolicy:
     tls:
       mode: DISABLE
@@ -328,9 +328,9 @@ apiVersion: networking.istio.io/v1
 kind: DestinationRule
 metadata:
   name: kafka-no-mtls
-  namespace: tiketi-spring
+  namespace: urr-spring
 spec:
-  host: kafka-spring.tiketi-spring.svc.cluster.local
+  host: kafka-spring.urr-spring.svc.cluster.local
   trafficPolicy:
     tls:
       mode: DISABLE
@@ -341,10 +341,10 @@ spec:
 ```bash
 # This should FAIL (plaintext from outside the mesh)
 kubectl run test-curl --rm -it --image=curlimages/curl --restart=Never -- \
-  curl -v http://ticket-service.tiketi-spring:3002/health
+  curl -v http://ticket-service.urr-spring:3002/health
 
 # This should SUCCEED (from a pod with a sidecar)
-kubectl exec -n tiketi-spring deploy/gateway-service -c gateway-service -- \
+kubectl exec -n urr-spring deploy/gateway-service -c gateway-service -- \
   curl -s http://ticket-service:3002/health
 ```
 
@@ -360,7 +360,7 @@ apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
 metadata:
   name: deny-all
-  namespace: tiketi-spring
+  namespace: urr-spring
 spec: {}
 ---
 # Allow gateway-service to reach all backend services
@@ -368,21 +368,21 @@ apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
 metadata:
   name: allow-gateway-to-backends
-  namespace: tiketi-spring
+  namespace: urr-spring
 spec:
   action: ALLOW
   rules:
     - from:
         - source:
             principals:
-              - cluster.local/ns/tiketi-spring/sa/gateway-service
+              - cluster.local/ns/urr-spring/sa/gateway-service
 ---
 # Allow payment-service to call ticket-service internal endpoints
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
 metadata:
   name: allow-payment-to-ticket
-  namespace: tiketi-spring
+  namespace: urr-spring
 spec:
   selector:
     matchLabels:
@@ -392,7 +392,7 @@ spec:
     - from:
         - source:
             principals:
-              - cluster.local/ns/tiketi-spring/sa/payment-service
+              - cluster.local/ns/urr-spring/sa/payment-service
       to:
         - operation:
             paths:
@@ -403,7 +403,7 @@ apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
 metadata:
   name: allow-queue-to-catalog
-  namespace: tiketi-spring
+  namespace: urr-spring
 spec:
   selector:
     matchLabels:
@@ -413,24 +413,24 @@ spec:
     - from:
         - source:
             principals:
-              - cluster.local/ns/tiketi-spring/sa/queue-service
+              - cluster.local/ns/urr-spring/sa/queue-service
 ---
 # Allow catalog-service to call ticket-service and auth-service
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
 metadata:
   name: allow-catalog-to-ticket-and-auth
-  namespace: tiketi-spring
+  namespace: urr-spring
 spec:
   selector:
     matchLabels:
-      app.kubernetes.io/part-of: tiketi
+      app.kubernetes.io/part-of: urr
   action: ALLOW
   rules:
     - from:
         - source:
             principals:
-              - cluster.local/ns/tiketi-spring/sa/catalog-service
+              - cluster.local/ns/urr-spring/sa/catalog-service
       to:
         - operation:
             paths:
@@ -441,7 +441,7 @@ apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
 metadata:
   name: allow-catalog-to-ticket
-  namespace: tiketi-spring
+  namespace: urr-spring
 spec:
   selector:
     matchLabels:
@@ -451,7 +451,7 @@ spec:
     - from:
         - source:
             principals:
-              - cluster.local/ns/tiketi-spring/sa/catalog-service
+              - cluster.local/ns/urr-spring/sa/catalog-service
       to:
         - operation:
             paths:
@@ -461,7 +461,7 @@ apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
 metadata:
   name: allow-catalog-to-auth
-  namespace: tiketi-spring
+  namespace: urr-spring
 spec:
   selector:
     matchLabels:
@@ -471,7 +471,7 @@ spec:
     - from:
         - source:
             principals:
-              - cluster.local/ns/tiketi-spring/sa/catalog-service
+              - cluster.local/ns/urr-spring/sa/catalog-service
       to:
         - operation:
             paths:
@@ -536,7 +536,7 @@ kubectl rollout restart deployment/istiod -n istio-system
 
 ```bash
 # Check cert details for a specific sidecar
-istioctl proxy-config secret deploy/payment-service -n tiketi-spring -o json | \
+istioctl proxy-config secret deploy/payment-service -n urr-spring -o json | \
   jq '.dynamicActiveSecrets[0].secret.tlsCertificate.certificateChain.inlineBytes' | \
   tr -d '"' | base64 -d | openssl x509 -text -noout
 
@@ -544,7 +544,7 @@ istioctl proxy-config secret deploy/payment-service -n tiketi-spring -o json | \
 for deploy in gateway-service auth-service ticket-service catalog-service \
               payment-service stats-service queue-service community-service; do
   echo "=== $deploy ==="
-  istioctl proxy-config secret deploy/$deploy -n tiketi-spring -o json | \
+  istioctl proxy-config secret deploy/$deploy -n urr-spring -o json | \
     jq -r '.dynamicActiveSecrets[0].secret.tlsCertificate.certificateChain.inlineBytes' | \
     base64 -d | openssl x509 -noout -enddate
 done
@@ -567,7 +567,7 @@ kubectl apply -f https://raw.githubusercontent.com/istio/istio/release-1.24/samp
 kubectl rollout status deployment/kiali -n istio-system --timeout=120s
 ```
 
-Note: The `tiketi-spring` overlay already deploys Prometheus and Grafana. Point Kiali at the existing Prometheus instance by setting the `external_services.prometheus.url` field in the Kiali ConfigMap.
+Note: The `urr-spring` overlay already deploys Prometheus and Grafana. Point Kiali at the existing Prometheus instance by setting the `external_services.prometheus.url` field in the Kiali ConfigMap.
 
 ### Access Kiali Dashboard
 
@@ -577,7 +577,7 @@ istioctl dashboard kiali
 
 ### What to Monitor
 
-**Graph view.** Navigate to Graph > Namespace: tiketi-spring. Look for:
+**Graph view.** Navigate to Graph > Namespace: urr-spring. Look for:
 
 - Lock icons on edges: indicates mTLS is active on that connection.
 - Red edges: indicate failed connections or plaintext fallback.
@@ -594,19 +594,19 @@ istioctl dashboard kiali
 # Total mTLS connections by source and destination
 sum(rate(istio_requests_total{
   connection_security_policy="mutual_tls",
-  destination_workload_namespace="tiketi-spring"
+  destination_workload_namespace="urr-spring"
 }[5m])) by (source_workload, destination_workload)
 
 # Plaintext connections (should be zero after STRICT mode)
 sum(rate(istio_requests_total{
   connection_security_policy="none",
-  destination_workload_namespace="tiketi-spring"
+  destination_workload_namespace="urr-spring"
 }[5m])) by (source_workload, destination_workload)
 
 # AuthorizationPolicy denials
 sum(rate(istio_requests_total{
   response_code="403",
-  destination_workload_namespace="tiketi-spring"
+  destination_workload_namespace="urr-spring"
 }[5m])) by (source_workload, destination_workload)
 ```
 
@@ -665,7 +665,7 @@ Use this checklist to track progress during implementation.
     [ ] Add serviceAccountName to each Deployment
 
 [ ] Phase 2: Sidecar Injection
-    [ ] Label tiketi-spring namespace for injection
+    [ ] Label urr-spring namespace for injection
     [ ] Restart stats-service, verify 2/2 containers
     [ ] Restart community-service, verify 2/2 containers
     [ ] Restart queue-service, verify 2/2 containers

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-NAMESPACE="tiketi-spring"
+NAMESPACE="urr-spring"
 
 for arg in "$@"; do
   case "$arg" in
@@ -20,7 +20,7 @@ PID_DIR="/tmp"
 
 echo ""
 echo -e "${CYAN}================================================${RESET}"
-echo -e "${CYAN}   TIKETI Spring - Port Forward Setup${RESET}"
+echo -e "${CYAN}   URR Spring - Port Forward Setup${RESET}"
 echo -e "${CYAN}================================================${RESET}"
 echo ""
 
@@ -94,7 +94,7 @@ for fwd in "${FORWARDS[@]}"; do
   echo -e "${CYAN}  [$INDEX/$TOTAL] $NAME Service ($LOCAL_PORT)${RESET}"
   kubectl port-forward --address 0.0.0.0 -n "$NAMESPACE" "$SERVICE" "$LOCAL_PORT:$REMOTE_PORT" \
     >/dev/null 2>&1 &
-  echo $! > "$PID_DIR/tiketi-pf-$LOCAL_PORT.pid"
+  echo $! > "$PID_DIR/urr-pf-$LOCAL_PORT.pid"
   sleep 2
   INDEX=$((INDEX + 1))
 done

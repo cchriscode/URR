@@ -214,7 +214,7 @@ VWR(Virtual Waiting Room) 대기열 UI를 제공한다.
 **핵심 기능:**
 - `AuthGuard`로 보호
 - `queueApi.check()` 호출로 대기열 진입
-- `entryToken`을 쿠키(`tiketi-entry-token`)에 저장
+- `entryToken`을 쿠키(`urr-entry-token`)에 저장
 - 실제 대기 상태(`queued`)인 경우에만 폴링 시작
 - 대기 순번, 내 앞/뒤 인원 수, 예상 대기 시간 표시
 - `active` 상태 또는 비대기 상태 시 자동 리다이렉트
@@ -474,7 +474,7 @@ const http = axios.create({
 
 ```tsx
 http.interceptors.request.use((config) => {
-  const entryToken = getCookie("tiketi-entry-token");
+  const entryToken = getCookie("urr-entry-token");
   if (entryToken) {
     config.headers["x-queue-entry-token"] = entryToken;
   }
@@ -800,7 +800,7 @@ function clampPoll(seconds: number): number {
 // entryToken 쿠키 저장
 if (data.entryToken) {
   const isSecure = window.location.protocol === 'https:';
-  document.cookie = `tiketi-entry-token=${data.entryToken}; path=/; max-age=600; SameSite=Strict${isSecure ? '; Secure' : ''}`;
+  document.cookie = `urr-entry-token=${data.entryToken}; path=/; max-age=600; SameSite=Strict${isSecure ? '; Secure' : ''}`;
 }
 ```
 
@@ -821,7 +821,7 @@ return { status, loading, error };
 
 | 속성 | 값 |
 |------|---|
-| 쿠키 이름 | `tiketi-entry-token` |
+| 쿠키 이름 | `urr-entry-token` |
 | 경로 | `/` |
 | 유효 기간 | 600초 (10분) |
 | SameSite | `Strict` |
@@ -1073,7 +1073,7 @@ default-src 'self';
 script-src 'self' 'unsafe-inline' https://accounts.google.com https://apis.google.com;
 style-src 'self' 'unsafe-inline' 'nonce-{nonce}' https://accounts.google.com;
 img-src 'self' data: https:;
-connect-src 'self' http://localhost:* https://*.tiketi.com https://accounts.google.com;
+connect-src 'self' http://localhost:* https://*.urr.guru https://accounts.google.com;
 frame-src https://accounts.google.com;
 frame-ancestors 'none';
 ```

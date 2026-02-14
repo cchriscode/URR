@@ -4,7 +4,7 @@
 
 ### 1.1 디렉토리 구조
 
-Tiketi 프로젝트는 Kustomize 기반의 쿠버네티스 매니페스트 구조를 사용하며, `k8s/spring/` 디렉토리 아래 `base`와 `overlays`로 분리되어 환경별 구성을 관리한다.
+URR 프로젝트는 Kustomize 기반의 쿠버네티스 매니페스트 구조를 사용하며, `k8s/spring/` 디렉토리 아래 `base`와 `overlays`로 분리되어 환경별 구성을 관리한다.
 
 ```
 k8s/spring/
@@ -28,7 +28,7 @@ k8s/spring/
 
 **base/kustomization.yaml** 파일은 모든 서비스의 Deployment와 Service 매니페스트, 그리고 네트워크 정책을 리소스로 선언한다 (`k8s/spring/base/kustomization.yaml:1-23`). 총 9개 서비스(gateway, ticket, payment, stats, auth, queue, catalog, community, frontend)의 `deployment.yaml`과 `service.yaml`을 포함하며, `network-policies.yaml`도 base 리소스에 속한다 (`k8s/spring/base/kustomization.yaml:4-23`).
 
-**Kind overlay**는 base를 참조하면서 인프라 컴포넌트(PostgreSQL, Dragonfly, Kafka, Zipkin, Loki, Promtail, Grafana, Prometheus)를 추가 리소스로 선언한다 (`k8s/spring/overlays/kind/kustomization.yaml:5-17`). ConfigMap과 Secret은 `configMapGenerator`와 `secretGenerator`를 통해 `config.env`와 `secrets.env` 파일로부터 자동 생성되며, `disableNameSuffixHash: true` 설정으로 이름 해시 접미사를 비활성화한다 (`k8s/spring/overlays/kind/kustomization.yaml:19-30`). 이미지 태그는 `images` 섹션에서 `YOUR_ECR_URI/*` 플레이스홀더를 `tiketi-spring-*:local`로 재정의한다 (`k8s/spring/overlays/kind/kustomization.yaml:45-72`).
+**Kind overlay**는 base를 참조하면서 인프라 컴포넌트(PostgreSQL, Dragonfly, Kafka, Zipkin, Loki, Promtail, Grafana, Prometheus)를 추가 리소스로 선언한다 (`k8s/spring/overlays/kind/kustomization.yaml:5-17`). ConfigMap과 Secret은 `configMapGenerator`와 `secretGenerator`를 통해 `config.env`와 `secrets.env` 파일로부터 자동 생성되며, `disableNameSuffixHash: true` 설정으로 이름 해시 접미사를 비활성화한다 (`k8s/spring/overlays/kind/kustomization.yaml:19-30`). 이미지 태그는 `images` 섹션에서 `YOUR_ECR_URI/*` 플레이스홀더를 `urr-spring-*:local`로 재정의한다 (`k8s/spring/overlays/kind/kustomization.yaml:45-72`).
 
 **Dev overlay**는 base만 참조하는 최소 구성이다 (`k8s/spring/overlays/dev/kustomization.yaml:1-6`).
 
@@ -40,12 +40,12 @@ k8s/spring/
 
 | 환경 | 네임스페이스 | 정의 위치 |
 |------|-------------|-----------|
-| base (기본값) | `tiketi-dev` | `k8s/spring/base/kustomization.yaml:3` |
-| Kind (로컬) | `tiketi-spring` | `k8s/spring/overlays/kind/kustomization.yaml:3` |
-| dev | `tiketi-dev` | `k8s/spring/overlays/dev/kustomization.yaml:3` |
-| prod | `tiketi-spring` | `k8s/spring/overlays/prod/kustomization.yaml:3` |
+| base (기본값) | `urr-dev` | `k8s/spring/base/kustomization.yaml:3` |
+| Kind (로컬) | `urr-spring` | `k8s/spring/overlays/kind/kustomization.yaml:3` |
+| dev | `urr-dev` | `k8s/spring/overlays/dev/kustomization.yaml:3` |
+| prod | `urr-spring` | `k8s/spring/overlays/prod/kustomization.yaml:3` |
 
-Kind 환경에서는 `namespace.yaml` 파일로 명시적으로 `tiketi-spring` 네임스페이스를 생성한다 (`k8s/spring/overlays/kind/namespace.yaml:1-4`).
+Kind 환경에서는 `namespace.yaml` 파일로 명시적으로 `urr-spring` 네임스페이스를 생성한다 (`k8s/spring/overlays/kind/namespace.yaml:1-4`).
 
 ### 1.3 서비스 매니페스트 구조
 
@@ -167,7 +167,7 @@ Kind 환경에서 ticket-service 등은 `initContainers`를 통해 PostgreSQL, R
 
 Kind 클러스터는 `kind-config.yaml` 파일로 구성된다.
 
-- **클러스터 이름**: `tiketi-local` (`kind-config.yaml:3`)
+- **클러스터 이름**: `urr-local` (`kind-config.yaml:3`)
 - **노드 구성**: control-plane 1개 + worker 2개 총 3노드 (`kind-config.yaml:4-34`)
   - control-plane 노드에 `ingress-ready=true` 라벨을 설정한다 (`kind-config.yaml:11`)
   - worker 노드는 `workload: application`과 `workload: data` 라벨로 분류한다 (`kind-config.yaml:30-34`)
@@ -192,20 +192,20 @@ Kind 클러스터는 `kind-config.yaml` 파일로 구성된다.
 #### spring-kind-up.sh -- 클러스터 생성 + 빌드 + 배포
 
 1. **선행 조건 검사**: `kind`, `kubectl`, `docker` CLI 존재 여부와 Docker 데몬 실행 상태를 확인한다 (`scripts/spring-kind-up.sh:26-30`)
-2. **클러스터 생성/재생성**: `kind create cluster --name tiketi-local --config kind-config.yaml`로 클러스터를 생성한다. `--recreate-cluster` 옵션 시 기존 클러스터를 삭제 후 재생성한다 (`scripts/spring-kind-up.sh:39-48`)
+2. **클러스터 생성/재생성**: `kind create cluster --name urr-local --config kind-config.yaml`로 클러스터를 생성한다. `--recreate-cluster` 옵션 시 기존 클러스터를 삭제 후 재생성한다 (`scripts/spring-kind-up.sh:39-48`)
 3. **이미지 빌드 및 로드**: `--skip-build`가 아니면 `spring-kind-build-load.sh`를 호출한다 (`scripts/spring-kind-up.sh:54-56`)
 4. **Kustomize 배포**: `kubectl apply -k k8s/spring/overlays/kind`로 전체 매니페스트를 적용한다 (`scripts/spring-kind-up.sh:61`)
 5. **롤아웃 대기**: 14개 Deployment(인프라 포함)의 `kubectl rollout status`를 순차적으로 확인한다. 타임아웃은 300초이다 (`scripts/spring-kind-up.sh:66-86`)
 
 #### spring-kind-build-load.sh -- 이미지 빌드 + Kind 로드
 
-8개 백엔드 서비스를 순차적으로 `docker build` 후 `kind load docker-image`로 Kind 클러스터에 로드한다 (`scripts/spring-kind-build-load.sh:30-54`). 이미지 이름은 `tiketi-spring-{service-name}:local` 형식이다 (`scripts/spring-kind-build-load.sh:31-39`).
+8개 백엔드 서비스를 순차적으로 `docker build` 후 `kind load docker-image`로 Kind 클러스터에 로드한다 (`scripts/spring-kind-build-load.sh:30-54`). 이미지 이름은 `urr-spring-{service-name}:local` 형식이다 (`scripts/spring-kind-build-load.sh:31-39`).
 
 프론트엔드는 별도로 빌드하며, `--build-arg NEXT_PUBLIC_API_URL=http://localhost:3001`을 전달한다 (`scripts/spring-kind-build-load.sh:65-67`).
 
 #### spring-kind-down.sh -- 네임스페이스/클러스터 삭제
 
-기본적으로 `tiketi-spring` 네임스페이스만 삭제한다 (`scripts/spring-kind-down.sh:20-21`). `--delete-cluster` 옵션을 사용하면 Kind 클러스터 전체를 삭제한다 (`scripts/spring-kind-down.sh:14-17`).
+기본적으로 `urr-spring` 네임스페이스만 삭제한다 (`scripts/spring-kind-down.sh:20-21`). `--delete-cluster` 옵션을 사용하면 Kind 클러스터 전체를 삭제한다 (`scripts/spring-kind-down.sh:14-17`).
 
 #### spring-kind-smoke.sh -- 헬스체크
 
@@ -233,7 +233,7 @@ Kind 클러스터는 `kind-config.yaml` 파일로 구성된다.
 
 ### 3.3 인프라 컴포넌트 (Kind 내)
 
-Kind 환경에서는 모든 인프라 컴포넌트가 동일 네임스페이스(`tiketi-spring`) 내에 Pod으로 배포된다.
+Kind 환경에서는 모든 인프라 컴포넌트가 동일 네임스페이스(`urr-spring`) 내에 Pod으로 배포된다.
 
 #### PostgreSQL
 
@@ -304,7 +304,7 @@ Kind 환경에서는 모든 인프라 컴포넌트가 동일 네임스페이스(
 - **타입**: DaemonSet (모든 노드에 1개씩 배포) (`k8s/spring/overlays/kind/promtail.yaml:35`)
 - **이미지**: `grafana/promtail:2.9.3` (`k8s/spring/overlays/kind/promtail.yaml:52`)
 - **Loki 연동**: `http://loki-service:3100/loki/api/v1/push`로 로그를 전송한다 (`k8s/spring/overlays/kind/promtail.yaml:16`)
-- **스크래핑 대상**: `tiketi-spring` 네임스페이스의 모든 Pod. `app`, `pod`, `namespace` 라벨을 릴레이블링한다 (`k8s/spring/overlays/kind/promtail.yaml:18-31`)
+- **스크래핑 대상**: `urr-spring` 네임스페이스의 모든 Pod. `app`, `pod`, `namespace` 라벨을 릴레이블링한다 (`k8s/spring/overlays/kind/promtail.yaml:18-31`)
 - **호스트 볼륨 마운트**: `/var/log`와 `/var/lib/docker/containers`(읽기 전용)를 마운트한다 (`k8s/spring/overlays/kind/promtail.yaml:58-62`)
 - **RBAC**: ServiceAccount, ClusterRole(nodes, pods, services 등에 대한 get/watch/list), ClusterRoleBinding을 구성한다 (`k8s/spring/overlays/kind/promtail.yaml:85-117`)
 - **리소스**: CPU 50m/200m, 메모리 128Mi/256Mi (`k8s/spring/overlays/kind/promtail.yaml:67-72`)
@@ -365,13 +365,13 @@ queue-service는 AWS SQS FIFO 큐를 사용하여 입장 허가(admission) 이�
 
 **의존성**: `software.amazon.awssdk:sqs:2.29.0`과 `software.amazon.awssdk:sts:2.29.0`을 사용한다 (`services-spring/queue-service/build.gradle:28-29`).
 
-**SqsPublisher 구현** (`services-spring/queue-service/src/main/java/com/tiketi/queueservice/service/SqsPublisher.java`):
-- SQS 활성화 여부는 `aws.sqs.enabled` 속성과 `SqsClient` null 체크, `queue-url` 비어있지 않은지 여부로 결정한다 (`services-spring/queue-service/src/main/java/com/tiketi/queueservice/service/SqsPublisher.java:31`)
+**SqsPublisher 구현** (`services-spring/queue-service/src/main/java/guru/urr/queueservice/service/SqsPublisher.java`):
+- SQS 활성화 여부는 `aws.sqs.enabled` 속성과 `SqsClient` null 체크, `queue-url` 비어있지 않은지 여부로 결정한다 (`services-spring/queue-service/src/main/java/guru/urr/queueservice/service/SqsPublisher.java:31`)
 - `publishAdmission()` 메서드에서 FIFO 큐 전용 파라미터를 설정한다:
-  - `messageGroupId`: `eventId.toString()` -- 같은 이벤트의 입장 메시지가 순서를 보장한다 (`services-spring/queue-service/src/main/java/com/tiketi/queueservice/service/SqsPublisher.java:59`)
-  - `messageDeduplicationId`: `userId + ":" + eventId` -- 5분 중복 제거 창 내에서 동일 사용자의 중복 입장을 방지한다 (`services-spring/queue-service/src/main/java/com/tiketi/queueservice/service/SqsPublisher.java:54,60`)
-- 메시지 본문은 `action`, `eventId`, `userId`, `entryToken`, `timestamp`를 포함하는 JSON이다 (`services-spring/queue-service/src/main/java/com/tiketi/queueservice/service/SqsPublisher.java:44-50`)
-- SQS 발행 실패 시 로그를 남기고 Redis-only 모드로 폴백한다 (`services-spring/queue-service/src/main/java/com/tiketi/queueservice/service/SqsPublisher.java:64-67`)
+  - `messageGroupId`: `eventId.toString()` -- 같은 이벤트의 입장 메시지가 순서를 보장한다 (`services-spring/queue-service/src/main/java/guru/urr/queueservice/service/SqsPublisher.java:59`)
+  - `messageDeduplicationId`: `userId + ":" + eventId` -- 5분 중복 제거 창 내에서 동일 사용자의 중복 입장을 방지한다 (`services-spring/queue-service/src/main/java/guru/urr/queueservice/service/SqsPublisher.java:54,60`)
+- 메시지 본문은 `action`, `eventId`, `userId`, `entryToken`, `timestamp`를 포함하는 JSON이다 (`services-spring/queue-service/src/main/java/guru/urr/queueservice/service/SqsPublisher.java:44-50`)
+- SQS 발행 실패 시 로그를 남기고 Redis-only 모드로 폴백한다 (`services-spring/queue-service/src/main/java/guru/urr/queueservice/service/SqsPublisher.java:64-67`)
 
 **환경 설정**:
 - Kind 환경: `SQS_ENABLED=false` (`k8s/spring/overlays/kind/config.env:16`)
@@ -382,18 +382,18 @@ queue-service는 AWS SQS FIFO 큐를 사용하여 입장 허가(admission) 이�
 
 Kafka는 서비스 간 비동기 이벤트 통신의 핵심 인프라이다.
 
-**토픽 구성**: `KafkaConfig` 클래스에서 4개 토픽을 선언한다 (`services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/shared/config/KafkaConfig.java:10-34`):
+**토픽 구성**: `KafkaConfig` 클래스에서 4개 토픽을 선언한다 (`services-spring/ticket-service/src/main/java/guru/urr/ticketservice/shared/config/KafkaConfig.java:10-34`):
 
 | 토픽 이름 | 파티션 수 | 용도 | 정의 위치 |
 |-----------|----------|------|-----------|
-| `payment-events` | 3 | 결제 이벤트 | `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/shared/config/KafkaConfig.java:16-18` |
-| `reservation-events` | 3 | 예약 생성/확인/취소 | `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/shared/config/KafkaConfig.java:21-23` |
-| `transfer-events` | 3 | 티켓 양도 | `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/shared/config/KafkaConfig.java:26-28` |
-| `membership-events` | 3 | 멤버십 활성화 | `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/shared/config/KafkaConfig.java:31-33` |
+| `payment-events` | 3 | 결제 이벤트 | `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/shared/config/KafkaConfig.java:16-18` |
+| `reservation-events` | 3 | 예약 생성/확인/취소 | `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/shared/config/KafkaConfig.java:21-23` |
+| `transfer-events` | 3 | 티켓 양도 | `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/shared/config/KafkaConfig.java:26-28` |
+| `membership-events` | 3 | 멤버십 활성화 | `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/shared/config/KafkaConfig.java:31-33` |
 
-복제 팩터는 `kafka.topic.replication-factor` 속성으로 제어한다 (`services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/shared/config/KafkaConfig.java:12-13`). Kind 환경에서는 1, prod 환경에서는 3을 사용한다 (`k8s/spring/overlays/kind/config.env:21`, `k8s/spring/overlays/prod/config.env:21`).
+복제 팩터는 `kafka.topic.replication-factor` 속성으로 제어한다 (`services-spring/ticket-service/src/main/java/guru/urr/ticketservice/shared/config/KafkaConfig.java:12-13`). Kind 환경에서는 1, prod 환경에서는 3을 사용한다 (`k8s/spring/overlays/kind/config.env:21`, `k8s/spring/overlays/prod/config.env:21`).
 
-**이벤트 발행**: `TicketEventProducer`가 예약, 결제, 양도, 멤버십 관련 이벤트를 Kafka 토픽에 비동기로 발행한다 (`services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/messaging/TicketEventProducer.java:14-78`).
+**이벤트 발행**: `TicketEventProducer`가 예약, 결제, 양도, 멤버십 관련 이벤트를 Kafka 토픽에 비동기로 발행한다 (`services-spring/ticket-service/src/main/java/guru/urr/ticketservice/messaging/TicketEventProducer.java:14-78`).
 
 **Kind 환경**: 단일 브로커 Deployment (`k8s/spring/overlays/kind/kafka.yaml:1-84`)
 - KRaft 모드(Zookeeper 미사용), `KAFKA_PROCESS_ROLES=broker,controller` (`k8s/spring/overlays/kind/kafka.yaml:27`)
@@ -422,11 +422,11 @@ catalog-service는 이벤트 이미지를 S3에 저장하기 위해 AWS SDK S3 �
 
 프론트엔드 정적 자산 배포 및 API 요청에 대한 CloudFront CDN을 사용한다. Lambda@Edge에서 VWR(Virtual Waiting Room) 토큰 검증을 수행하고, 검증 완료 시 `X-CloudFront-Verified` 헤더를 주입한다.
 
-**VwrEntryTokenFilter CloudFront 바이패스 로직** (`services-spring/gateway-service/src/main/java/com/tiketi/gatewayservice/filter/VwrEntryTokenFilter.java`):
-- `cloudfront.secret` 설정값을 가져와 CloudFront 시크릿으로 저장한다 (`services-spring/gateway-service/src/main/java/com/tiketi/gatewayservice/filter/VwrEntryTokenFilter.java:40-43`)
-- 요청에 `X-CloudFront-Verified` 헤더가 포함되어 있고, 해당 값이 `cloudfront.secret`과 상수 시간 비교(`MessageDigest.isEqual`)로 일치하면 VWR 토큰 검증을 건너뛴다 (`services-spring/gateway-service/src/main/java/com/tiketi/gatewayservice/filter/VwrEntryTokenFilter.java:62-69`)
-- CloudFront 시크릿이 설정되지 않은 경우(로컬 환경) 이 바이패스 로직은 비활성화된다 (`services-spring/gateway-service/src/main/java/com/tiketi/gatewayservice/filter/VwrEntryTokenFilter.java:42-43`)
-- 보호 대상 경로: `/api/seats/`, `/api/reservations`에 대한 POST, PUT, PATCH 요청 (`services-spring/gateway-service/src/main/java/com/tiketi/gatewayservice/filter/VwrEntryTokenFilter.java:33,114`)
+**VwrEntryTokenFilter CloudFront 바이패스 로직** (`services-spring/gateway-service/src/main/java/guru/urr/gatewayservice/filter/VwrEntryTokenFilter.java`):
+- `cloudfront.secret` 설정값을 가져와 CloudFront 시크릿으로 저장한다 (`services-spring/gateway-service/src/main/java/guru/urr/gatewayservice/filter/VwrEntryTokenFilter.java:40-43`)
+- 요청에 `X-CloudFront-Verified` 헤더가 포함되어 있고, 해당 값이 `cloudfront.secret`과 상수 시간 비교(`MessageDigest.isEqual`)로 일치하면 VWR 토큰 검증을 건너뛴다 (`services-spring/gateway-service/src/main/java/guru/urr/gatewayservice/filter/VwrEntryTokenFilter.java:62-69`)
+- CloudFront 시크릿이 설정되지 않은 경우(로컬 환경) 이 바이패스 로직은 비활성화된다 (`services-spring/gateway-service/src/main/java/guru/urr/gatewayservice/filter/VwrEntryTokenFilter.java:42-43`)
+- 보호 대상 경로: `/api/seats/`, `/api/reservations`에 대한 POST, PUT, PATCH 요청 (`services-spring/gateway-service/src/main/java/guru/urr/gatewayservice/filter/VwrEntryTokenFilter.java:33,114`)
 
 **환경 변수**:
 - Kind 환경: `CLOUDFRONT_SECRET=local-dev-cloudfront-secret` (`k8s/spring/overlays/kind/config.env:18`)
@@ -467,7 +467,7 @@ IRSA는 K8s ServiceAccount를 AWS IAM Role과 연동하여 Pod 레벨의 세밀�
 - 리소스 ARN 기반의 최소 권한 원칙을 적용한다
 
 **IRSA가 필요한 AWS 서비스**:
-- **SQS**: queue-service에서 `sendMessage` 호출 (`services-spring/queue-service/src/main/java/com/tiketi/queueservice/service/SqsPublisher.java:56-61`)
+- **SQS**: queue-service에서 `sendMessage` 호출 (`services-spring/queue-service/src/main/java/guru/urr/queueservice/service/SqsPublisher.java:56-61`)
 - **S3**: catalog-service에서 이미지 업로드 (`services-spring/catalog-service/build.gradle:34`)
 - **Secrets Manager**: External Secrets Operator에서 시크릿 조회 (`k8s/AWS_SECRETS_INTEGRATION.md:71-83`)
 
@@ -570,7 +570,7 @@ Kind 환경의 `config.env`에서 관리하는 설정 항목 (`k8s/spring/overla
 - DB URL이 RDS 엔드포인트를 가리킨다 (라인 1-5)
 - `TRACING_SAMPLING_PROBABILITY=0.1` -- 10% 샘플링 (라인 17)
 - `SQS_ENABLED=true` (라인 18)
-- `CORS_ALLOWED_ORIGINS=https://tiketi.com,https://www.tiketi.com` (라인 20)
+- `CORS_ALLOWED_ORIGINS=https://urr.guru,https://www.urr.guru` (라인 20)
 - `KAFKA_TOPIC_REPLICATION_FACTOR=3` (라인 21)
 - `COOKIE_SECURE=true` (라인 23)
 - Kafka 부트스트랩 서버가 3노드 headless DNS를 사용한다 (라인 22)

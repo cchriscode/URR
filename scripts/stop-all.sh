@@ -14,7 +14,7 @@ PID_DIR="/tmp"
 
 echo ""
 echo -e "${CYAN}================================================${RESET}"
-echo -e "${CYAN}   TIKETI Spring - Stop All Services${RESET}"
+echo -e "${CYAN}   URR Spring - Stop All Services${RESET}"
 echo -e "${CYAN}================================================${RESET}"
 echo ""
 
@@ -26,7 +26,7 @@ JAVA_STOPPED=0
 SERVICES=(auth-service ticket-service payment-service stats-service gateway-service)
 
 for svc in "${SERVICES[@]}"; do
-  PID_FILE="$PID_DIR/tiketi-$svc.pid"
+  PID_FILE="$PID_DIR/urr-$svc.pid"
   if [ -f "$PID_FILE" ]; then
     PID=$(cat "$PID_FILE")
     if kill -0 "$PID" 2>/dev/null; then
@@ -38,7 +38,7 @@ done
 
 # Fallback: kill by process pattern
 if [ $JAVA_STOPPED -eq 0 ]; then
-  pkill -f "tiketi" 2>/dev/null && JAVA_STOPPED=$((JAVA_STOPPED + 1)) || true
+  pkill -f "urr" 2>/dev/null && JAVA_STOPPED=$((JAVA_STOPPED + 1)) || true
   pkill -f "bootRun" 2>/dev/null && JAVA_STOPPED=$((JAVA_STOPPED + 1)) || true
 fi
 

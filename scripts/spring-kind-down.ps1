@@ -1,5 +1,5 @@
 param(
-    [string]$KindClusterName = "tiketi-local",
+    [string]$KindClusterName = "urr-local",
     [switch]$DeleteCluster
 )
 
@@ -11,5 +11,5 @@ if ($DeleteCluster) {
     exit 0
 }
 
-kubectl delete namespace tiketi-spring --ignore-not-found=true
-Write-Host "Deleted namespace 'tiketi-spring'."
+kubectl delete namespace urr-spring --ignore-not-found=true
+Write-Host "Deleted namespace 'urr-spring'."

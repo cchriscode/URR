@@ -2,16 +2,16 @@
 # S3 bucket and DynamoDB table must be created manually before first apply:
 #
 # aws s3api create-bucket \
-#   --bucket tiketi-terraform-state-prod \
+#   --bucket urr-terraform-state-prod \
 #   --region ap-northeast-2 \
 #   --create-bucket-configuration LocationConstraint=ap-northeast-2
 #
 # aws s3api put-bucket-versioning \
-#   --bucket tiketi-terraform-state-prod \
+#   --bucket urr-terraform-state-prod \
 #   --versioning-configuration Status=Enabled
 #
 # aws s3api put-bucket-encryption \
-#   --bucket tiketi-terraform-state-prod \
+#   --bucket urr-terraform-state-prod \
 #   --server-side-encryption-configuration '{
 #     "Rules": [{
 #       "ApplyServerSideEncryptionByDefault": {
@@ -21,7 +21,7 @@
 #   }'
 #
 # aws dynamodb create-table \
-#   --table-name tiketi-terraform-locks \
+#   --table-name urr-terraform-locks \
 #   --attribute-definitions AttributeName=LockID,AttributeType=S \
 #   --key-schema AttributeName=LockID,KeyType=HASH \
 #   --billing-mode PAY_PER_REQUEST \

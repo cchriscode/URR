@@ -24,7 +24,7 @@ VWR 시스템은 **queue-service**에 구현되어 있으며, 완전한 Redis �
 @Value("${QUEUE_THRESHOLD:1000}") int threshold,
 @Value("${QUEUE_ACTIVE_TTL_SECONDS:600}") int activeTtlSeconds,
 ```
-> 참조: `queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:45-46`
+> 참조: `queue-service/src/main/java/guru/urr/queueservice/service/QueueService.java:45-46`
 
 `QUEUE_THRESHOLD`는 동시에 활성 상태로 허용하는 최대 사용자 수를 정의한다. 기본값은 1000이며, 이 임계값에 도달하면 이후 사용자는 대기열에 배치된다.
 
@@ -44,7 +44,7 @@ private void addActiveUser(UUID eventId, String userId) {
     touchActiveUser(eventId, userId);
 }
 ```
-> 참조: `queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:301-304`
+> 참조: `queue-service/src/main/java/guru/urr/queueservice/service/QueueService.java:301-304`
 
 현재 활성 사용자 수를 조회할 때는 현재 시각 이후의 score만 카운트하여 만료된 항목을 자동 제외한다.
 
@@ -56,7 +56,7 @@ private int getCurrentUsers(UUID eventId) {
     return count == null ? 0 : count.intValue();
 }
 ```
-> 참조: `queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:295-298`
+> 참조: `queue-service/src/main/java/guru/urr/queueservice/service/QueueService.java:295-298`
 
 **2) Queue ZSET: `queue:{eventId}`**
 
@@ -69,7 +69,7 @@ private void addToQueue(UUID eventId, String userId) {
     touchQueueUser(eventId, userId);
 }
 ```
-> 참조: `queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:329-332`
+> 참조: `queue-service/src/main/java/guru/urr/queueservice/service/QueueService.java:329-332`
 
 **3) Heartbeat ZSET: `queue:seen:{eventId}` / `active:seen:{eventId}`**
 
@@ -84,7 +84,7 @@ private void touchQueueUser(UUID eventId, String userId) {
     }
 }
 ```
-> 참조: `queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:341-346`
+> 참조: `queue-service/src/main/java/guru/urr/queueservice/service/QueueService.java:341-346`
 
 ```java
 // QueueService.java:348-355
@@ -97,7 +97,7 @@ private void touchActiveUser(UUID eventId, String userId) {
     }
 }
 ```
-> 참조: `queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:348-355`
+> 참조: `queue-service/src/main/java/guru/urr/queueservice/service/QueueService.java:348-355`
 
 **4) Active Events Set: `queue:active-events`**
 
@@ -112,7 +112,7 @@ private void trackActiveEvent(UUID eventId) {
     }
 }
 ```
-> 참조: `queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:262-267`
+> 참조: `queue-service/src/main/java/guru/urr/queueservice/service/QueueService.java:262-267`
 
 **5) TTL 설정**
 
@@ -122,13 +122,13 @@ private void trackActiveEvent(UUID eventId) {
 | `QUEUE_SEEN_TTL_SECONDS` | 600초 (10분) | Heartbeat stale 판정 기준 |
 | `QUEUE_THRESHOLD` | 1000 | 최대 동시 활성 사용자 수 |
 
-> 참조: `queue-service/src/main/java/com/tiketi/queueservice/service/AdmissionWorkerService.java:32-34`
+> 참조: `queue-service/src/main/java/guru/urr/queueservice/service/AdmissionWorkerService.java:32-34`
 
 ### 1.3 입장 흐름 (check 엔드포인트)
 
 `POST /api/queue/check/{eventId}` 엔드포인트가 대기열 입장의 핵심 흐름을 처리한다.
 
-> 참조: `queue-service/src/main/java/com/tiketi/queueservice/controller/QueueController.java:27-34`
+> 참조: `queue-service/src/main/java/guru/urr/queueservice/controller/QueueController.java:27-34`
 
 `QueueService.check()` 메서드의 전체 분기 로직은 다음과 같다.
 
@@ -167,7 +167,7 @@ public Map<String, Object> check(UUID eventId, String userId) {
     return buildActiveResponse(eventInfo, eventId, userId);
 }
 ```
-> 참조: `queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:60-91`
+> 참조: `queue-service/src/main/java/guru/urr/queueservice/service/QueueService.java:60-91`
 
 **분기 흐름 상세:**
 
@@ -189,7 +189,7 @@ private Map<String, Object> buildActiveResponse(Map<String, Object> eventInfo, U
     return result;
 }
 ```
-> 참조: `queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:197-213`
+> 참조: `queue-service/src/main/java/guru/urr/queueservice/service/QueueService.java:197-213`
 
 ### 1.4 동적 폴링 간격
 
@@ -206,7 +206,7 @@ private int calculateNextPoll(int position) {
     return 60;
 }
 ```
-> 참조: `queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:231-238`
+> 참조: `queue-service/src/main/java/guru/urr/queueservice/service/QueueService.java:231-238`
 
 | 대기열 위치 | 폴링 간격(초) | 설계 의도 |
 |------------|--------------|-----------|
@@ -227,7 +227,7 @@ private final AtomicLong recentAdmissions = new AtomicLong(0);
 private final AtomicLong throughputWindowStart = new AtomicLong(System.currentTimeMillis());
 private static final long THROUGHPUT_WINDOW_MS = 60_000; // 1-minute window
 ```
-> 참조: `queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:36-38`
+> 참조: `queue-service/src/main/java/guru/urr/queueservice/service/QueueService.java:36-38`
 
 ```java
 // QueueService.java:242-258
@@ -249,7 +249,7 @@ private int estimateWait(int position) {
     return (int) Math.ceil(position / throughputPerSecond);
 }
 ```
-> 참조: `queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:242-258`
+> 참조: `queue-service/src/main/java/guru/urr/queueservice/service/QueueService.java:242-258`
 
 **알고리즘:**
 
@@ -272,7 +272,7 @@ public synchronized void recordAdmissions(int count) {
     }
 }
 ```
-> 참조: `queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:168-177`
+> 참조: `queue-service/src/main/java/guru/urr/queueservice/service/QueueService.java:168-177`
 
 ### 1.6 JWT 입장 토큰
 
@@ -294,7 +294,7 @@ private String generateEntryToken(String eventId, String userId) {
         .compact();
 }
 ```
-> 참조: `queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:215-227`
+> 참조: `queue-service/src/main/java/guru/urr/queueservice/service/QueueService.java:215-227`
 
 **토큰 구성:**
 
@@ -311,7 +311,7 @@ private String generateEntryToken(String eventId, String userId) {
 @Value("${queue.entry-token.secret}") String entryTokenSecret,
 @Value("${queue.entry-token.ttl-seconds:600}") int entryTokenTtlSeconds
 ```
-> 참조: `queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:47-48`
+> 참조: `queue-service/src/main/java/guru/urr/queueservice/service/QueueService.java:47-48`
 
 TTL 기본값은 600초(10분)이며, `queue.entry-token.ttl-seconds` 설정으로 변경 가능하다. 게이트웨이에서도 동일한 secret을 사용하여 토큰을 검증한다.
 
@@ -352,7 +352,7 @@ public void publishAdmission(UUID eventId, String userId, String entryToken) {
     }
 }
 ```
-> 참조: `queue-service/src/main/java/com/tiketi/queueservice/service/SqsPublisher.java:38-68`
+> 참조: `queue-service/src/main/java/guru/urr/queueservice/service/SqsPublisher.java:38-68`
 
 **FIFO 보장 메커니즘:**
 
@@ -375,7 +375,7 @@ public SqsPublisher(
     this.enabled = enabled && sqsClient != null && !queueUrl.isBlank();
 }
 ```
-> 참조: `queue-service/src/main/java/com/tiketi/queueservice/service/SqsPublisher.java:24-32`
+> 참조: `queue-service/src/main/java/guru/urr/queueservice/service/SqsPublisher.java:24-32`
 
 SQS 클라이언트 Bean은 `aws.sqs.enabled=true`일 때만 생성된다.
 
@@ -384,7 +384,7 @@ SQS 클라이언트 Bean은 `aws.sqs.enabled=true`일 때만 생성된다.
 @ConditionalOnProperty(name = "aws.sqs.enabled", havingValue = "true")
 public class SqsConfig {
 ```
-> 참조: `queue-service/src/main/java/com/tiketi/queueservice/config/SqsConfig.java:14`
+> 참조: `queue-service/src/main/java/guru/urr/queueservice/config/SqsConfig.java:14`
 
 ### 1.8 배치 입장 처리 (AdmissionWorkerService)
 
@@ -397,7 +397,7 @@ public class SqsConfig {
 @Scheduled(fixedDelayString = "${queue.admission.interval-ms:1000}")
 public void admitUsers() {
 ```
-> 참조: `queue-service/src/main/java/com/tiketi/queueservice/service/AdmissionWorkerService.java:47-48`
+> 참조: `queue-service/src/main/java/guru/urr/queueservice/service/AdmissionWorkerService.java:47-48`
 
 Lua 스크립트(`admission_control.lua`)를 사용하여 원자적으로 배치 입장을 처리한다.
 
@@ -437,7 +437,7 @@ end
 @Scheduled(fixedDelayString = "${queue.stale-cleanup.interval-ms:30000}")
 public void cleanupStaleUsers() {
 ```
-> 참조: `queue-service/src/main/java/com/tiketi/queueservice/service/AdmissionWorkerService.java:120-121`
+> 참조: `queue-service/src/main/java/guru/urr/queueservice/service/AdmissionWorkerService.java:120-121`
 
 ```lua
 -- stale_cleanup.lua:11-19
@@ -455,7 +455,7 @@ redis.call('ZREM', queueKey, unpack(staleUsers))
 
 배치 크기(기본 1000)로 나누어 처리하며, 배치 간 100ms 대기하여 Redis 부하를 분산한다.
 
-> 참조: `queue-service/src/main/java/com/tiketi/queueservice/service/AdmissionWorkerService.java:140-159`
+> 참조: `queue-service/src/main/java/guru/urr/queueservice/service/AdmissionWorkerService.java:140-159`
 
 ---
 
@@ -465,7 +465,7 @@ redis.call('ZREM', queueKey, unpack(staleUsers))
 
 `SeatLockService`는 Redis Lua 스크립트를 사용하여 좌석별 분산 잠금을 관리한다.
 
-> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/seat/service/SeatLockService.java:13`
+> 참조: `ticket-service/src/main/java/guru/urr/ticketservice/domain/seat/service/SeatLockService.java:13`
 
 **Lua 스크립트 빈 등록:**
 
@@ -476,7 +476,7 @@ public DefaultRedisScript<List> seatLockAcquireScript() {
     DefaultRedisScript<List> script = new DefaultRedisScript<>();
     script.setScriptSource(new ResourceScriptSource(new ClassPathResource("redis/seat_lock_acquire.lua")));
 ```
-> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/shared/config/RedisConfig.java:14-17`
+> 참조: `ticket-service/src/main/java/guru/urr/ticketservice/shared/config/RedisConfig.java:14-17`
 
 **키 구조:**
 
@@ -486,7 +486,7 @@ private String seatKey(UUID eventId, UUID seatId) {
     return "seat:" + eventId + ":" + seatId;
 }
 ```
-> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/seat/service/SeatLockService.java:110-112`
+> 참조: `ticket-service/src/main/java/guru/urr/ticketservice/domain/seat/service/SeatLockService.java:110-112`
 
 - **좌석 HASH**: `seat:{eventId}:{seatId}` -- 필드: `status`, `userId`, `token`, `heldAt`
 - **펜싱 토큰 카운터**: `seat:{eventId}:{seatId}:token_seq` -- INCR로 단조 증가
@@ -548,7 +548,7 @@ return {1, token}
 // SeatLockService.java:30
 @Value("${SEAT_LOCK_TTL_SECONDS:300}") int seatLockTtlSeconds
 ```
-> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/seat/service/SeatLockService.java:30`
+> 참조: `ticket-service/src/main/java/guru/urr/ticketservice/domain/seat/service/SeatLockService.java:30`
 
 기본 300초(5분)이며, Redis EXPIRE 명령으로 자동 해제가 보장된다.
 
@@ -581,7 +581,7 @@ public SeatLockResult acquireLock(UUID eventId, UUID seatId, String userId) {
     }
 }
 ```
-> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/seat/service/SeatLockService.java:39-63`
+> 참조: `ticket-service/src/main/java/guru/urr/ticketservice/domain/seat/service/SeatLockService.java:39-63`
 
 반환 타입은 record 패턴을 사용한다.
 
@@ -589,7 +589,7 @@ public SeatLockResult acquireLock(UUID eventId, UUID seatId, String userId) {
 // SeatLockService.java:23
 public record SeatLockResult(boolean success, long fencingToken) {}
 ```
-> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/seat/service/SeatLockService.java:23`
+> 참조: `ticket-service/src/main/java/guru/urr/ticketservice/domain/seat/service/SeatLockService.java:23`
 
 #### seat_lock_release.lua
 
@@ -645,7 +645,7 @@ List<Map<String, Object>> seats = namedParameterJdbcTemplate.queryForList("""
     .addValue("seatIds", request.seatIds())
     .addValue("eventId", request.eventId()));
 ```
-> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/reservation/service/ReservationService.java:92-99`
+> 참조: `ticket-service/src/main/java/guru/urr/ticketservice/domain/reservation/service/ReservationService.java:92-99`
 
 DB 잠금 후 좌석 상태를 확인하고, `version` 필드를 사용한 낙관적 잠금을 추가로 적용한다.
 
@@ -669,7 +669,7 @@ for (int i = 0; i < seats.size(); i++) {
     }
 }
 ```
-> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/reservation/service/ReservationService.java:117-133`
+> 참조: `ticket-service/src/main/java/guru/urr/ticketservice/domain/reservation/service/ReservationService.java:117-133`
 
 `version` 필드를 `WHERE` 조건에 포함하여 동시 수정 감지(낙관적 잠금 폴백)를 수행하며, 업데이트 성공 시 `version + 1`로 증가시킨다. 펜싱 토큰도 DB에 기록하여 결제 시 검증에 사용한다.
 
@@ -688,7 +688,7 @@ if (request.idempotencyKey() != null && !request.idempotencyKey().isBlank()) {
     }
 }
 ```
-> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/reservation/service/ReservationService.java:62-69`
+> 참조: `ticket-service/src/main/java/guru/urr/ticketservice/domain/reservation/service/ReservationService.java:62-69`
 
 동일한 `idempotency_key`로 재요청 시 기존 예매 정보를 그대로 반환하며, Redis 잠금이나 DB 잠금을 다시 시도하지 않는다. 네트워크 재시도, 중복 클릭 등으로 인한 이중 예매를 원천 차단한다.
 
@@ -696,7 +696,7 @@ if (request.idempotencyKey() != null && !request.idempotencyKey().isBlank()) {
 
 `reserveSeats()` 메서드의 전체 흐름은 다음과 같다.
 
-> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/reservation/service/ReservationService.java:56-167`
+> 참조: `ticket-service/src/main/java/guru/urr/ticketservice/domain/reservation/service/ReservationService.java:56-167`
 
 ```
 1. 멱등성 확인 (idempotency_key 조회)
@@ -730,7 +730,7 @@ private void releaseLocks(UUID eventId, List<UUID> seatIds, String userId,
     }
 }
 ```
-> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/reservation/service/ReservationService.java:169-174`
+> 참조: `ticket-service/src/main/java/guru/urr/ticketservice/domain/reservation/service/ReservationService.java:169-174`
 
 ---
 
@@ -767,7 +767,7 @@ public Map<String, Object> reserve(
     return reservationService.reserveSeats(user.userId(), body);
 }
 ```
-> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/seat/controller/SeatController.java:43-49`
+> 참조: `ticket-service/src/main/java/guru/urr/ticketservice/domain/seat/controller/SeatController.java:43-49`
 
 일반 예매의 경우 `POST /api/reservations` 엔드포인트를 사용한다.
 
@@ -782,7 +782,7 @@ public Map<String, Object> create(
     return reservationService.createReservation(user.userId(), body);
 }
 ```
-> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/reservation/controller/ReservationController.java:30-37`
+> 참조: `ticket-service/src/main/java/guru/urr/ticketservice/domain/reservation/controller/ReservationController.java:30-37`
 
 ### 3.2 ReservationService.reserveSeats() 상세
 
@@ -793,7 +793,7 @@ public Map<String, Object> create(
 int totalAmount = seats.stream().mapToInt(s -> ((Number) s.get("price")).intValue()).sum();
 OffsetDateTime expiresAt = OffsetDateTime.now().plusMinutes(5);
 ```
-> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/reservation/service/ReservationService.java:136-137`
+> 참조: `ticket-service/src/main/java/guru/urr/ticketservice/domain/reservation/service/ReservationService.java:136-137`
 
 예매 만료 시간은 생성 시점으로부터 **5분**이다. 좌석별 1석 제한이 적용된다.
 
@@ -801,7 +801,7 @@ OffsetDateTime expiresAt = OffsetDateTime.now().plusMinutes(5);
 // ReservationService.java:35
 private static final int MAX_SEATS_PER_RESERVATION = 1;
 ```
-> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/reservation/service/ReservationService.java:35`
+> 참조: `ticket-service/src/main/java/guru/urr/ticketservice/domain/reservation/service/ReservationService.java:35`
 
 ### 3.3 만료 처리: ReservationCleanupScheduler
 
@@ -813,7 +813,7 @@ private static final int MAX_SEATS_PER_RESERVATION = 1;
 @Transactional
 public void cleanupExpiredReservations() {
 ```
-> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/scheduling/ReservationCleanupScheduler.java:35-36`
+> 참조: `ticket-service/src/main/java/guru/urr/ticketservice/scheduling/ReservationCleanupScheduler.java:35-36`
 
 **처리 흐름:**
 
@@ -827,7 +827,7 @@ List<Map<String, Object>> expired = jdbcTemplate.queryForList("""
     FOR UPDATE SKIP LOCKED
     """);
 ```
-> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/scheduling/ReservationCleanupScheduler.java:39-45`
+> 참조: `ticket-service/src/main/java/guru/urr/ticketservice/scheduling/ReservationCleanupScheduler.java:39-45`
 
 `FOR UPDATE SKIP LOCKED`를 사용하여 이미 다른 프로세스가 처리 중인 행은 건너뛰고 교착 상태를 방지한다.
 
@@ -855,7 +855,7 @@ jdbcTemplate.update(
     "UPDATE reservations SET status = 'expired', updated_at = NOW() WHERE id = ?",
     reservationId);
 ```
-> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/scheduling/ReservationCleanupScheduler.java:62-89`
+> 참조: `ticket-service/src/main/java/guru/urr/ticketservice/scheduling/ReservationCleanupScheduler.java:62-89`
 
 ### 3.4 예매 확인: PaymentEventConsumer
 
@@ -866,7 +866,7 @@ Kafka `payment-events` 토픽을 구독하여 결제 확인 이벤트를 처리�
 @KafkaListener(topics = "payment-events", groupId = "ticket-service-group")
 public void handlePaymentEvent(Map<String, Object> event) {
 ```
-> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/messaging/PaymentEventConsumer.java:49-50`
+> 참조: `ticket-service/src/main/java/guru/urr/ticketservice/messaging/PaymentEventConsumer.java:49-50`
 
 이벤트 타입별 분기 처리를 수행한다.
 
@@ -884,7 +884,7 @@ if ("PAYMENT_REFUNDED".equals(type)) {
     }
 }
 ```
-> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/messaging/PaymentEventConsumer.java:60-69`
+> 참조: `ticket-service/src/main/java/guru/urr/ticketservice/messaging/PaymentEventConsumer.java:60-69`
 
 일반 예매 결제 확인 시:
 
@@ -900,7 +900,7 @@ private void handleReservationPayment(Map<String, Object> event) {
     ticketEventProducer.publishReservationConfirmed(new ReservationConfirmedEvent(...));
 }
 ```
-> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/messaging/PaymentEventConsumer.java:95-116`
+> 참조: `ticket-service/src/main/java/guru/urr/ticketservice/messaging/PaymentEventConsumer.java:95-116`
 
 **멱등성 보장:** `processed_events` 테이블을 사용하여 중복 이벤트 처리를 방지한다.
 
@@ -917,7 +917,7 @@ private boolean isAlreadyProcessed(String eventKey) {
     }
 }
 ```
-> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/messaging/PaymentEventConsumer.java:209-219`
+> 참조: `ticket-service/src/main/java/guru/urr/ticketservice/messaging/PaymentEventConsumer.java:209-219`
 
 ### 3.5 결제 확인 시 잠금 검증
 
@@ -950,7 +950,7 @@ public void confirmReservationPayment(UUID reservationId, String paymentMethod) 
         """, paymentMethod, reservationId);
 }
 ```
-> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/reservation/service/ReservationService.java:391-418`
+> 참조: `ticket-service/src/main/java/guru/urr/ticketservice/domain/reservation/service/ReservationService.java:391-418`
 
 ---
 
@@ -980,7 +980,7 @@ switch (paymentType) {
     }
 }
 ```
-> 참조: `payment-service/src/main/java/com/tiketi/paymentservice/service/PaymentService.java:57-77`
+> 참조: `payment-service/src/main/java/guru/urr/paymentservice/service/PaymentService.java:57-77`
 
 | 유형 | `paymentType` 값 | 참조 ID 필드 | 검증 대상 |
 |------|------------------|-------------|-----------|
@@ -995,7 +995,7 @@ switch (paymentType) {
 ```
 POST /api/payments/prepare
 ```
-> 참조: `payment-service/src/main/java/com/tiketi/paymentservice/controller/PaymentController.java:33-40`
+> 참조: `payment-service/src/main/java/guru/urr/paymentservice/controller/PaymentController.java:33-40`
 
 ```java
 // PaymentService.java:49-118
@@ -1013,7 +1013,7 @@ public Map<String, Object> prepare(String userId, PreparePaymentRequest request)
     return Map.of("orderId", orderId, "amount", request.amount(), "clientKey", tossClientKey);
 }
 ```
-> 참조: `payment-service/src/main/java/com/tiketi/paymentservice/service/PaymentService.java:49-118`
+> 참조: `payment-service/src/main/java/guru/urr/paymentservice/service/PaymentService.java:49-118`
 
 PreparePaymentRequest DTO:
 
@@ -1026,14 +1026,14 @@ public record PreparePaymentRequest(
     UUID referenceId
 ) {}
 ```
-> 참조: `payment-service/src/main/java/com/tiketi/paymentservice/dto/PreparePaymentRequest.java:7-12`
+> 참조: `payment-service/src/main/java/guru/urr/paymentservice/dto/PreparePaymentRequest.java:7-12`
 
 **Step 2: 결제 확인 (confirm)**
 
 ```
 POST /api/payments/confirm
 ```
-> 참조: `payment-service/src/main/java/com/tiketi/paymentservice/controller/PaymentController.java:42-49`
+> 참조: `payment-service/src/main/java/guru/urr/paymentservice/controller/PaymentController.java:42-49`
 
 ```java
 // PaymentService.java:120-173
@@ -1060,7 +1060,7 @@ public Map<String, Object> confirm(String userId, ConfirmPaymentRequest request)
     completeByType(paymentType, payment, userId, "toss");
 }
 ```
-> 참조: `payment-service/src/main/java/com/tiketi/paymentservice/service/PaymentService.java:120-173`
+> 참조: `payment-service/src/main/java/guru/urr/paymentservice/service/PaymentService.java:120-173`
 
 **Step 3: 유형별 완료 처리 (completeByType)**
 
@@ -1093,7 +1093,7 @@ private void completeByType(String paymentType, Map<String, Object> payment, Str
         paymentType, amount, paymentMethod, Instant.now()));
 }
 ```
-> 참조: `payment-service/src/main/java/com/tiketi/paymentservice/service/PaymentService.java:343-376`
+> 참조: `payment-service/src/main/java/guru/urr/paymentservice/service/PaymentService.java:343-376`
 
 동기 호출이 실패해도 Kafka 이벤트를 통해 eventual consistency를 보장한다. 또한 5분 주기의 `PaymentReconciliationScheduler`가 추가 안전망으로 동작한다.
 
@@ -1102,7 +1102,7 @@ private void completeByType(String paymentType, Map<String, Object> payment, Str
 @Scheduled(fixedRateString = "${reservation.reconciliation.interval-ms:300000}")
 public void reconcilePendingReservations() {
 ```
-> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/scheduling/PaymentReconciliationScheduler.java:36-37`
+> 참조: `ticket-service/src/main/java/guru/urr/ticketservice/scheduling/PaymentReconciliationScheduler.java:36-37`
 
 ### 4.3 결제 상태 관리
 
@@ -1117,7 +1117,7 @@ jdbcTemplate.update("""
     reservationIdText, userId, eventIdText, orderId, request.amount(),
     paymentType, referenceId != null ? referenceId.toString() : null);
 ```
-> 참조: `payment-service/src/main/java/com/tiketi/paymentservice/service/PaymentService.java:110-115`
+> 참조: `payment-service/src/main/java/guru/urr/paymentservice/service/PaymentService.java:110-115`
 
 | 필드 | 용도 |
 |------|------|
@@ -1152,7 +1152,7 @@ public record PaymentConfirmedEvent(
     }
 }
 ```
-> 참조: `payment-service/src/main/java/com/tiketi/paymentservice/messaging/event/PaymentConfirmedEvent.java:6-24`
+> 참조: `payment-service/src/main/java/guru/urr/paymentservice/messaging/event/PaymentConfirmedEvent.java:6-24`
 
 **결제 취소/환불:**
 
@@ -1167,7 +1167,7 @@ public Map<String, Object> cancel(String userId, String paymentKey, CancelPaymen
     paymentEventProducer.publishRefund(new PaymentRefundedEvent(...));
 }
 ```
-> 참조: `payment-service/src/main/java/com/tiketi/paymentservice/service/PaymentService.java:194-228`
+> 참조: `payment-service/src/main/java/guru/urr/paymentservice/service/PaymentService.java:194-228`
 
 ---
 
@@ -1177,14 +1177,14 @@ public Map<String, Object> cancel(String userId, String paymentKey, CancelPaymen
 
 `POST /api/transfers` 엔드포인트를 통해 양도 등록을 수행한다.
 
-> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/transfer/controller/TransferController.java:29-37`
+> 참조: `ticket-service/src/main/java/guru/urr/ticketservice/domain/transfer/controller/TransferController.java:29-37`
 
 ```java
 // TransferService.java:30-97
 @Transactional
 public Map<String, Object> createListing(String userId, UUID reservationId) {
 ```
-> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/transfer/service/TransferService.java:30-97`
+> 참조: `ticket-service/src/main/java/guru/urr/ticketservice/domain/transfer/service/TransferService.java:30-97`
 
 **검증 단계:**
 
@@ -1196,7 +1196,7 @@ if (!String.valueOf(res.get("user_id")).equals(userId)) {
     throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not your reservation");
 }
 ```
-> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/transfer/service/TransferService.java:45-46`
+> 참조: `ticket-service/src/main/java/guru/urr/ticketservice/domain/transfer/service/TransferService.java:45-46`
 
 2. **confirmed 상태 확인:** 결제가 완료된 예매만 양도 가능하다.
 
@@ -1206,7 +1206,7 @@ if (!"confirmed".equals(String.valueOf(res.get("status")))) {
     throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Only confirmed reservations can be transferred");
 }
 ```
-> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/transfer/service/TransferService.java:48-49`
+> 참조: `ticket-service/src/main/java/guru/urr/ticketservice/domain/transfer/service/TransferService.java:48-49`
 
 3. **기존 등록 중복 확인:**
 
@@ -1219,7 +1219,7 @@ if (existingCount != null && existingCount > 0) {
     throw new ResponseStatusException(HttpStatus.CONFLICT, "Transfer already listed for this reservation");
 }
 ```
-> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/transfer/service/TransferService.java:56-61`
+> 참조: `ticket-service/src/main/java/guru/urr/ticketservice/domain/transfer/service/TransferService.java:56-61`
 
 4. **멤버십 등급별 수수료 계산:**
 
@@ -1243,7 +1243,7 @@ if (artistId != null) {
     feePercent = "SILVER".equals(effectiveTier) ? 10 : 5;
 }
 ```
-> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/transfer/service/TransferService.java:64-79`
+> 참조: `ticket-service/src/main/java/guru/urr/ticketservice/domain/transfer/service/TransferService.java:64-79`
 
 | 등급 | 양도 가능 여부 | 수수료 |
 |------|-------------|--------|
@@ -1260,7 +1260,7 @@ int originalPrice = ((Number) res.get("total_amount")).intValue();
 int transferFee = originalPrice * feePercent / 100;
 int totalPrice = originalPrice + transferFee;
 ```
-> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/transfer/service/TransferService.java:82-84`
+> 참조: `ticket-service/src/main/java/guru/urr/ticketservice/domain/transfer/service/TransferService.java:82-84`
 
 ### 5.2 양도 구매
 
@@ -1290,7 +1290,7 @@ public Map<String, Object> validateForPurchase(UUID transferId, String buyerId) 
     }
 }
 ```
-> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/transfer/service/TransferService.java:200-235`
+> 참조: `ticket-service/src/main/java/guru/urr/ticketservice/domain/transfer/service/TransferService.java:200-235`
 
 **구매 완료 (completePurchase):**
 
@@ -1318,7 +1318,7 @@ public void completePurchase(UUID transferId, String buyerId, String paymentMeth
         """, buyerId, transferId);
 }
 ```
-> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/transfer/service/TransferService.java:237-263`
+> 참조: `ticket-service/src/main/java/guru/urr/ticketservice/domain/transfer/service/TransferService.java:237-263`
 
 **Kafka 이벤트 발행:**
 
@@ -1329,7 +1329,7 @@ public void completePurchase(UUID transferId, String buyerId, String paymentMeth
 ticketEventProducer.publishTransferCompleted(new TransferCompletedEvent(
     referenceId, reservationId, sellerId, userId, amount, Instant.now()));
 ```
-> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/messaging/PaymentEventConsumer.java:149-150`
+> 참조: `ticket-service/src/main/java/guru/urr/ticketservice/messaging/PaymentEventConsumer.java:149-150`
 
 ---
 
@@ -1349,7 +1349,7 @@ Map<String, Object> row = jdbcTemplate.queryForList("""
     .stream().findFirst()
     .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Failed to create membership"));
 ```
-> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/membership/service/MembershipService.java:65-71`
+> 참조: `ticket-service/src/main/java/guru/urr/ticketservice/domain/membership/service/MembershipService.java:65-71`
 
 신규 가입 시 `tier: SILVER`, `points: 0`, `status: pending`으로 생성된다.
 
@@ -1361,7 +1361,7 @@ private static final int GOLD_THRESHOLD = 500;
 private static final int DIAMOND_THRESHOLD = 1500;
 private static final int JOIN_BONUS_POINTS = 200;
 ```
-> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/membership/service/MembershipService.java:23-25`
+> 참조: `ticket-service/src/main/java/guru/urr/ticketservice/domain/membership/service/MembershipService.java:23-25`
 
 ```java
 // MembershipService.java:246-250
@@ -1371,7 +1371,7 @@ private String computeEffectiveTier(int points) {
     return "SILVER";
 }
 ```
-> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/membership/service/MembershipService.java:246-250`
+> 참조: `ticket-service/src/main/java/guru/urr/ticketservice/domain/membership/service/MembershipService.java:246-250`
 
 | 등급 | 포인트 범위 | 승급 임계값 |
 |------|-----------|------------|
@@ -1398,7 +1398,7 @@ public void activateMembership(UUID membershipId) {
     addPoints(membershipId, actionType, JOIN_BONUS_POINTS, desc, null);
 }
 ```
-> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/membership/service/MembershipService.java:78-101`
+> 참조: `ticket-service/src/main/java/guru/urr/ticketservice/domain/membership/service/MembershipService.java:78-101`
 
 ### 6.2 포인트 적립
 
@@ -1428,7 +1428,7 @@ public void addPoints(UUID membershipId, String actionType, int points, String d
         newTier, membershipId);
 }
 ```
-> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/membership/service/MembershipService.java:202-223`
+> 참조: `ticket-service/src/main/java/guru/urr/ticketservice/domain/membership/service/MembershipService.java:202-223`
 
 **특정 아티스트 멤버십에 포인트 부여:**
 
@@ -1446,7 +1446,7 @@ public void awardPointsForArtist(String userId, UUID artistId, String actionType
     addPoints(membershipId, actionType, points, description, referenceId);
 }
 ```
-> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/membership/service/MembershipService.java:225-235`
+> 참조: `ticket-service/src/main/java/guru/urr/ticketservice/domain/membership/service/MembershipService.java:225-235`
 
 **전체 멤버십에 포인트 부여:**
 
@@ -1461,7 +1461,7 @@ public void awardPointsToAllMemberships(String userId, String actionType, int po
     }
 }
 ```
-> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/membership/service/MembershipService.java:237-244`
+> 참조: `ticket-service/src/main/java/guru/urr/ticketservice/domain/membership/service/MembershipService.java:237-244`
 
 **커뮤니티 활동 포인트:** community-service에서 ticket-service의 내부 API를 호출하여 포인트를 적립한다.
 
@@ -1487,11 +1487,11 @@ public void awardMembershipPoints(String userId, UUID artistId, String actionTyp
         .toBodilessEntity();
 }
 ```
-> 참조: `community-service/src/main/java/com/tiketi/communityservice/shared/client/TicketInternalClient.java:42-58`
+> 참조: `community-service/src/main/java/guru/urr/communityservice/shared/client/TicketInternalClient.java:42-58`
 
 Circuit Breaker 패턴을 적용하여 ticket-service 장애 시 fallback으로 경고 로그만 남기고 실패를 허용한다. `@Retry` 어노테이션은 의도적으로 적용하지 않았다(POST는 멱등하지 않으므로 재시도 시 포인트 중복 적립 위험).
 
-> 참조: `community-service/src/main/java/com/tiketi/communityservice/shared/client/TicketInternalClient.java:41`
+> 참조: `community-service/src/main/java/guru/urr/communityservice/shared/client/TicketInternalClient.java:41`
 
 **내부 API 엔드포인트:**
 
@@ -1518,7 +1518,7 @@ public Map<String, Object> awardPoints(
     }
 }
 ```
-> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/internal/controller/InternalMembershipController.java:26-46`
+> 참조: `ticket-service/src/main/java/guru/urr/ticketservice/internal/controller/InternalMembershipController.java:26-46`
 
 요청 DTO:
 
@@ -1533,7 +1533,7 @@ public record AwardPointsRequest(
     UUID artistId  // null이면 전체 멤버십에 포인트 부여
 ) {}
 ```
-> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/internal/dto/AwardPointsRequest.java:5-12`
+> 참조: `ticket-service/src/main/java/guru/urr/ticketservice/internal/dto/AwardPointsRequest.java:5-12`
 
 **티켓 구매 시 포인트 적립:**
 
@@ -1552,7 +1552,7 @@ try {
     log.warn("Failed to award membership points for reservation {}: {}", reservationId, e.getMessage());
 }
 ```
-> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/reservation/service/ReservationService.java:449-459`
+> 참조: `ticket-service/src/main/java/guru/urr/ticketservice/domain/reservation/service/ReservationService.java:449-459`
 
 ### 6.3 멤버십 혜택
 
@@ -1594,7 +1594,7 @@ private Map<String, Object> getBenefitsForTier(String tier) {
     }
 }
 ```
-> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/membership/service/MembershipService.java:252-290`
+> 참조: `ticket-service/src/main/java/guru/urr/ticketservice/domain/membership/service/MembershipService.java:252-290`
 
 | 등급 | 선예매 | 예매 수수료 | 양도 접근 | 양도 수수료 |
 |------|--------|-----------|----------|------------|
@@ -1617,7 +1617,7 @@ private Map<String, Object> getBenefitsForTier(String tier) {
 // ReservationCleanupScheduler.java:35
 @Scheduled(fixedRateString = "${reservation.cleanup.interval-ms:30000}")
 ```
-> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/scheduling/ReservationCleanupScheduler.java:35`
+> 참조: `ticket-service/src/main/java/guru/urr/ticketservice/scheduling/ReservationCleanupScheduler.java:35`
 
 **처리 대상:** `status = 'pending'` AND `expires_at < NOW()`
 
@@ -1627,7 +1627,7 @@ private Map<String, Object> getBenefitsForTier(String tier) {
 3. 예매: `status = 'expired'`로 변경
 4. 메트릭: `recordReservationExpired()` 기록
 
-> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/scheduling/ReservationCleanupScheduler.java:37-100`
+> 참조: `ticket-service/src/main/java/guru/urr/ticketservice/scheduling/ReservationCleanupScheduler.java:37-100`
 
 `FOR UPDATE SKIP LOCKED`를 사용하여 다중 인스턴스 환경에서의 동시 처리 충돌을 방지한다.
 
@@ -1641,7 +1641,7 @@ private Map<String, Object> getBenefitsForTier(String tier) {
 // PaymentReconciliationScheduler.java:36
 @Scheduled(fixedRateString = "${reservation.reconciliation.interval-ms:300000}")
 ```
-> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/scheduling/PaymentReconciliationScheduler.java:36`
+> 참조: `ticket-service/src/main/java/guru/urr/ticketservice/scheduling/PaymentReconciliationScheduler.java:36`
 
 **처리 대상:** `status = 'pending'` AND `payment_status = 'pending'` AND `created_at < NOW() - 5분` AND `expires_at > NOW()`
 
@@ -1667,17 +1667,17 @@ for (Map<String, Object> reservation : pendingReservations) {
     }
 }
 ```
-> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/scheduling/PaymentReconciliationScheduler.java:56-76`
+> 참조: `ticket-service/src/main/java/guru/urr/ticketservice/scheduling/PaymentReconciliationScheduler.java:56-76`
 
 ### 7.3 AdmissionWorkerService (대기열 스케줄러)
 
 **입장 배치 처리 주기:** 1초 (`queue.admission.interval-ms`)
 
-> 참조: `queue-service/src/main/java/com/tiketi/queueservice/service/AdmissionWorkerService.java:47`
+> 참조: `queue-service/src/main/java/guru/urr/queueservice/service/AdmissionWorkerService.java:47`
 
 **Stale 사용자 정리 주기:** 30초 (`queue.stale-cleanup.interval-ms`)
 
-> 참조: `queue-service/src/main/java/com/tiketi/queueservice/service/AdmissionWorkerService.java:120`
+> 참조: `queue-service/src/main/java/guru/urr/queueservice/service/AdmissionWorkerService.java:120`
 
 분산 환경에서 단일 이벤트에 대한 중복 처리를 방지하기 위해 Redis 기반 분산 잠금을 사용한다.
 
@@ -1692,7 +1692,7 @@ if (acquired == null || !acquired) {
     continue;
 }
 ```
-> 참조: `queue-service/src/main/java/com/tiketi/queueservice/service/AdmissionWorkerService.java:65-75`
+> 참조: `queue-service/src/main/java/guru/urr/queueservice/service/AdmissionWorkerService.java:65-75`
 
 ### 7.4 스케줄러 구성 요약
 

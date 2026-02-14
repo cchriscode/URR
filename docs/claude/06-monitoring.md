@@ -15,7 +15,7 @@
 
 ## 1. 옵저버빌리티 스택 개요
 
-Tiketi 티켓팅 플랫폼은 네 가지 핵심 축으로 옵저버빌리티를 구성한다. 메트릭 수집(Prometheus), 대시보드 시각화(Grafana), 로그 집계(Loki + Promtail), 분산 추적(Zipkin)이 각각의 역할을 담당하며, 모든 구성요소는 Kubernetes(Kind 오버레이) 환경에 선언적으로 배포된다.
+URR 티켓팅 플랫폼은 네 가지 핵심 축으로 옵저버빌리티를 구성한다. 메트릭 수집(Prometheus), 대시보드 시각화(Grafana), 로그 집계(Loki + Promtail), 분산 추적(Zipkin)이 각각의 역할을 담당하며, 모든 구성요소는 Kubernetes(Kind 오버레이) 환경에 선언적으로 배포된다.
 
 ### 1.1 전체 아키텍처
 
@@ -404,9 +404,9 @@ datasources:
 
 ```yaml
 providers:
-  - name: 'tiketi-dashboards'
+  - name: 'urr-dashboards'
     orgId: 1
-    folder: 'Tiketi'
+    folder: 'URR'
     type: file
     disableDeletion: false
     updateIntervalSeconds: 30
@@ -416,8 +416,8 @@ providers:
 ```
 > 소스: `k8s/spring/overlays/kind/grafana.yaml:29-41`
 
-- **프로바이더 이름**: `tiketi-dashboards`
-- **폴더**: `Tiketi` (Grafana UI에서의 폴더 분류)
+- **프로바이더 이름**: `urr-dashboards`
+- **폴더**: `URR` (Grafana UI에서의 폴더 분류)
 - **자동 갱신 간격**: 30초 (`updateIntervalSeconds: 30`)
 - **UI 편집 허용**: true (`allowUiUpdates: true`)
 
@@ -427,7 +427,7 @@ providers:
 
 #### 3.4.1 Service Overview 대시보드
 
-> UID: `tiketi-service-overview` | 소스: `k8s/spring/overlays/kind/grafana-dashboards.yaml:9-258`
+> UID: `urr-service-overview` | 소스: `k8s/spring/overlays/kind/grafana-dashboards.yaml:9-258`
 
 | 패널 ID | 패널 제목 | 유형 | PromQL 쿼리 요약 |
 |---------|---------|------|-----------------|
@@ -447,7 +447,7 @@ providers:
 
 #### 3.4.2 JVM Metrics 대시보드
 
-> UID: `tiketi-jvm-metrics` | 소스: `k8s/spring/overlays/kind/grafana-dashboards.yaml:260-512`
+> UID: `urr-jvm-metrics` | 소스: `k8s/spring/overlays/kind/grafana-dashboards.yaml:260-512`
 
 | 패널 ID | 패널 제목 | 유형 | 설명 |
 |---------|---------|------|------|
@@ -462,7 +462,7 @@ providers:
 
 #### 3.4.3 Kafka Metrics 대시보드
 
-> UID: `tiketi-kafka-metrics` | 소스: `k8s/spring/overlays/kind/grafana-dashboards.yaml:514-718`
+> UID: `urr-kafka-metrics` | 소스: `k8s/spring/overlays/kind/grafana-dashboards.yaml:514-718`
 
 | 패널 ID | 패널 제목 | 유형 | 설명 |
 |---------|---------|------|------|
@@ -478,7 +478,7 @@ providers:
 
 #### 3.4.4 Infrastructure 대시보드
 
-> UID: `tiketi-infrastructure` | 소스: `k8s/spring/overlays/kind/grafana-dashboards.yaml:720-1001`
+> UID: `urr-infrastructure` | 소스: `k8s/spring/overlays/kind/grafana-dashboards.yaml:720-1001`
 
 | 패널 ID | 패널 제목 | 유형 | 설명 |
 |---------|---------|------|------|
@@ -492,9 +492,9 @@ providers:
 | 8 | Kafka Broker Availability | stat | consumer 브로커 커넥션 수 |
 | 9 | Disk Usage | timeseries | 디스크 여유/전체 공간 |
 
-#### 3.4.5 Tiketi Alert Rules 대시보드
+#### 3.4.5 URR Alert Rules 대시보드
 
-> UID: `tiketi-alerts` | 소스: `k8s/spring/overlays/kind/grafana-dashboards.yaml:1003-1219`
+> UID: `urr-alerts` | 소스: `k8s/spring/overlays/kind/grafana-dashboards.yaml:1003-1219`
 
 상세 내용은 [8장 알림](#8-알림-grafana-alert-rules)에서 다룬다.
 
@@ -540,11 +540,11 @@ scrape_configs:
       - role: pod
         namespaces:
           names:
-            - tiketi-spring
+            - urr-spring
 ```
 > 소스: `k8s/spring/overlays/kind/promtail.yaml:18-24`
 
-- **수집 대상**: `tiketi-spring` 네임스페이스의 모든 Pod
+- **수집 대상**: `urr-spring` 네임스페이스의 모든 Pod
 - **서비스 디스커버리**: Kubernetes Pod SD (`role: pod`)
 
 #### 레이블 재매핑
@@ -594,7 +594,7 @@ rules:
 > 소스: `k8s/spring/overlays/kind/promtail.yaml:95-103`
 
 - ClusterRole: `promtail` (`k8s/spring/overlays/kind/promtail.yaml:92-103`)
-- ClusterRoleBinding: `promtail` -- `tiketi-spring` 네임스페이스의 서비스 계정에 바인딩 (`k8s/spring/overlays/kind/promtail.yaml:106-117`)
+- ClusterRoleBinding: `promtail` -- `urr-spring` 네임스페이스의 서비스 계정에 바인딩 (`k8s/spring/overlays/kind/promtail.yaml:106-117`)
 
 ### 4.2 Loki
 

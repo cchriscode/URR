@@ -3,8 +3,8 @@ spring:
     name: catalog-service
   datasource:
     url: ${TICKET_DB_URL:jdbc:postgresql://localhost:5434/ticket_db}
-    username: ${TICKET_DB_USERNAME:tiketi_user}
-    password: ${TICKET_DB_PASSWORD:tiketi_password}
+    username: ${TICKET_DB_USERNAME:urr_user}
+    password: ${TICKET_DB_PASSWORD:urr_password}
   flyway:
     enabled: false
 

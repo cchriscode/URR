@@ -23,7 +23,7 @@ on:
 env:
   AWS_REGION: ap-northeast-2
   SERVICE_NAME: auth-service
-  ECR_REPOSITORY: tiketi/auth
+  ECR_REPOSITORY: urr/auth
 
 jobs:
   build-and-push:
@@ -161,8 +161,8 @@ jobs:
             exit 1
           fi
 
-          sed -i "s|newName: .*tiketi-${{ env.SERVICE_NAME }}.*|newName: $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}|g" "$KUSTOMIZE_FILE"
-          sed -i "/tiketi-${{ env.SERVICE_NAME }}/,/newTag:/s|newTag: .*|newTag: $IMAGE_TAG|" "$KUSTOMIZE_FILE"
+          sed -i "s|newName: .*urr-${{ env.SERVICE_NAME }}.*|newName: $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}|g" "$KUSTOMIZE_FILE"
+          sed -i "/urr-${{ env.SERVICE_NAME }}/,/newTag:/s|newTag: .*|newTag: $IMAGE_TAG|" "$KUSTOMIZE_FILE"
 
           echo "✅ Updated $KUSTOMIZE_FILE"
           git diff "$KUSTOMIZE_FILE"

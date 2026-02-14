@@ -46,11 +46,11 @@ Expected:
 ## 4) Useful checks
 
 ```powershell
-kubectl get pods -n tiketi-spring
-kubectl logs -n tiketi-spring deployment/gateway-service
-kubectl logs -n tiketi-spring deployment/auth-service
-kubectl logs -n tiketi-spring deployment/frontend
-kubectl logs -n tiketi-spring deployment/grafana
+kubectl get pods -n urr-spring
+kubectl logs -n urr-spring deployment/gateway-service
+kubectl logs -n urr-spring deployment/auth-service
+kubectl logs -n urr-spring deployment/frontend
+kubectl logs -n urr-spring deployment/grafana
 ```
 
 ## 5) Stop stack

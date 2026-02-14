@@ -21,7 +21,7 @@ data:
           - role: pod
             namespaces:
               names:
-                - tiketi-spring
+                - urr-spring
         relabel_configs:
           - source_labels: [__meta_kubernetes_pod_label_app]
             target_label: app
@@ -110,7 +110,7 @@ metadata:
 subjects:
   - kind: ServiceAccount
     name: promtail
-    namespace: tiketi-spring
+    namespace: urr-spring
 roleRef:
   kind: ClusterRole
   name: promtail

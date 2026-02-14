@@ -6,10 +6,10 @@ param(
     [switch]$SkipApi,
     [switch]$SkipParity,
     [string]$ReportDir = "reports/final-validation",
-    [string]$K8sNamespace = "tiketi-spring",
+    [string]$K8sNamespace = "urr-spring",
     [string]$PostgresDeployment = "postgres-spring",
-    [string]$PostgresUser = "tiketi_user",
-    [string]$PostgresPassword = "tiketi_password"
+    [string]$PostgresUser = "urr_user",
+    [string]$PostgresPassword = "urr_password"
 )
 
 $ErrorActionPreference = "Stop"
@@ -353,8 +353,8 @@ if (-not $SkipApi) {
         $suffix = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
         $password = "Password123!"
 
-        $userEmail = "validation_user_$suffix@tiketi.local"
-        $adminEmail = "validation_admin_$suffix@tiketi.local"
+        $userEmail = "validation_user_$suffix@urr.local"
+        $adminEmail = "validation_admin_$suffix@urr.local"
 
         $registerUser = Invoke-Api -Method "POST" -Url "$NewBaseUrl/api/auth/register" -Headers $null -Body @{
             email = $userEmail

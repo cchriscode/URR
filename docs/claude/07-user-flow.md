@@ -34,8 +34,8 @@ Spring Cloud Gateway가 `/api/v1/auth/**` 패턴을 매칭하여 auth-service(`$
 
 **백엔드 처리**
 
-1. `AuthController.register()` 메서드가 `RegisterRequest`를 받아 `AuthService.register()`를 호출한다 (`services-spring/auth-service/src/main/java/com/tiketi/authservice/controller/AuthController.java:39-46`).
-2. `AuthService.register()` 내부 처리 순서 (`services-spring/auth-service/src/main/java/com/tiketi/authservice/service/AuthService.java:66-84`):
+1. `AuthController.register()` 메서드가 `RegisterRequest`를 받아 `AuthService.register()`를 호출한다 (`services-spring/auth-service/src/main/java/guru/urr/authservice/controller/AuthController.java:39-46`).
+2. `AuthService.register()` 내부 처리 순서 (`services-spring/auth-service/src/main/java/guru/urr/authservice/service/AuthService.java:66-84`):
    - 이메일 중복 확인: `userRepository.findByEmail()` -- 중복 시 `ApiException("Email already exists")` 발생 (라인 67-69)
    - `UserEntity` 생성: 이메일, 이름, 전화번호 설정 (라인 71-75)
    - 비밀번호 해싱: `passwordEncoder.encode(request.password())` -- BCrypt 사용 (라인 73)
@@ -46,7 +46,7 @@ Spring Cloud Gateway가 `/api/v1/auth/**` 패턴을 매칭하여 auth-service(`$
 
 **응답 처리**
 
-3. `AuthController`에서 `CookieHelper`를 통해 쿠키를 설정한다 (`services-spring/auth-service/src/main/java/com/tiketi/authservice/controller/AuthController.java:43-44`):
+3. `AuthController`에서 `CookieHelper`를 통해 쿠키를 설정한다 (`services-spring/auth-service/src/main/java/guru/urr/authservice/controller/AuthController.java:43-44`):
    - `access_token`: 쿠키에 JWT 토큰 저장
    - `refresh_token`: httpOnly 쿠키에 리프레시 토큰 저장
 4. 응답 본문: `AuthResponse` (message, token, refreshToken, user) -- HTTP 201 Created (라인 45)
@@ -81,8 +81,8 @@ authApi.login = (payload) => http.post("/auth/login", payload)
 
 **백엔드 처리**
 
-1. `AuthController.login()` 메서드 (`services-spring/auth-service/src/main/java/com/tiketi/authservice/controller/AuthController.java:48-55`).
-2. `AuthService.login()` 처리 순서 (`services-spring/auth-service/src/main/java/com/tiketi/authservice/service/AuthService.java:87-111`):
+1. `AuthController.login()` 메서드 (`services-spring/auth-service/src/main/java/guru/urr/authservice/controller/AuthController.java:48-55`).
+2. `AuthService.login()` 처리 순서 (`services-spring/auth-service/src/main/java/guru/urr/authservice/service/AuthService.java:87-111`):
    - 이메일로 사용자 조회: `userRepository.findByEmail()` -- 없으면 `ApiException("Invalid email or password")` (라인 88-89)
    - 비밀번호 해시 존재 확인: OAuth 사용자의 경우 비밀번호가 없으므로 별도 검증 (라인 91-93)
    - 비밀번호 검증: `passwordEncoder.matches(request.password(), user.getPasswordHash())` (라인 97)
@@ -126,8 +126,8 @@ authApi.google = (credential) => http.post("/auth/google", { credential })
 
 **백엔드 처리**
 
-1. `AuthController.google()` 메서드 (`services-spring/auth-service/src/main/java/com/tiketi/authservice/controller/AuthController.java:85-101`).
-2. `AuthService.googleLogin()` 처리 순서 (`services-spring/auth-service/src/main/java/com/tiketi/authservice/service/AuthService.java:197-259`):
+1. `AuthController.google()` 메서드 (`services-spring/auth-service/src/main/java/guru/urr/authservice/controller/AuthController.java:85-101`).
+2. `AuthService.googleLogin()` 처리 순서 (`services-spring/auth-service/src/main/java/guru/urr/authservice/service/AuthService.java:197-259`):
    - `GoogleIdTokenVerifier.verify(credential)` 로 ID 토큰 검증 (라인 207)
    - 토큰 payload에서 `subject`(Google ID), `email`, `name`, `picture` 추출 (라인 218-221)
    - 이메일로 기존 사용자 조회: `userRepository.findByEmail(email)` (라인 227)
@@ -178,9 +178,9 @@ axios 인터셉터에서 401 응답을 감지하면 자동으로 토큰 갱신�
 
 **백엔드 리프레시 처리**
 
-`AuthController.refresh()` 메서드 (`services-spring/auth-service/src/main/java/com/tiketi/authservice/controller/AuthController.java:67-83`):
+`AuthController.refresh()` 메서드 (`services-spring/auth-service/src/main/java/guru/urr/authservice/controller/AuthController.java:67-83`):
 - `refresh_token` 쿠키 또는 request body에서 리프레시 토큰 추출 (라인 69-76)
-- `AuthService.refreshToken()` 내부 처리 (`services-spring/auth-service/src/main/java/com/tiketi/authservice/service/AuthService.java:114-153`):
+- `AuthService.refreshToken()` 내부 처리 (`services-spring/auth-service/src/main/java/guru/urr/authservice/service/AuthService.java:114-153`):
   - JWT 검증 (라인 117)
   - DB에서 토큰 해시로 조회 (라인 128-129)
   - 이미 폐기된 토큰이면 해당 family 전체 무효화 (토큰 재사용 공격 탐지) (라인 132-137)
@@ -225,7 +225,7 @@ eventsApi.list(params) -> http.get("/events", { params })
 
 **백엔드 처리**
 
-`EventController.getEvents()` 메서드 (`services-spring/catalog-service/src/main/java/com/tiketi/catalogservice/domain/event/controller/EventController.java:22-30`):
+`EventController.getEvents()` 메서드 (`services-spring/catalog-service/src/main/java/guru/urr/catalogservice/domain/event/controller/EventController.java:22-30`):
 - 파라미터: `status`, `q`(검색 쿼리), `page`(기본값 1), `limit`(기본값 10)
 - `EventReadService.listEvents(status, searchQuery, page, limit)` 호출 (라인 29)
 
@@ -261,7 +261,7 @@ eventsApi.detail(id) -> http.get(`/events/${id}`)
 
 **백엔드 처리**
 
-`EventController.getEvent(id)` 메서드가 `eventReadService.getEventDetail(id)` 를 호출한다 (`services-spring/catalog-service/src/main/java/com/tiketi/catalogservice/domain/event/controller/EventController.java:32-35`).
+`EventController.getEvent(id)` 메서드가 `eventReadService.getEventDetail(id)` 를 호출한다 (`services-spring/catalog-service/src/main/java/guru/urr/catalogservice/domain/event/controller/EventController.java:32-35`).
 
 **UI 렌더링**
 
@@ -303,13 +303,13 @@ queueApi.check = (eventId) => http.post<QueueStatus>(`/queue/check/${eventId}`)
 
 **백엔드 처리 -- QueueController**
 
-`QueueController.check()` 메서드 (`services-spring/queue-service/src/main/java/com/tiketi/queueservice/controller/QueueController.java:27-34`):
+`QueueController.check()` 메서드 (`services-spring/queue-service/src/main/java/guru/urr/queueservice/controller/QueueController.java:27-34`):
 - JWT에서 사용자 인증: `jwtTokenParser.requireUser(request)` (라인 32)
 - `QueueService.check(eventId, userId)` 호출 (라인 33)
 
 **백엔드 처리 -- QueueService.check()**
 
-`QueueService.check()` 메서드의 의사결정 로직 (`services-spring/queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:60-91`):
+`QueueService.check()` 메서드의 의사결정 로직 (`services-spring/queue-service/src/main/java/guru/urr/queueservice/service/QueueService.java:60-91`):
 
 1. **이미 대기열에 있는 경우**: 대기열 위치를 갱신하고 `buildQueuedResponse` 반환 (라인 63-67)
 2. **이미 활성 사용자인 경우**: 활성 상태를 갱신하고 `buildActiveResponse` 반환 (라인 70-72)
@@ -321,13 +321,13 @@ queueApi.check = (eventId) => http.post<QueueStatus>(`/queue/check/${eventId}`)
 **Redis 데이터 구조**
 
 대기열과 활성 사용자 관리에 Redis ZSET을 사용한다:
-- 대기열 키: `queue:{eventId}` -- score는 등록 타임스탬프 (`services-spring/queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:271-273, 329-331`)
+- 대기열 키: `queue:{eventId}` -- score는 등록 타임스탬프 (`services-spring/queue-service/src/main/java/guru/urr/queueservice/service/QueueService.java:271-273, 329-331`)
 - 활성 사용자 키: `active:{eventId}` -- score는 만료 타임스탬프 (라인 275-276, 301-304)
 - 활성 이벤트 추적: `queue:active-events` SET (라인 262-267)
 
 **대기열 응답 (queued 상태)**
 
-`buildQueuedResponse()` 메서드 (`services-spring/queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:181-195`):
+`buildQueuedResponse()` 메서드 (`services-spring/queue-service/src/main/java/guru/urr/queueservice/service/QueueService.java:181-195`):
 
 ```json
 {
@@ -344,12 +344,12 @@ queueApi.check = (eventId) => http.post<QueueStatus>(`/queue/check/${eventId}`)
 }
 ```
 
-- `estimatedWait`: 처리량 기반 대기 시간 추정 -- 최근 1분간 입장 처리량을 기반으로 계산 (`services-spring/queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:242-258`)
+- `estimatedWait`: 처리량 기반 대기 시간 추정 -- 최근 1분간 입장 처리량을 기반으로 계산 (`services-spring/queue-service/src/main/java/guru/urr/queueservice/service/QueueService.java:242-258`)
 - `nextPoll`: 위치에 따른 동적 폴링 간격 -- 1000위 이내 1초, 5000위 이내 5초, 10만위 이내 30초, 그 이상 60초 (라인 231-238)
 
 **활성 응답 (active 상태)**
 
-`buildActiveResponse()` 메서드 (`services-spring/queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:197-213`):
+`buildActiveResponse()` 메서드 (`services-spring/queue-service/src/main/java/guru/urr/queueservice/service/QueueService.java:197-213`):
 - `entryToken`: JWT 형식의 진입 토큰 생성 (라인 198) -- subject에 eventId, claim에 userId, TTL은 `QUEUE_ACTIVE_TTL_SECONDS`(기본 600초) (라인 215-227)
 - SQS FIFO로 입장 이벤트 발행 (라인 210)
 
@@ -362,7 +362,7 @@ queueApi.check = (eventId) => http.post<QueueStatus>(`/queue/check/${eventId}`)
 **프론트엔드 -- 진입 토큰 처리**
 
 `entryToken`을 수신하면 쿠키에 저장한다:
-- 쿠키명: `tiketi-entry-token`
+- 쿠키명: `urr-entry-token`
 - TTL: 10분
 - 이후 모든 API 요청에 `x-queue-entry-token` 헤더로 자동 첨부 (`apps/web/src/lib/api-client.ts:70-77`)
 
@@ -397,7 +397,7 @@ seatsApi.byEvent(eventId) -> http.get(`/seats/events/${eventId}`)
 
 **백엔드 처리**
 
-`SeatController.byEvent(eventId)` 메서드 (`services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/domain/seat/controller/SeatController.java:38-41`):
+`SeatController.byEvent(eventId)` 메서드 (`services-spring/ticket-service/src/main/java/guru/urr/ticketservice/domain/seat/controller/SeatController.java:38-41`):
 - `catalogReadService.getSeatsByEvent(eventId)` 호출 (라인 40)
 
 **좌석 상태 타입** (`apps/web/src/lib/types.ts:52-61`):
@@ -418,11 +418,11 @@ seatsApi.reserve({ eventId, seatIds, idempotencyKey }) -> http.post("/seats/rese
 
 **게이트웨이 VWR 검증**
 
-게이트웨이에서 `x-queue-entry-token` 헤더의 진입 토큰을 검증한다. 유효하지 않으면 요청을 거부한다. 이 토큰은 axios 요청 인터셉터에서 쿠키 `tiketi-entry-token` 값을 자동 첨부한다 (`apps/web/src/lib/api-client.ts:70-77`).
+게이트웨이에서 `x-queue-entry-token` 헤더의 진입 토큰을 검증한다. 유효하지 않으면 요청을 거부한다. 이 토큰은 axios 요청 인터셉터에서 쿠키 `urr-entry-token` 값을 자동 첨부한다 (`apps/web/src/lib/api-client.ts:70-77`).
 
 **백엔드 처리**
 
-`SeatController.reserve()` 메서드 (`services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/domain/seat/controller/SeatController.java:43-50`):
+`SeatController.reserve()` 메서드 (`services-spring/ticket-service/src/main/java/guru/urr/ticketservice/domain/seat/controller/SeatController.java:43-50`):
 - JWT 인증: `jwtTokenParser.requireUser(request)` (라인 48)
 - `reservationService.reserveSeats(userId, body)` 호출 (라인 49)
 - 내부 처리: Redis Lua 스크립트로 좌석 원자적 잠금 -> 예약 레코드 DB 저장
@@ -456,7 +456,7 @@ reservationsApi.createTicketOnly({ eventId, items, idempotencyKey })
 
 **백엔드 처리**
 
-`ReservationController.create()` 메서드 (`services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/domain/reservation/controller/ReservationController.java:30-37`):
+`ReservationController.create()` 메서드 (`services-spring/ticket-service/src/main/java/guru/urr/ticketservice/domain/reservation/controller/ReservationController.java:30-37`):
 - JWT 인증 (라인 35)
 - `reservationService.createReservation(userId, body)` 호출 (라인 36)
 - 내부 처리: 티켓 유형별 재고 확인 -> 예약 레코드 생성 -> 만료 시간 설정
@@ -488,8 +488,8 @@ reservationsApi.byId(reservationId) -> http.get(`/reservations/${reservationId}`
 
    게이트웨이: `/api/v1/payments/**` -> payment-service (`services-spring/gateway-service/src/main/resources/application.yml:16-19`)
 
-   백엔드 `PaymentController.prepare()` (`services-spring/payment-service/src/main/java/com/tiketi/paymentservice/controller/PaymentController.java:33-40`):
-   - `PaymentService.prepare()` 호출 (`services-spring/payment-service/src/main/java/com/tiketi/paymentservice/service/PaymentService.java:49-118`):
+   백엔드 `PaymentController.prepare()` (`services-spring/payment-service/src/main/java/guru/urr/paymentservice/controller/PaymentController.java:33-40`):
+   - `PaymentService.prepare()` 호출 (`services-spring/payment-service/src/main/java/guru/urr/paymentservice/service/PaymentService.java:49-118`):
      - 예약 검증: `ticketInternalClient.validateReservation()` (라인 71)
      - 금액 검증: 서버측 금액과 요청 금액 비교 (라인 79-81)
      - 기존 결제 중복 확인 (라인 86-106)
@@ -507,8 +507,8 @@ paymentsApi.process(payload) -> http.post("/payments/process", payload)
 ```
 (`apps/web/src/lib/api-client.ts:182`)
 
-백엔드 `PaymentController.process()` (`services-spring/payment-service/src/main/java/com/tiketi/paymentservice/controller/PaymentController.java:82-89`):
-- `PaymentService.process()` 호출 (`services-spring/payment-service/src/main/java/com/tiketi/paymentservice/service/PaymentService.java:251-341`):
+백엔드 `PaymentController.process()` (`services-spring/payment-service/src/main/java/guru/urr/paymentservice/controller/PaymentController.java:82-89`):
+- `PaymentService.process()` 호출 (`services-spring/payment-service/src/main/java/guru/urr/paymentservice/service/PaymentService.java:251-341`):
   - paymentType에 따라 분기: "reservation", "transfer", "membership" (라인 259-278)
   - 기존 확정 결제 중복 체크 (멱등성 보장) (라인 280-311)
   - DB에 즉시 confirmed 상태로 결제 레코드 삽입 (라인 315-321)
@@ -544,14 +544,14 @@ paymentsApi.confirm({ paymentKey, orderId, amount }) -> http.post("/payments/con
 
 **백엔드 처리**
 
-`PaymentController.confirm()` (`services-spring/payment-service/src/main/java/com/tiketi/paymentservice/controller/PaymentController.java:42-49`):
-- `PaymentService.confirm()` 호출 (`services-spring/payment-service/src/main/java/com/tiketi/paymentservice/service/PaymentService.java:121-173`):
+`PaymentController.confirm()` (`services-spring/payment-service/src/main/java/guru/urr/paymentservice/controller/PaymentController.java:42-49`):
+- `PaymentService.confirm()` 호출 (`services-spring/payment-service/src/main/java/guru/urr/paymentservice/service/PaymentService.java:121-173`):
   - `order_id`로 결제 레코드 조회 (`SELECT ... FOR UPDATE`로 행 잠금) (라인 122-127)
   - 사용자 소유권 확인 (라인 134-136)
   - 금액 일치 확인 (라인 137-139)
   - 중복 확정 방지 (라인 140-142)
   - 결제 상태를 `confirmed`로 변경, `payment_key` 및 `toss_approved_at` 저장 (라인 153-158)
-  - `completeByType()` 호출 (`services-spring/payment-service/src/main/java/com/tiketi/paymentservice/service/PaymentService.java:343-376`):
+  - `completeByType()` 호출 (`services-spring/payment-service/src/main/java/guru/urr/paymentservice/service/PaymentService.java:343-376`):
     - reservation: `ticketInternalClient.confirmReservation()` (라인 364)
     - transfer: `ticketInternalClient.confirmTransfer()` (라인 358)
     - membership: `ticketInternalClient.activateMembership()` (라인 361)
@@ -593,7 +593,7 @@ reservationsApi.mine() -> http.get("/reservations/my")
 
 **백엔드 처리**
 
-`ReservationController.my()` (`services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/domain/reservation/controller/ReservationController.java:39-43`):
+`ReservationController.my()` (`services-spring/ticket-service/src/main/java/guru/urr/ticketservice/domain/reservation/controller/ReservationController.java:39-43`):
 - `reservationService.getMyReservations(userId)` 호출 (라인 42)
 
 **UI 렌더링** (`apps/web/src/app/my-reservations/page.tsx`)
@@ -630,7 +630,7 @@ reservationsApi.cancel(id) -> http.post(`/reservations/${id}/cancel`)
 
 **백엔드 처리**
 
-`ReservationController.cancel(id)` (`services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/domain/reservation/controller/ReservationController.java:54-61`):
+`ReservationController.cancel(id)` (`services-spring/ticket-service/src/main/java/guru/urr/ticketservice/domain/reservation/controller/ReservationController.java:54-61`):
 - `reservationService.cancelReservation(userId, id)` 호출 (라인 60)
 - 내부 처리: 예약 상태를 `cancelled`로 변경, 좌석 잠금 해제(available로 복원)
 
@@ -655,7 +655,7 @@ transfersApi.create(reservationId) -> http.post("/transfers", { reservationId })
 
 **백엔드 처리**
 
-`TransferController.createListing()` (`services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/domain/transfer/controller/TransferController.java:29-37`):
+`TransferController.createListing()` (`services-spring/ticket-service/src/main/java/guru/urr/ticketservice/domain/transfer/controller/TransferController.java:29-37`):
 - JWT 인증 (라인 34)
 - `reservationId` 추출 (라인 35)
 - `transferService.createListing(userId, reservationId)` 호출 (라인 36)
@@ -686,7 +686,7 @@ transfersApi.list(params) -> http.get("/transfers", { params })
 
 **백엔드 처리**
 
-`TransferController.listAvailable()` (`services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/domain/transfer/controller/TransferController.java:39-49`):
+`TransferController.listAvailable()` (`services-spring/ticket-service/src/main/java/guru/urr/ticketservice/domain/transfer/controller/TransferController.java:39-49`):
 - 선택적 `artistId` 필터 (라인 42)
 - 페이지네이션: `page`(기본 1), `limit`(기본 20) (라인 43-44)
 - `transferService.getAvailableTransfers(artistId, page, limit)` 호출 (라인 48)
@@ -723,7 +723,7 @@ transfersApi.detail(id) -> http.get(`/transfers/${id}`)
 
 **백엔드 처리**
 
-`TransferController.detail(id)` (`services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/domain/transfer/controller/TransferController.java:57-64`):
+`TransferController.detail(id)` (`services-spring/ticket-service/src/main/java/guru/urr/ticketservice/domain/transfer/controller/TransferController.java:57-64`):
 - `transferService.getTransferDetail(id)` 호출 (라인 63)
 
 **결제 처리**
@@ -735,10 +735,10 @@ paymentsApi.process({ paymentType: "transfer", referenceId, paymentMethod, amoun
 
 **백엔드 -- PaymentService.process() (transfer 분기)**
 
-(`services-spring/payment-service/src/main/java/com/tiketi/paymentservice/service/PaymentService.java:260-261`):
+(`services-spring/payment-service/src/main/java/guru/urr/paymentservice/service/PaymentService.java:260-261`):
 - `ticketInternalClient.validateTransfer(referenceId, userId)` 로 양도 유효성 검증 (라인 262)
 - 결제 확정 후 `completeByType("transfer")` 호출 (라인 329)
-- `ticketInternalClient.confirmTransfer(referenceId, userId, paymentMethod)` 로 소유권 이전 처리 (`services-spring/payment-service/src/main/java/com/tiketi/paymentservice/service/PaymentService.java:358`)
+- `ticketInternalClient.confirmTransfer(referenceId, userId, paymentMethod)` 로 소유권 이전 처리 (`services-spring/payment-service/src/main/java/guru/urr/paymentservice/service/PaymentService.java:358`)
 - Kafka `PaymentConfirmedEvent` 발행 (라인 373-375)
 
 ---
@@ -766,7 +766,7 @@ membershipsApi.subscribe(artistId) -> http.post("/memberships/subscribe", { arti
 
 **백엔드 처리**
 
-`MembershipController.subscribe()` (`services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/domain/membership/controller/MembershipController.java:32-40`):
+`MembershipController.subscribe()` (`services-spring/ticket-service/src/main/java/guru/urr/ticketservice/domain/membership/controller/MembershipController.java:32-40`):
 - JWT 인증 (라인 37)
 - `membershipService.subscribe(userId, artistId)` 호출 (라인 39)
 - 내부 처리: 멤버십을 `pending` 상태로 생성
@@ -779,7 +779,7 @@ membershipsApi.subscribe(artistId) -> http.post("/memberships/subscribe", { arti
 paymentsApi.process({ paymentType: "membership", referenceId, paymentMethod, amount })
 ```
 
-백엔드 `PaymentService.process()` -- membership 분기 (`services-spring/payment-service/src/main/java/com/tiketi/paymentservice/service/PaymentService.java:265-268`):
+백엔드 `PaymentService.process()` -- membership 분기 (`services-spring/payment-service/src/main/java/guru/urr/paymentservice/service/PaymentService.java:265-268`):
 - `ticketInternalClient.validateMembership(referenceId, userId)` 로 검증 (라인 267)
 - 결제 확정 후 `ticketInternalClient.activateMembership(referenceId)` 호출 (라인 361)
 - 멤버십 상태가 `pending` -> `active`로 변경
@@ -792,7 +792,7 @@ paymentsApi.process({ paymentType: "membership", referenceId, paymentMethod, amo
 
 **게시글 작성 시 적립**
 
-`PostService.create()` 메서드 (`services-spring/community-service/src/main/java/com/tiketi/communityservice/service/PostService.java:91-122`):
+`PostService.create()` 메서드 (`services-spring/community-service/src/main/java/guru/urr/communityservice/service/PostService.java:91-122`):
 - 게시글 DB 삽입 후 (라인 93-103)
 - `ticketInternalClient.awardMembershipPoints()` 호출 (라인 113-116):
   - `userId`, `artistId`, `actionType="COMMUNITY_POST"`, `points=30`, `description="커뮤니티 글 작성"`
@@ -800,7 +800,7 @@ paymentsApi.process({ paymentType: "membership", referenceId, paymentMethod, amo
 
 **댓글 작성 시 적립**
 
-`CommentService.create()` 메서드 (`services-spring/community-service/src/main/java/com/tiketi/communityservice/service/CommentService.java:58-101`):
+`CommentService.create()` 메서드 (`services-spring/community-service/src/main/java/guru/urr/communityservice/service/CommentService.java:58-101`):
 - 댓글 DB 삽입 후 (라인 69-78)
 - `ticketInternalClient.awardMembershipPoints()` 호출 (라인 92-95):
   - `actionType="COMMUNITY_COMMENT"`, `points=10`, `description="커뮤니티 댓글 작성"`
@@ -810,7 +810,7 @@ paymentsApi.process({ paymentType: "membership", referenceId, paymentMethod, amo
 
 community-service -> ticket-service 간 내부 호출:
 - `POST /internal/memberships/award-points`
-- `InternalMembershipController.awardPoints()` (`services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/internal/controller/InternalMembershipController.java:26-46`):
+- `InternalMembershipController.awardPoints()` (`services-spring/ticket-service/src/main/java/guru/urr/ticketservice/internal/controller/InternalMembershipController.java:26-46`):
   - 내부 토큰 검증: `internalTokenValidator.requireValidToken(authorization)` (라인 30)
   - `artistId`가 있으면: 해당 아티스트 멤버십에만 포인트 적립 (라인 32-35)
   - `artistId`가 없으면: 사용자의 모든 멤버십에 포인트 적립 (라인 37-39)
@@ -834,7 +834,7 @@ membershipsApi.my() -> http.get("/memberships/my")
 
 **백엔드 처리**
 
-`MembershipController.myMemberships()` (`services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/domain/membership/controller/MembershipController.java:42-46`):
+`MembershipController.myMemberships()` (`services-spring/ticket-service/src/main/java/guru/urr/ticketservice/domain/membership/controller/MembershipController.java:42-46`):
 - `membershipService.getMyMemberships(userId)` 호출 (라인 45)
 
 **혜택 조회**
@@ -844,7 +844,7 @@ membershipsApi.benefits(artistId) -> http.get(`/memberships/benefits/${artistId}
 ```
 (`apps/web/src/lib/api-client.ts:237`)
 
-`MembershipController.benefits()` (`services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/domain/membership/controller/MembershipController.java:57-64`):
+`MembershipController.benefits()` (`services-spring/ticket-service/src/main/java/guru/urr/ticketservice/domain/membership/controller/MembershipController.java:57-64`):
 - `membershipService.getUserBenefitsForArtist(userId, artistId)` 호출 (라인 63)
 
 **멤버십 등급 체계** (`apps/web/src/lib/types.ts:138`):
@@ -888,11 +888,11 @@ communityApi.posts(params) -> http.get("/community/posts", { params })
 
 **백엔드 처리**
 
-`CommunityPostController.list()` (`services-spring/community-service/src/main/java/com/tiketi/communityservice/controller/CommunityPostController.java:28-34`):
+`CommunityPostController.list()` (`services-spring/community-service/src/main/java/guru/urr/communityservice/controller/CommunityPostController.java:28-34`):
 - 선택적 `artistId` 필터, `page`, `limit` 파라미터 (라인 30-32)
 - `postService.list(artistId, page, limit)` 호출 (라인 33)
 
-`PostService.list()` (`services-spring/community-service/src/main/java/com/tiketi/communityservice/service/PostService.java:33-77`):
+`PostService.list()` (`services-spring/community-service/src/main/java/guru/urr/communityservice/service/PostService.java:33-77`):
 - 페이지네이션 안전 처리: 최소 1페이지, 최대 100개 (라인 34-35)
 - 정렬: 고정글(`is_pinned`) 우선, 생성일 내림차순 (라인 48)
 - 응답: `{ posts, pagination: { page, limit, total, totalPages } }` (라인 64-76)
@@ -908,9 +908,9 @@ communityApi.postDetail(id) -> http.get(`/community/posts/${id}`)
 ```
 (`apps/web/src/lib/api-client.ts:204`)
 
-`CommunityPostController.detail(id)` (`services-spring/community-service/src/main/java/com/tiketi/communityservice/controller/CommunityPostController.java:36-39`):
+`CommunityPostController.detail(id)` (`services-spring/community-service/src/main/java/guru/urr/communityservice/controller/CommunityPostController.java:36-39`):
 - `postService.detail(id)` 호출 (라인 38)
-- 조회수 1 증가 처리 (`services-spring/community-service/src/main/java/com/tiketi/communityservice/service/PostService.java:80-81`)
+- 조회수 1 증가 처리 (`services-spring/community-service/src/main/java/guru/urr/communityservice/service/PostService.java:80-81`)
 
 **게시글 상세 UI** (`apps/web/src/app/community/[postId]/page.tsx`):
 - 게시글 내용 표시
@@ -924,11 +924,11 @@ communityApi.createPost({ title, content, artist_id }) -> http.post("/community/
 ```
 (`apps/web/src/lib/api-client.ts:205-206`)
 
-`CommunityPostController.create()` (`services-spring/community-service/src/main/java/com/tiketi/communityservice/controller/CommunityPostController.java:41-47`):
+`CommunityPostController.create()` (`services-spring/community-service/src/main/java/guru/urr/communityservice/controller/CommunityPostController.java:41-47`):
 - JWT 인증 (라인 45)
 - `postService.create(request, user)` 호출 (라인 46)
 
-`PostService.create()` (`services-spring/community-service/src/main/java/com/tiketi/communityservice/service/PostService.java:91-122`):
+`PostService.create()` (`services-spring/community-service/src/main/java/guru/urr/communityservice/service/PostService.java:91-122`):
 - DB에 게시글 삽입 (라인 93-103)
 - 멤버십 포인트 30점 적립 (라인 112-118)
 - HTTP 201 Created 응답
@@ -944,8 +944,8 @@ communityApi.updatePost(id, { title, content }) -> http.put(`/community/posts/${
 ```
 (`apps/web/src/lib/api-client.ts:207-208`)
 
-`CommunityPostController.update()` (`services-spring/community-service/src/main/java/com/tiketi/communityservice/controller/CommunityPostController.java:49-56`):
-- 소유권 확인: 작성자 본인만 수정 가능 (`services-spring/community-service/src/main/java/com/tiketi/communityservice/service/PostService.java:126-135`)
+`CommunityPostController.update()` (`services-spring/community-service/src/main/java/guru/urr/communityservice/controller/CommunityPostController.java:49-56`):
+- 소유권 확인: 작성자 본인만 수정 가능 (`services-spring/community-service/src/main/java/guru/urr/communityservice/service/PostService.java:126-135`)
 
 #### 게시글 삭제
 
@@ -954,8 +954,8 @@ communityApi.deletePost(id) -> http.delete(`/community/posts/${id}`)
 ```
 (`apps/web/src/lib/api-client.ts:209`)
 
-`CommunityPostController.delete()` (`services-spring/community-service/src/main/java/com/tiketi/communityservice/controller/CommunityPostController.java:58-64`):
-- 소유권 확인: 작성자 본인 또는 관리자만 삭제 가능 (`services-spring/community-service/src/main/java/com/tiketi/communityservice/service/PostService.java:148-158`)
+`CommunityPostController.delete()` (`services-spring/community-service/src/main/java/guru/urr/communityservice/controller/CommunityPostController.java:58-64`):
+- 소유권 확인: 작성자 본인 또는 관리자만 삭제 가능 (`services-spring/community-service/src/main/java/guru/urr/communityservice/service/PostService.java:148-158`)
 
 ---
 
@@ -970,10 +970,10 @@ communityApi.comments(postId, params) -> http.get(`/community/posts/${postId}/co
 ```
 (`apps/web/src/lib/api-client.ts:210-211`)
 
-`CommentController.list()` (`services-spring/community-service/src/main/java/com/tiketi/communityservice/controller/CommentController.java:27-33`):
+`CommentController.list()` (`services-spring/community-service/src/main/java/guru/urr/communityservice/controller/CommentController.java:27-33`):
 - `commentService.listByPost(postId, page, limit)` 호출 (라인 32)
 
-`CommentService.listByPost()` (`services-spring/community-service/src/main/java/com/tiketi/communityservice/service/CommentService.java:32-56`):
+`CommentService.listByPost()` (`services-spring/community-service/src/main/java/guru/urr/communityservice/service/CommentService.java:32-56`):
 - 생성일 오름차순 정렬 (라인 43)
 - 응답: `{ comments, pagination: { page, limit, total } }` (라인 47-55)
 
@@ -984,11 +984,11 @@ communityApi.createComment(postId, { content }) -> http.post(`/community/posts/$
 ```
 (`apps/web/src/lib/api-client.ts:212-213`)
 
-`CommentController.create()` (`services-spring/community-service/src/main/java/com/tiketi/communityservice/controller/CommentController.java:35-42`):
+`CommentController.create()` (`services-spring/community-service/src/main/java/guru/urr/communityservice/controller/CommentController.java:35-42`):
 - JWT 인증 (라인 40)
 - `commentService.create(postId, request, user)` 호출 (라인 41)
 
-`CommentService.create()` (`services-spring/community-service/src/main/java/com/tiketi/communityservice/service/CommentService.java:58-101`):
+`CommentService.create()` (`services-spring/community-service/src/main/java/guru/urr/communityservice/service/CommentService.java:58-101`):
 - 게시글 존재 확인 및 `artist_id` 조회 (라인 61-67)
 - DB에 댓글 삽입 (라인 69-78)
 - 게시글의 `comment_count` 1 증가 (라인 86)
@@ -1001,10 +1001,10 @@ communityApi.deleteComment(postId, commentId) -> http.delete(`/community/posts/$
 ```
 (`apps/web/src/lib/api-client.ts:214-215`)
 
-`CommentController.delete()` (`services-spring/community-service/src/main/java/com/tiketi/communityservice/controller/CommentController.java:44-52`):
+`CommentController.delete()` (`services-spring/community-service/src/main/java/guru/urr/communityservice/controller/CommentController.java:44-52`):
 - `commentService.delete(commentId, user)` 호출 (라인 50)
 
-`CommentService.delete()` (`services-spring/community-service/src/main/java/com/tiketi/communityservice/service/CommentService.java:103-123`):
+`CommentService.delete()` (`services-spring/community-service/src/main/java/guru/urr/communityservice/service/CommentService.java:103-123`):
 - 소유권 확인: 작성자 본인 또는 관리자 (라인 112-113)
 - 댓글 삭제 후 `comment_count` 1 감소 (라인 117-119)
 
@@ -1049,7 +1049,7 @@ adminApi.events.create(payload) -> http.post("/admin/events", payload)
 
 **백엔드 처리**
 
-`AdminController.createEvent()` (`services-spring/catalog-service/src/main/java/com/tiketi/catalogservice/domain/admin/controller/AdminController.java:52-60`):
+`AdminController.createEvent()` (`services-spring/catalog-service/src/main/java/guru/urr/catalogservice/domain/admin/controller/AdminController.java:52-60`):
 - `@AuditLog(action = "CREATE_EVENT")` 어노테이션으로 감사 로그 기록 (라인 52)
 - 관리자 권한 확인: `jwtTokenParser.requireAdmin(request)` (라인 58)
 - `adminService.createEvent(body, admin.userId())` 호출 (라인 59)
@@ -1062,7 +1062,7 @@ adminApi.events.update(id, payload) -> http.put(`/admin/events/${id}`, payload)
 ```
 (`apps/web/src/lib/api-client.ts:253`)
 
-`AdminController.updateEvent()` (`services-spring/catalog-service/src/main/java/com/tiketi/catalogservice/domain/admin/controller/AdminController.java:62-71`)
+`AdminController.updateEvent()` (`services-spring/catalog-service/src/main/java/guru/urr/catalogservice/domain/admin/controller/AdminController.java:62-71`)
 
 #### 이벤트 취소
 
@@ -1071,7 +1071,7 @@ adminApi.events.cancel(id) -> http.post(`/admin/events/${id}/cancel`)
 ```
 (`apps/web/src/lib/api-client.ts:254`)
 
-`AdminController.cancelEvent()` (`services-spring/catalog-service/src/main/java/com/tiketi/catalogservice/domain/admin/controller/AdminController.java:73-81`)
+`AdminController.cancelEvent()` (`services-spring/catalog-service/src/main/java/guru/urr/catalogservice/domain/admin/controller/AdminController.java:73-81`)
 
 #### 좌석 생성
 
@@ -1080,7 +1080,7 @@ adminApi.events.generateSeats(id) -> http.post(`/admin/events/${id}/generate-sea
 ```
 (`apps/web/src/lib/api-client.ts:256`)
 
-`AdminController.generateSeats()` (`services-spring/catalog-service/src/main/java/com/tiketi/catalogservice/domain/admin/controller/AdminController.java:93-101`):
+`AdminController.generateSeats()` (`services-spring/catalog-service/src/main/java/guru/urr/catalogservice/domain/admin/controller/AdminController.java:93-101`):
 - `@AuditLog(action = "GENERATE_SEATS")` (라인 93)
 - `adminService.generateSeats(id)` 호출 (라인 100)
 
@@ -1091,7 +1091,7 @@ adminApi.tickets.create(eventId, payload) -> http.post(`/admin/events/${eventId}
 ```
 (`apps/web/src/lib/api-client.ts:260-261`)
 
-`AdminController.createTicket()` (`services-spring/catalog-service/src/main/java/com/tiketi/catalogservice/domain/admin/controller/AdminController.java:113-122`)
+`AdminController.createTicket()` (`services-spring/catalog-service/src/main/java/guru/urr/catalogservice/domain/admin/controller/AdminController.java:113-122`)
 
 ---
 
@@ -1114,7 +1114,7 @@ adminApi.reservations.list() -> http.get("/admin/reservations", { params })
 
 **백엔드 처리**
 
-`AdminController.reservations()` (`services-spring/catalog-service/src/main/java/com/tiketi/catalogservice/domain/admin/controller/AdminController.java:135-144`):
+`AdminController.reservations()` (`services-spring/catalog-service/src/main/java/guru/urr/catalogservice/domain/admin/controller/AdminController.java:135-144`):
 - 관리자 권한 확인 (라인 142)
 - `adminService.listReservations(page, limit, status)` 호출 (라인 143)
 
@@ -1131,7 +1131,7 @@ adminApi.reservations.updateStatus(id, status) -> http.patch(`/admin/reservation
 - `confirm()` 대화상자로 확인 (라인 54)
 - 성공 시 목록 새로고침 (라인 57)
 
-`AdminController.updateReservationStatus()` (`services-spring/catalog-service/src/main/java/com/tiketi/catalogservice/domain/admin/controller/AdminController.java:146-155`):
+`AdminController.updateReservationStatus()` (`services-spring/catalog-service/src/main/java/guru/urr/catalogservice/domain/admin/controller/AdminController.java:146-155`):
 - `@AuditLog(action = "UPDATE_RESERVATION_STATUS")` (라인 146)
 - `adminService.updateReservationStatus(id, body)` 호출 (라인 154)
 
@@ -1232,7 +1232,7 @@ eventsApi.list({ q: query, page: 1, limit: 30 }) -> http.get("/events", { params
 
 **백엔드 처리**
 
-`EventController.getEvents()` 메서드가 `q` 파라미터를 `searchQuery`로 받아 검색을 수행한다 (`services-spring/catalog-service/src/main/java/com/tiketi/catalogservice/domain/event/controller/EventController.java:22-30`):
+`EventController.getEvents()` 메서드가 `q` 파라미터를 `searchQuery`로 받아 검색을 수행한다 (`services-spring/catalog-service/src/main/java/guru/urr/catalogservice/domain/event/controller/EventController.java:22-30`):
 - `eventReadService.listEvents(status, searchQuery, page, limit)` (라인 29)
 
 **UI 렌더링** (`apps/web/src/app/search/page.tsx:40-86`):

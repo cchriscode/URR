@@ -1,6 +1,6 @@
 # Chaos Engineering Tests
 
-Chaos test suite for the Tiketi ticketing platform. These k6 scripts validate
+Chaos test suite for the URR ticketing platform. These k6 scripts validate
 that the system degrades gracefully under infrastructure failures -- service
 outages, network latency, and Redis unavailability.
 

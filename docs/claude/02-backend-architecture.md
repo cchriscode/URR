@@ -1,6 +1,6 @@
 # 02. 백엔드 아키텍처 분석
 
-> Tiketi 티켓팅 플랫폼 백엔드의 마이크로서비스 아키텍처, 서비스 간 통신 패턴, 데이터베이스 구조 및 복원력 전략에 대한 기술 분석 문서이다.
+> URR 티켓팅 플랫폼 백엔드의 마이크로서비스 아키텍처, 서비스 간 통신 패턴, 데이터베이스 구조 및 복원력 전략에 대한 기술 분석 문서이다.
 
 ---
 
@@ -157,7 +157,7 @@ ticket-service가 가장 많은 라우트(tickets, seats, reservations, membersh
 
 #### 3.2.1 ApiVersionFilter (`@Order(-10)`)
 
-**파일**: `services-spring/gateway-service/src/main/java/com/tiketi/gatewayservice/filter/ApiVersionFilter.java`
+**파일**: `services-spring/gateway-service/src/main/java/guru/urr/gatewayservice/filter/ApiVersionFilter.java`
 
 가장 먼저 실행되는 필터로, API 버전 경로 세그먼트를 제거하여 하위 서비스가 버전 없는 경로를 처리할 수 있게 한다.
 
@@ -167,7 +167,7 @@ ticket-service가 가장 많은 라우트(tickets, seats, reservations, membersh
 
 #### 3.2.2 CookieAuthFilter (`@Order(-2)`)
 
-**파일**: `services-spring/gateway-service/src/main/java/com/tiketi/gatewayservice/filter/CookieAuthFilter.java`
+**파일**: `services-spring/gateway-service/src/main/java/guru/urr/gatewayservice/filter/CookieAuthFilter.java`
 
 HTTP-only 쿠키에 저장된 Access Token을 `Authorization` 헤더로 변환한다. 브라우저 기반 클라이언트의 CSRF 방어와 토큰 관리를 투명하게 처리한다.
 
@@ -178,7 +178,7 @@ HTTP-only 쿠키에 저장된 Access Token을 `Authorization` 헤더로 변환�
 
 #### 3.2.3 JwtAuthFilter (`@Order(-1)`)
 
-**파일**: `services-spring/gateway-service/src/main/java/com/tiketi/gatewayservice/filter/JwtAuthFilter.java`
+**파일**: `services-spring/gateway-service/src/main/java/guru/urr/gatewayservice/filter/JwtAuthFilter.java`
 
 게이트웨이 수준에서 JWT를 검증하고, 인증된 사용자 정보를 하위 서비스로 전달하는 핵심 보안 필터이다. 이 필터 덕분에 하위 서비스는 JWT_SECRET을 알 필요가 없다 (라인 27-31 주석).
 
@@ -199,7 +199,7 @@ HTTP-only 쿠키에 저장된 Access Token을 `Authorization` 헤더로 변환�
 
 #### 3.2.4 RateLimitFilter (`@Order(0)`)
 
-**파일**: `services-spring/gateway-service/src/main/java/com/tiketi/gatewayservice/filter/RateLimitFilter.java`
+**파일**: `services-spring/gateway-service/src/main/java/guru/urr/gatewayservice/filter/RateLimitFilter.java`
 
 Redis Lua 스크립트 기반의 슬라이딩 윈도우 Rate Limiting 필터이다.
 
@@ -234,11 +234,11 @@ Redis Lua 스크립트 기반의 슬라이딩 윈도우 Rate Limiting 필터이�
 **응답**: 429 상태 코드와 `retryAfter: 60` JSON 응답 (라인 139-146)
 
 **RedisConfig**: Lua 스크립트를 `DefaultRedisScript<Long>` 빈으로 등록한다.
-- 참조: `services-spring/gateway-service/src/main/java/com/tiketi/gatewayservice/config/RedisConfig.java:19-25`
+- 참조: `services-spring/gateway-service/src/main/java/guru/urr/gatewayservice/config/RedisConfig.java:19-25`
 
 #### 3.2.5 VwrEntryTokenFilter (`@Order(1)`)
 
-**파일**: `services-spring/gateway-service/src/main/java/com/tiketi/gatewayservice/filter/VwrEntryTokenFilter.java`
+**파일**: `services-spring/gateway-service/src/main/java/guru/urr/gatewayservice/filter/VwrEntryTokenFilter.java`
 
 VWR(가상 대기실)을 통과한 사용자만 좌석 예약/예매 API에 접근할 수 있도록 입장 토큰을 검증하는 필터이다.
 
@@ -269,14 +269,14 @@ VWR(가상 대기실)을 통과한 사용자만 좌석 예약/예매 API에 접�
 
 | 설정 | 값 | 참조 (대표) |
 |------|------|------|
-| Connect Timeout | 5초 | `services-spring/payment-service/src/main/java/com/tiketi/paymentservice/client/TicketInternalClient.java:31` |
-| Read Timeout | 10초 | `services-spring/payment-service/src/main/java/com/tiketi/paymentservice/client/TicketInternalClient.java:32` |
-| 인증 방식 | `Authorization: Bearer {INTERNAL_API_TOKEN}` | `services-spring/payment-service/src/main/java/com/tiketi/paymentservice/client/TicketInternalClient.java:42` |
+| Connect Timeout | 5초 | `services-spring/payment-service/src/main/java/guru/urr/paymentservice/client/TicketInternalClient.java:31` |
+| Read Timeout | 10초 | `services-spring/payment-service/src/main/java/guru/urr/paymentservice/client/TicketInternalClient.java:32` |
+| 인증 방식 | `Authorization: Bearer {INTERNAL_API_TOKEN}` | `services-spring/payment-service/src/main/java/guru/urr/paymentservice/client/TicketInternalClient.java:42` |
 
 #### 서비스간 내부 클라이언트 목록
 
 **payment-service -> ticket-service**: `TicketInternalClient`
-- 참조: `services-spring/payment-service/src/main/java/com/tiketi/paymentservice/client/TicketInternalClient.java`
+- 참조: `services-spring/payment-service/src/main/java/guru/urr/paymentservice/client/TicketInternalClient.java`
 
 | 메소드 | HTTP | 엔드포인트 | CircuitBreaker | Retry | 라인 |
 |--------|------|-----------|----------------|-------|------|
@@ -290,7 +290,7 @@ VWR(가상 대기실)을 통과한 사용자만 좌석 예약/예매 API에 접�
 `confirmReservation`의 fallback은 예외를 던지지 않고 로그만 남긴다(라인 96-99). Kafka 이벤트가 결과적 일관성(eventual consistency)을 보장하기 때문이다.
 
 **ticket-service -> payment-service**: `PaymentInternalClient`
-- 참조: `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/shared/client/PaymentInternalClient.java`
+- 참조: `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/shared/client/PaymentInternalClient.java`
 
 | 메소드 | HTTP | 엔드포인트 | CircuitBreaker | Retry | 라인 |
 |--------|------|-----------|----------------|-------|------|
@@ -299,7 +299,7 @@ VWR(가상 대기실)을 통과한 사용자만 좌석 예약/예매 API에 접�
 fallback은 null을 반환한다 (라인 47-49).
 
 **queue-service -> catalog-service**: `TicketInternalClient`
-- 참조: `services-spring/queue-service/src/main/java/com/tiketi/queueservice/shared/client/TicketInternalClient.java`
+- 참조: `services-spring/queue-service/src/main/java/guru/urr/queueservice/shared/client/TicketInternalClient.java`
 
 | 메소드 | HTTP | 엔드포인트 | CircuitBreaker | Retry | 라인 |
 |--------|------|-----------|----------------|-------|------|
@@ -309,7 +309,7 @@ fallback은 null을 반환한다 (라인 47-49).
 fallback은 `Map.of("title", "Unknown")`을 반환한다 (라인 51-53).
 
 **community-service -> ticket-service**: `TicketInternalClient`
-- 참조: `services-spring/community-service/src/main/java/com/tiketi/communityservice/shared/client/TicketInternalClient.java`
+- 참조: `services-spring/community-service/src/main/java/guru/urr/communityservice/shared/client/TicketInternalClient.java`
 
 | 메소드 | HTTP | 엔드포인트 | CircuitBreaker | Retry | 라인 |
 |--------|------|-----------|----------------|-------|------|
@@ -319,7 +319,7 @@ fallback은 `Map.of("title", "Unknown")`을 반환한다 (라인 51-53).
 POST가 멱등하지 않으므로 `@Retry`를 의도적으로 사용하지 않는다 (라인 41 주석). 중복 포인트 적립을 방지하기 위한 설계 결정이다.
 
 **catalog-service -> auth-service**: `AuthInternalClient`
-- 참조: `services-spring/catalog-service/src/main/java/com/tiketi/catalogservice/shared/client/AuthInternalClient.java`
+- 참조: `services-spring/catalog-service/src/main/java/guru/urr/catalogservice/shared/client/AuthInternalClient.java`
 
 | 메소드 | HTTP | 엔드포인트 | CircuitBreaker | Retry | 라인 |
 |--------|------|-----------|----------------|-------|------|
@@ -329,7 +329,7 @@ POST가 멱등하지 않으므로 `@Retry`를 의도적으로 사용하지 않�
 fallback은 빈 Map을 반환한다 (라인 70-72).
 
 **catalog-service -> ticket-service**: `TicketInternalClient`
-- 참조: `services-spring/catalog-service/src/main/java/com/tiketi/catalogservice/shared/client/TicketInternalClient.java`
+- 참조: `services-spring/catalog-service/src/main/java/guru/urr/catalogservice/shared/client/TicketInternalClient.java`
 
 | 메소드 | HTTP | 엔드포인트 | CircuitBreaker | Retry | 라인 |
 |--------|------|-----------|----------------|-------|------|
@@ -359,10 +359,10 @@ Kafka 토픽은 ticket-service의 `KafkaConfig`에서 선언적으로 생성된�
 
 | 토픽 | 파티션 | Replication Factor | 참조 |
 |------|--------|-------------------|------|
-| `payment-events` | 3 | 설정값 (기본 1) | `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/shared/config/KafkaConfig.java:17` |
-| `reservation-events` | 3 | 설정값 (기본 1) | `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/shared/config/KafkaConfig.java:22` |
-| `transfer-events` | 3 | 설정값 (기본 1) | `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/shared/config/KafkaConfig.java:27` |
-| `membership-events` | 3 | 설정값 (기본 1) | `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/shared/config/KafkaConfig.java:32` |
+| `payment-events` | 3 | 설정값 (기본 1) | `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/shared/config/KafkaConfig.java:17` |
+| `reservation-events` | 3 | 설정값 (기본 1) | `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/shared/config/KafkaConfig.java:22` |
+| `transfer-events` | 3 | 설정값 (기본 1) | `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/shared/config/KafkaConfig.java:27` |
+| `membership-events` | 3 | 설정값 (기본 1) | `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/shared/config/KafkaConfig.java:32` |
 
 Replication Factor는 `kafka.topic.replication-factor` 프로퍼티로 제어되며, 기본값은 1이다.
 - 참조: `services-spring/ticket-service/src/main/resources/application.yml:79-80`
@@ -372,42 +372,42 @@ Replication Factor는 `kafka.topic.replication-factor` 프로퍼티로 제어되
 **payment-events 토픽의 이벤트**:
 
 `PaymentConfirmedEvent` (Java record):
-- 참조: `services-spring/payment-service/src/main/java/com/tiketi/paymentservice/messaging/event/PaymentConfirmedEvent.java:6-24`
+- 참조: `services-spring/payment-service/src/main/java/guru/urr/paymentservice/messaging/event/PaymentConfirmedEvent.java:6-24`
 - 필드: `type("PAYMENT_CONFIRMED")`, `paymentId`, `orderId`, `userId`, `reservationId`, `referenceId`, `paymentType`, `amount`, `paymentMethod`, `timestamp`
 
 `PaymentRefundedEvent` (Java record):
-- 참조: `services-spring/payment-service/src/main/java/com/tiketi/paymentservice/messaging/event/PaymentRefundedEvent.java:6-24`
+- 참조: `services-spring/payment-service/src/main/java/guru/urr/paymentservice/messaging/event/PaymentRefundedEvent.java:6-24`
 - 필드: `type("PAYMENT_REFUNDED")`, `paymentId`, `orderId`, `userId`, `reservationId`, `referenceId`, `paymentType`, `amount`, `reason`, `timestamp`
 
 **reservation-events 토픽의 이벤트**:
 
 `ReservationCreatedEvent`:
-- 참조: `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/messaging/event/ReservationCreatedEvent.java:6-19`
+- 참조: `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/messaging/event/ReservationCreatedEvent.java:6-19`
 - 필드: `type("RESERVATION_CREATED")`, `sagaId`, `reservationId`, `userId`, `eventId`, `totalAmount`, `timestamp`
 
 `ReservationConfirmedEvent`:
-- 참조: `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/messaging/event/ReservationConfirmedEvent.java:6-22`
+- 참조: `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/messaging/event/ReservationConfirmedEvent.java:6-22`
 - 필드: `type("RESERVATION_CONFIRMED")`, `sagaId`, `reservationId`, `userId`, `eventId`, `totalAmount`, `paymentMethod`, `timestamp`
 
 `ReservationCancelledEvent`:
-- 참조: `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/messaging/event/ReservationCancelledEvent.java` (동일 패턴)
+- 참조: `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/messaging/event/ReservationCancelledEvent.java` (동일 패턴)
 
 **transfer-events 토픽의 이벤트**:
 
 `TransferCompletedEvent`:
-- 참조: `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/messaging/event/TransferCompletedEvent.java:6-21`
+- 참조: `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/messaging/event/TransferCompletedEvent.java:6-21`
 - 필드: `type("TRANSFER_COMPLETED")`, `sagaId`, `transferId`, `reservationId`, `sellerId`, `buyerId`, `totalPrice`, `timestamp`
 
 **membership-events 토픽의 이벤트**:
 
 `MembershipActivatedEvent`:
-- 참조: `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/messaging/event/MembershipActivatedEvent.java:6-18`
+- 참조: `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/messaging/event/MembershipActivatedEvent.java:6-18`
 - 필드: `type("MEMBERSHIP_ACTIVATED")`, `sagaId`, `membershipId`, `userId`, `artistId`, `timestamp`
 
 #### Producer (이벤트 발행자)
 
 **PaymentEventProducer** (payment-service):
-- 참조: `services-spring/payment-service/src/main/java/com/tiketi/paymentservice/messaging/PaymentEventProducer.java`
+- 참조: `services-spring/payment-service/src/main/java/guru/urr/paymentservice/messaging/PaymentEventProducer.java`
 - 토픽: `payment-events` (라인 14)
 - 메소드:
   - `publish(PaymentConfirmedEvent)`: Kafka 키로 `orderId`를 사용한다 (라인 22-30)
@@ -421,7 +421,7 @@ Producer 설정:
 - 참조: `services-spring/payment-service/src/main/resources/application.yml:5-12`
 
 **TicketEventProducer** (ticket-service):
-- 참조: `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/messaging/TicketEventProducer.java`
+- 참조: `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/messaging/TicketEventProducer.java`
 - 메소드:
   - `publishReservationCreated(ReservationCreatedEvent)` -> `reservation-events` 토픽 (라인 24-33)
   - `publishReservationConfirmed(ReservationConfirmedEvent)` -> `reservation-events` 토픽 (라인 35-44)
@@ -438,7 +438,7 @@ Producer 설정 (ticket-service):
 #### Consumer (이벤트 소비자)
 
 **PaymentEventConsumer** (ticket-service):
-- 참조: `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/messaging/PaymentEventConsumer.java`
+- 참조: `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/messaging/PaymentEventConsumer.java`
 - 토픽: `payment-events`, Consumer Group: `ticket-service-group` (라인 49)
 - `@KafkaListener` 어노테이션으로 메시지를 `Map<String, Object>`로 수신한다 (라인 50)
 
@@ -461,7 +461,7 @@ Consumer 설정 (ticket-service):
 - 참조: `services-spring/ticket-service/src/main/resources/application.yml:12-20`
 
 **StatsEventConsumer** (stats-service):
-- 참조: `services-spring/stats-service/src/main/java/com/tiketi/statsservice/messaging/StatsEventConsumer.java`
+- 참조: `services-spring/stats-service/src/main/java/guru/urr/statsservice/messaging/StatsEventConsumer.java`
 - Consumer Group: `stats-service-group`
 - 3개 토픽 구독:
 
@@ -483,12 +483,12 @@ Consumer 설정 (stats-service):
 서비스 간 내부 API 호출은 사전 공유 토큰(`INTERNAL_API_TOKEN` 환경변수) 기반의 Bearer 인증으로 보호된다.
 
 **InternalTokenValidator**:
-- 참조: `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/shared/security/InternalTokenValidator.java`
+- 참조: `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/shared/security/InternalTokenValidator.java`
 - 동일한 구현이 4개 서비스에 존재한다:
-  - `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/shared/security/InternalTokenValidator.java`
-  - `services-spring/payment-service/src/main/java/com/tiketi/paymentservice/security/InternalTokenValidator.java`
-  - `services-spring/catalog-service/src/main/java/com/tiketi/catalogservice/shared/security/InternalTokenValidator.java`
-  - `services-spring/auth-service/src/main/java/com/tiketi/authservice/security/InternalTokenValidator.java`
+  - `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/shared/security/InternalTokenValidator.java`
+  - `services-spring/payment-service/src/main/java/guru/urr/paymentservice/security/InternalTokenValidator.java`
+  - `services-spring/catalog-service/src/main/java/guru/urr/catalogservice/shared/security/InternalTokenValidator.java`
+  - `services-spring/auth-service/src/main/java/guru/urr/authservice/security/InternalTokenValidator.java`
 
 **검증 로직** (ticket-service의 구현):
 1. `Authorization` 헤더가 없거나 `Bearer `로 시작하지 않으면 401 반환 (라인 20-22)
@@ -496,7 +496,7 @@ Consumer 설정 (stats-service):
 3. 불일치 시 403 반환 (라인 25-26)
 
 **보호 대상 경로**: `/internal/**` 패턴 하의 모든 컨트롤러이다. 예를 들어 `InternalMembershipController`는 `/internal/memberships` 경로에 매핑되며, 모든 핸들러 메소드에서 `internalTokenValidator.requireValidToken(authorization)`을 호출한다.
-- 참조: `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/internal/controller/InternalMembershipController.java:12,30`
+- 참조: `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/internal/controller/InternalMembershipController.java:12,30`
 
 ### 4.4 멱등성 처리
 
@@ -510,7 +510,7 @@ Kafka 메시지의 at-least-once 전달 보장 특성상 중복 메시지가 발
 - 인덱스: `idx_processed_events_consumer(consumer_group, processed_at)` (라인 8)
 
 **PaymentEventConsumer의 중복 제거 로직**:
-- 참조: `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/messaging/PaymentEventConsumer.java`
+- 참조: `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/messaging/PaymentEventConsumer.java`
 
 1. **이벤트 키 생성** (라인 193-207): `sagaId`가 있으면 우선 사용하고, 없으면 `type:referenceId` 조합을 키로 사용한다
 2. **중복 확인** (라인 209-219): `SELECT COUNT(*) FROM processed_events WHERE event_key = ? AND consumer_group = ?` 쿼리로 이미 처리된 이벤트인지 확인한다. consumer_group 컬럼으로 서비스별 독립적 멱등성을 보장한다
@@ -522,7 +522,7 @@ Kafka 메시지의 at-least-once 전달 보장 특성상 중복 메시지가 발
 - ticket-service와 달리 `consumer_group` 컬럼이 없다 (stats-service 단일 서비스 전용)
 
 **StatsEventConsumer의 중복 제거 로직**:
-- 참조: `services-spring/stats-service/src/main/java/com/tiketi/statsservice/messaging/StatsEventConsumer.java`
+- 참조: `services-spring/stats-service/src/main/java/guru/urr/statsservice/messaging/StatsEventConsumer.java`
 - 이벤트 키 생성: `type:id:timestamp` 조합 (라인 138-150)
 - 중복 확인: `SELECT COUNT(*) FROM processed_events WHERE event_key = ?` (라인 152-160)
 - 처리 완료 기록: `INSERT ... ON CONFLICT (event_key) DO NOTHING` (라인 163-170)
@@ -658,8 +658,8 @@ Redis는 3개 서비스(gateway, ticket, queue)에서 서로 다른 목적으로
 
 | 키 패턴 | 타입 | 용도 | 참조 |
 |---------|------|------|------|
-| `seat:{eventId}:{seatId}` | HASH | 좌석 잠금 상태 (userId, fencingToken 등) | `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/domain/seat/service/SeatLockService.java:110-112` |
-| `seat:{eventId}:{seatId}:token_seq` | COUNTER (INCR) | 펜싱 토큰 시퀀스 번호 | `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/domain/seat/service/SeatLockService.java:41` |
+| `seat:{eventId}:{seatId}` | HASH | 좌석 잠금 상태 (userId, fencingToken 등) | `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/domain/seat/service/SeatLockService.java:110-112` |
+| `seat:{eventId}:{seatId}:token_seq` | COUNTER (INCR) | 펜싱 토큰 시퀀스 번호 | `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/domain/seat/service/SeatLockService.java:41` |
 
 `SeatLockService` 동작:
 - `acquireLock(eventId, seatId, userId)`: Lua 스크립트로 원자적으로 잠금 획득 + 펜싱 토큰 발급 (라인 39-62)
@@ -675,11 +675,11 @@ Redis는 3개 서비스(gateway, ticket, queue)에서 서로 다른 목적으로
 
 | 키 패턴 | 타입 | 용도 | 참조 |
 |---------|------|------|------|
-| `queue:{eventId}` | ZSET (score=입장시각 ms) | 대기열 (FIFO 순서) | `services-spring/queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:271-273` |
-| `active:{eventId}` | ZSET (score=만료시각 ms) | 활성 사용자 (TTL 기반) | `services-spring/queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:275-277` |
-| `queue:seen:{eventId}` | ZSET (score=마지막 활동 ms) | 대기열 하트비트 추적 | `services-spring/queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:279-281` |
-| `active:seen:{eventId}` | ZSET (score=마지막 활동 ms) | 활성 사용자 하트비트 추적 | `services-spring/queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:283-285` |
-| `queue:active-events` | SET | 현재 활성 대기열이 있는 이벤트 목록 | `services-spring/queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:264` |
+| `queue:{eventId}` | ZSET (score=입장시각 ms) | 대기열 (FIFO 순서) | `services-spring/queue-service/src/main/java/guru/urr/queueservice/service/QueueService.java:271-273` |
+| `active:{eventId}` | ZSET (score=만료시각 ms) | 활성 사용자 (TTL 기반) | `services-spring/queue-service/src/main/java/guru/urr/queueservice/service/QueueService.java:275-277` |
+| `queue:seen:{eventId}` | ZSET (score=마지막 활동 ms) | 대기열 하트비트 추적 | `services-spring/queue-service/src/main/java/guru/urr/queueservice/service/QueueService.java:279-281` |
+| `active:seen:{eventId}` | ZSET (score=마지막 활동 ms) | 활성 사용자 하트비트 추적 | `services-spring/queue-service/src/main/java/guru/urr/queueservice/service/QueueService.java:283-285` |
+| `queue:active-events` | SET | 현재 활성 대기열이 있는 이벤트 목록 | `services-spring/queue-service/src/main/java/guru/urr/queueservice/service/QueueService.java:264` |
 
 대기열 동작 흐름 (라인 60-91):
 1. 이미 대기열에 있는지 확인 -> 위치 반환
@@ -693,7 +693,7 @@ Redis는 3개 서비스(gateway, ticket, queue)에서 서로 다른 목적으로
 
 | 키 패턴 | 타입 | 용도 | 참조 |
 |---------|------|------|------|
-| `rate:{category}:{clientId}` | ZSET (score=요청시각 ms) | 슬라이딩 윈도우 요청 카운트 | `services-spring/gateway-service/src/main/java/com/tiketi/gatewayservice/filter/RateLimitFilter.java:74` |
+| `rate:{category}:{clientId}` | ZSET (score=요청시각 ms) | 슬라이딩 윈도우 요청 카운트 | `services-spring/gateway-service/src/main/java/guru/urr/gatewayservice/filter/RateLimitFilter.java:74` |
 
 Lua 스크립트(`rate_limit.lua`)가 원자적으로 윈도우 정리, 요청 추가, 카운트 확인, 제한 초과 시 롤백을 수행한다.
 - 참조: `services-spring/gateway-service/src/main/resources/redis/rate_limit.lua:1-15`
@@ -759,14 +759,14 @@ Lua 스크립트(`rate_limit.lua`)가 원자적으로 윈도우 정리, 요청 �
 
 | 클라이언트 | 메소드 | Fallback 동작 | 참조 |
 |------------|--------|--------------|------|
-| payment -> ticket `validateReservation` | 검증 실패 | 502 BAD_GATEWAY 예외 발생 | `services-spring/payment-service/src/main/java/com/tiketi/paymentservice/client/TicketInternalClient.java:102-104` |
-| payment -> ticket `confirmReservation` | 확인 실패 | 로그만 남기고 무시 (Kafka가 보상) | `services-spring/payment-service/src/main/java/com/tiketi/paymentservice/client/TicketInternalClient.java:96-99` |
-| ticket -> payment `getPaymentByReservation` | 조회 실패 | null 반환 | `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/shared/client/PaymentInternalClient.java:47-49` |
-| queue -> catalog `getEventQueueInfo` | 조회 실패 | `Map.of("title", "Unknown")` 반환 | `services-spring/queue-service/src/main/java/com/tiketi/queueservice/shared/client/TicketInternalClient.java:51-53` |
-| community -> ticket `awardMembershipPoints` | 적립 실패 | 로그만 남기고 무시 | `services-spring/community-service/src/main/java/com/tiketi/communityservice/shared/client/TicketInternalClient.java:62-65` |
-| catalog -> auth `findUsersByIds` | 조회 실패 | 빈 Map 반환 | `services-spring/catalog-service/src/main/java/com/tiketi/catalogservice/shared/client/AuthInternalClient.java:70-72` |
-| catalog -> ticket `generateSeats` | 생성 실패 | 503 SERVICE_UNAVAILABLE 예외 발생 | `services-spring/catalog-service/src/main/java/com/tiketi/catalogservice/shared/client/TicketInternalClient.java:84-88` |
-| catalog -> ticket `getReservationStats` | 통계 조회 실패 | 기본값 Map(모든 값 0) 반환 | `services-spring/catalog-service/src/main/java/com/tiketi/catalogservice/shared/client/TicketInternalClient.java:252-254` |
+| payment -> ticket `validateReservation` | 검증 실패 | 502 BAD_GATEWAY 예외 발생 | `services-spring/payment-service/src/main/java/guru/urr/paymentservice/client/TicketInternalClient.java:102-104` |
+| payment -> ticket `confirmReservation` | 확인 실패 | 로그만 남기고 무시 (Kafka가 보상) | `services-spring/payment-service/src/main/java/guru/urr/paymentservice/client/TicketInternalClient.java:96-99` |
+| ticket -> payment `getPaymentByReservation` | 조회 실패 | null 반환 | `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/shared/client/PaymentInternalClient.java:47-49` |
+| queue -> catalog `getEventQueueInfo` | 조회 실패 | `Map.of("title", "Unknown")` 반환 | `services-spring/queue-service/src/main/java/guru/urr/queueservice/shared/client/TicketInternalClient.java:51-53` |
+| community -> ticket `awardMembershipPoints` | 적립 실패 | 로그만 남기고 무시 | `services-spring/community-service/src/main/java/guru/urr/communityservice/shared/client/TicketInternalClient.java:62-65` |
+| catalog -> auth `findUsersByIds` | 조회 실패 | 빈 Map 반환 | `services-spring/catalog-service/src/main/java/guru/urr/catalogservice/shared/client/AuthInternalClient.java:70-72` |
+| catalog -> ticket `generateSeats` | 생성 실패 | 503 SERVICE_UNAVAILABLE 예외 발생 | `services-spring/catalog-service/src/main/java/guru/urr/catalogservice/shared/client/TicketInternalClient.java:84-88` |
+| catalog -> ticket `getReservationStats` | 통계 조회 실패 | 기본값 Map(모든 값 0) 반환 | `services-spring/catalog-service/src/main/java/guru/urr/catalogservice/shared/client/TicketInternalClient.java:252-254` |
 
 fallback 전략은 세 가지 패턴으로 분류된다:
 1. **예외 전파**: 검증/생성처럼 실패가 치명적인 경우 502/503 예외를 발생시킨다

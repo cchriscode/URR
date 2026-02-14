@@ -29,9 +29,9 @@ data:
   dashboards.yaml: |
     apiVersion: 1
     providers:
-      - name: 'tiketi-dashboards'
+      - name: 'urr-dashboards'
         orgId: 1
-        folder: 'Tiketi'
+        folder: 'URR'
         type: file
         disableDeletion: false
         updateIntervalSeconds: 30

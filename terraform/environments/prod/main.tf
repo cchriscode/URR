@@ -9,10 +9,10 @@ terraform {
   }
 
   backend "s3" {
-    bucket         = "tiketi-terraform-state-prod"
+    bucket         = "urr-terraform-state-prod"
     key            = "prod/terraform.tfstate"
     region         = "ap-northeast-2"
-    dynamodb_table = "tiketi-terraform-locks"
+    dynamodb_table = "urr-terraform-locks"
     encrypt        = true
   }
 }
@@ -22,7 +22,7 @@ provider "aws" {
 
   default_tags {
     tags = {
-      Project     = "Tiketi"
+      Project     = "URR"
       Environment = var.environment
       ManagedBy   = "Terraform"
     }
@@ -36,7 +36,7 @@ provider "aws" {
 
   default_tags {
     tags = {
-      Project     = "Tiketi"
+      Project     = "URR"
       Environment = var.environment
       ManagedBy   = "Terraform"
     }
@@ -75,7 +75,7 @@ module "secrets" {
   source = "../../modules/secrets"
 
   name_prefix  = var.name_prefix
-  rds_username = "tiketi_admin"
+  rds_username = "urr_admin"
   rds_endpoint = module.rds.db_instance_address
 }
 
@@ -288,7 +288,7 @@ module "lambda_worker" {
   environment       = var.environment
 
   additional_env_vars = {
-    TICKET_SERVICE_URL      = "http://ticket-service.tiketi-spring.svc.cluster.local:3002"
+    TICKET_SERVICE_URL      = "http://ticket-service.urr-spring.svc.cluster.local:3002"
     INTERNAL_API_TOKEN      = var.internal_api_token
     KAFKA_BOOTSTRAP_SERVERS = module.msk.bootstrap_brokers_tls
   }

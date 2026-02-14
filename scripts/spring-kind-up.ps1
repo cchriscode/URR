@@ -1,5 +1,5 @@
 param(
-    [string]$KindClusterName = "tiketi-local",
+    [string]$KindClusterName = "urr-local",
     [switch]$RecreateCluster,
     [switch]$SkipBuild
 )
@@ -77,7 +77,7 @@ if ($LASTEXITCODE -ne 0) {
     throw "kubectl apply failed for k8s/spring/overlays/kind"
 }
 
-$namespace = "tiketi-spring"
+$namespace = "urr-spring"
 $deployments = @(
     "postgres-spring",
     "dragonfly-spring",

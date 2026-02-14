@@ -1,6 +1,6 @@
 # 04. 보안 분석
 
-본 문서는 Tiketi 티켓팅 플랫폼의 보안 아키텍처를 분석한다. 인증 체계, 서비스 간 통신 보안, 네트워크 정책, 입력 검증 등 전 계층에 걸친 보안 메커니즘을 코드 수준에서 검토한다.
+본 문서는 URR 티켓팅 플랫폼의 보안 아키텍처를 분석한다. 인증 체계, 서비스 간 통신 보안, 네트워크 정책, 입력 검증 등 전 계층에 걸친 보안 메커니즘을 코드 수준에서 검토한다.
 
 ---
 
@@ -20,15 +20,15 @@ Access Token은 auth-service의 `JwtService`에서 발급된다. 토큰 생성 �
 | `iat` | 발급 시각 | JWT 표준 issued-at |
 | `exp` | 발급 시각 + 만료 시간 | JWT 표준 expiration |
 
-> 참조: `services-spring/auth-service/src/main/java/com/tiketi/authservice/security/JwtService.java:31-46`
+> 참조: `services-spring/auth-service/src/main/java/guru/urr/authservice/security/JwtService.java:31-46`
 
 **서명 알고리즘**: HMAC-SHA256. `signingKey()` 메서드에서 `JWT_SECRET` 환경 변수를 Base64 디코딩하여 키를 생성한다. Base64 디코딩 실패 시 원시 바이트로 폴백하며, 키 길이가 32바이트 미만이면 `IllegalArgumentException`을 발생시킨다.
 
-> 참조: `services-spring/auth-service/src/main/java/com/tiketi/authservice/security/JwtService.java:104-116`
+> 참조: `services-spring/auth-service/src/main/java/guru/urr/authservice/security/JwtService.java:104-116`
 
 **만료 시간**: `JwtProperties` 레코드에서 `expirationSeconds` 값을 읽어 밀리초로 변환한다. 기본값은 `application.yml`에서 1800초(30분)로 설정되어 있다.
 
-> 참조: `services-spring/auth-service/src/main/java/com/tiketi/authservice/config/JwtProperties.java:5-7`
+> 참조: `services-spring/auth-service/src/main/java/guru/urr/authservice/config/JwtProperties.java:5-7`
 > 참조: `services-spring/auth-service/src/main/resources/application.yml:51`
 
 ### 1.2 Refresh Token
@@ -43,7 +43,7 @@ Refresh Token은 Access Token과 동일한 서명 키를 사용하되, 별도의
 | `familyId` | UUID | 토큰 패밀리 ID (회전 추적용) |
 | `jti` | UUID | 고유 토큰 ID |
 
-> 참조: `services-spring/auth-service/src/main/java/com/tiketi/authservice/security/JwtService.java:52-67`
+> 참조: `services-spring/auth-service/src/main/java/guru/urr/authservice/security/JwtService.java:52-67`
 
 **만료 시간**: `refreshTokenExpirationSeconds` 값을 사용하며, 기본값은 604800초(7일)이다.
 
@@ -59,29 +59,29 @@ Refresh Token은 Access Token과 동일한 서명 키를 사용하되, 별도의
 | `maxAge` | 604800 | 7일 |
 | `SameSite` | `Lax` | 크로스 사이트 요청 제한 |
 
-> 참조: `services-spring/auth-service/src/main/java/com/tiketi/authservice/util/CookieHelper.java:38-46`
+> 참조: `services-spring/auth-service/src/main/java/guru/urr/authservice/util/CookieHelper.java:38-46`
 
 Access Token 쿠키도 동일한 패턴으로 설정되며, `path`는 `"/"`로 전체 경로에 전송된다.
 
-> 참조: `services-spring/auth-service/src/main/java/com/tiketi/authservice/util/CookieHelper.java:28-36`
+> 참조: `services-spring/auth-service/src/main/java/guru/urr/authservice/util/CookieHelper.java:28-36`
 
 `AuthController`의 `refresh()` 엔드포인트는 `@CookieValue`로 쿠키에서 Refresh Token을 읽거나, 요청 본문의 `refreshToken` 필드를 폴백으로 사용한다. 갱신 성공 시 새로운 Access Token과 Refresh Token 쿠키를 재설정한다.
 
-> 참조: `services-spring/auth-service/src/main/java/com/tiketi/authservice/controller/AuthController.java:67-83`
+> 참조: `services-spring/auth-service/src/main/java/guru/urr/authservice/controller/AuthController.java:67-83`
 
 **Refresh Token 검증**: `validateRefreshToken()` 메서드에서 `type` 클레임이 `"refresh"`인지 확인하여, Access Token이 Refresh Token으로 오용되는 것을 방지한다.
 
-> 참조: `services-spring/auth-service/src/main/java/com/tiketi/authservice/security/JwtService.java:95-102`
+> 참조: `services-spring/auth-service/src/main/java/guru/urr/authservice/security/JwtService.java:95-102`
 
 **토큰 해싱**: Refresh Token은 데이터베이스 저장 시 SHA-256으로 해싱된다. 원본 토큰은 서버에 저장되지 않으므로, 데이터베이스가 유출되어도 토큰을 재사용할 수 없다.
 
-> 참조: `services-spring/auth-service/src/main/java/com/tiketi/authservice/security/JwtService.java:73-81`
+> 참조: `services-spring/auth-service/src/main/java/guru/urr/authservice/security/JwtService.java:73-81`
 
 ### 1.3 게이트웨이 중앙 인증
 
 게이트웨이의 `JwtAuthFilter`는 `@Order(-1)`로 필터 체인에서 가장 먼저 실행되어, 모든 요청에 대해 JWT 검증과 사용자 정보 주입을 수행한다. 이 중앙 집중식 설계 덕분에 다운스트림 서비스는 JWT_SECRET을 알 필요가 없다.
 
-> 참조: `services-spring/gateway-service/src/main/java/com/tiketi/gatewayservice/filter/JwtAuthFilter.java:33-35`
+> 참조: `services-spring/gateway-service/src/main/java/guru/urr/gatewayservice/filter/JwtAuthFilter.java:33-35`
 
 **스푸핑 방지**: 필터는 항상 `UserHeaderStrippingWrapper`를 통해 외부에서 주입된 `X-User-Id`, `X-User-Email`, `X-User-Role` 헤더를 제거한다. 이는 JWT 검증 이전 단계에서 수행되므로, 악의적 클라이언트가 헤더를 위조하여 다른 사용자로 위장하는 것을 원천 차단한다.
 
@@ -90,19 +90,19 @@ Access Token 쿠키도 동일한 패턴으로 설정되며, `path`는 `"/"`로 �
 HttpServletRequest sanitized = new UserHeaderStrippingWrapper(request);
 ```
 
-> 참조: `services-spring/gateway-service/src/main/java/com/tiketi/gatewayservice/filter/JwtAuthFilter.java:53-54`
+> 참조: `services-spring/gateway-service/src/main/java/guru/urr/gatewayservice/filter/JwtAuthFilter.java:53-54`
 
 **헤더 스트리핑 구현**: `UserHeaderStrippingWrapper`는 `HttpServletRequestWrapper`를 상속하여 `getHeader()`, `getHeaders()`, `getHeaderNames()` 메서드를 오버라이드한다. 대소문자 무관 비교로 세 개의 보호 헤더를 차단한다.
 
-> 참조: `services-spring/gateway-service/src/main/java/com/tiketi/gatewayservice/filter/JwtAuthFilter.java:104-137`
+> 참조: `services-spring/gateway-service/src/main/java/guru/urr/gatewayservice/filter/JwtAuthFilter.java:104-137`
 
 **JWT 파싱 및 헤더 주입**: Authorization 헤더에서 Bearer 토큰을 추출하고, `Jwts.parser()`로 서명을 검증한 후 Claims에서 `userId`, `email`, `role`을 추출한다. `userId`가 유효하면 `UserHeaderInjectionWrapper`를 통해 `X-User-Id`, `X-User-Email`, `X-User-Role` 헤더를 요청에 주입한다.
 
-> 참조: `services-spring/gateway-service/src/main/java/com/tiketi/gatewayservice/filter/JwtAuthFilter.java:56-86`
+> 참조: `services-spring/gateway-service/src/main/java/guru/urr/gatewayservice/filter/JwtAuthFilter.java:56-86`
 
 **키 생성**: `buildKey()` 메서드는 Base64 디코딩을 먼저 시도하고, 실패 시 UTF-8 원시 바이트로 폴백한다. 키 길이가 32바이트 미만이면 `null`을 반환하여 JWT 검증을 비활성화한다(개발 환경 지원).
 
-> 참조: `services-spring/gateway-service/src/main/java/com/tiketi/gatewayservice/filter/JwtAuthFilter.java:88-98`
+> 참조: `services-spring/gateway-service/src/main/java/guru/urr/gatewayservice/filter/JwtAuthFilter.java:88-98`
 
 ### 1.4 다운스트림 사용자 추출
 
@@ -110,15 +110,15 @@ HttpServletRequest sanitized = new UserHeaderStrippingWrapper(request);
 
 **requireUser()**: `X-User-Id` 헤더가 없거나 비어 있으면 `401 UNAUTHORIZED`를 반환한다. 유효한 경우 `AuthUser` 레코드를 생성하여 반환한다.
 
-> 참조: `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/shared/security/JwtTokenParser.java:11-18`
+> 참조: `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/shared/security/JwtTokenParser.java:11-18`
 
 **requireAdmin()**: `requireUser()`를 먼저 호출한 후, `AuthUser.isAdmin()`으로 역할을 검증한다. admin이 아니면 `403 FORBIDDEN`을 반환한다.
 
-> 참조: `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/shared/security/JwtTokenParser.java:20-27`
+> 참조: `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/shared/security/JwtTokenParser.java:20-27`
 
 **AuthUser 레코드**: `isAdmin()` 메서드는 `"admin".equalsIgnoreCase(role)`로 대소문자 무관 비교를 수행한다.
 
-> 참조: `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/shared/security/AuthUser.java:3-7`
+> 참조: `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/shared/security/AuthUser.java:3-7`
 
 이 패턴은 모든 다운스트림 서비스(ticket-service, payment-service, stats-service 등)에서 동일하게 사용된다.
 
@@ -168,7 +168,7 @@ if (error.response?.status === 401 && !originalRequest._retry) {
 
 `requireValidToken()` 메서드는 `Authorization: Bearer {token}` 형식의 헤더를 검증한다. 헤더가 없거나 Bearer 접두사가 없으면 `401 UNAUTHORIZED`, 토큰 불일치 시 `403 FORBIDDEN`을 반환한다.
 
-> 참조: `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/shared/security/InternalTokenValidator.java:19-27`
+> 참조: `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/shared/security/InternalTokenValidator.java:19-27`
 
 **타이밍 공격 방지**: 문자열 비교에 `MessageDigest.isEqual()`을 사용한다. 이 메서드는 입력 길이에 관계없이 일정한 시간에 비교를 수행하므로, 공격자가 응답 시간 차이를 관찰하여 토큰을 추론하는 타이밍 공격(timing attack)을 방지한다.
 
@@ -180,16 +180,16 @@ private static boolean timingSafeEquals(String a, String b) {
 }
 ```
 
-> 참조: `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/shared/security/InternalTokenValidator.java:29-33`
+> 참조: `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/shared/security/InternalTokenValidator.java:29-33`
 
 **payment-service의 InternalTokenValidator**: ticket-service와 동일한 구현이다. 동일한 `INTERNAL_API_TOKEN` 환경 변수를 사용하며, 동일한 timing-safe 비교 로직을 적용한다.
 
-> 참조: `services-spring/payment-service/src/main/java/com/tiketi/paymentservice/security/InternalTokenValidator.java:29-33`
+> 참조: `services-spring/payment-service/src/main/java/guru/urr/paymentservice/security/InternalTokenValidator.java:29-33`
 
 **auth-service의 InternalApiAuthFilter**: auth-service는 필터 기반으로 내부 API를 보호한다. `/internal/` 경로에만 적용되며, `x-internal-token` 헤더 또는 `Authorization: Bearer` 헤더에서 토큰을 추출한다. 동일하게 `MessageDigest.isEqual()`로 timing-safe 비교를 수행한다.
 
-> 참조: `services-spring/auth-service/src/main/java/com/tiketi/authservice/security/InternalApiAuthFilter.java:25-47`
-> 참조: `services-spring/auth-service/src/main/java/com/tiketi/authservice/security/InternalApiAuthFilter.java:50-52`
+> 참조: `services-spring/auth-service/src/main/java/guru/urr/authservice/security/InternalApiAuthFilter.java:25-47`
+> 참조: `services-spring/auth-service/src/main/java/guru/urr/authservice/security/InternalApiAuthFilter.java:50-52`
 
 ### 2.2 VWR 입장 토큰
 
@@ -204,22 +204,22 @@ VWR(Virtual Waiting Room) 입장 토큰은 대기열을 통과한 사용자만 �
 | `iat` | 현재 시각 | 발급 시각 |
 | `exp` | 현재 + TTL | 만료 시각 |
 
-> 참조: `services-spring/queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:215-227`
+> 참조: `services-spring/queue-service/src/main/java/guru/urr/queueservice/service/QueueService.java:215-227`
 
 **TTL**: `queue.entry-token.ttl-seconds` 설정값이며, 기본값은 600초(10분)이다.
 
-> 참조: `services-spring/queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:48`
+> 참조: `services-spring/queue-service/src/main/java/guru/urr/queueservice/service/QueueService.java:48`
 
 **서명 키**: `queue.entry-token.secret` 환경 변수를 UTF-8 바이트로 변환하여 HMAC-SHA256 키를 생성한다. 최소 32바이트 이상이어야 한다.
 
-> 참조: `services-spring/queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:56`
+> 참조: `services-spring/queue-service/src/main/java/guru/urr/queueservice/service/QueueService.java:56`
 
 **토큰 검증 (gateway VwrEntryTokenFilter)**: 게이트웨이의 `VwrEntryTokenFilter`(`@Order(1)`)에서 좌석/예매 관련 POST/PUT/PATCH 요청을 가로채어 입장 토큰을 검증한다.
 
 **보호 경로**: `/api/seats/`로 시작하거나 `/api/reservations`로 시작하는 경로의 POST, PUT, PATCH 메서드만 보호한다.
 
-> 참조: `services-spring/gateway-service/src/main/java/com/tiketi/gatewayservice/filter/VwrEntryTokenFilter.java:33`
-> 참조: `services-spring/gateway-service/src/main/java/com/tiketi/gatewayservice/filter/VwrEntryTokenFilter.java:113-115`
+> 참조: `services-spring/gateway-service/src/main/java/guru/urr/gatewayservice/filter/VwrEntryTokenFilter.java:33`
+> 참조: `services-spring/gateway-service/src/main/java/guru/urr/gatewayservice/filter/VwrEntryTokenFilter.java:113-115`
 
 **userId 바인딩 검증**: VWR 토큰의 `uid` 클레임과 `JwtAuthFilter`가 주입한 `X-User-Id` 헤더를 비교한다. 불일치 시 403 응답을 반환하여, 다른 사용자의 입장 토큰을 도용하는 것을 방지한다.
 
@@ -234,15 +234,15 @@ if (vwrUserId != null) {
 }
 ```
 
-> 참조: `services-spring/gateway-service/src/main/java/com/tiketi/gatewayservice/filter/VwrEntryTokenFilter.java:87-97`
+> 참조: `services-spring/gateway-service/src/main/java/guru/urr/gatewayservice/filter/VwrEntryTokenFilter.java:87-97`
 
 **CloudFront 바이패스**: 프로덕션 환경에서 CloudFront Lambda@Edge가 CDN 레벨에서 이미 토큰을 검증한 경우, `X-CloudFront-Verified` 헤더의 값이 `cloudfront.secret`과 일치하면 게이트웨이에서의 중복 검증을 건너뛴다. 이때도 `MessageDigest.isEqual()`로 timing-safe 비교를 수행한다.
 
-> 참조: `services-spring/gateway-service/src/main/java/com/tiketi/gatewayservice/filter/VwrEntryTokenFilter.java:62-70`
+> 참조: `services-spring/gateway-service/src/main/java/guru/urr/gatewayservice/filter/VwrEntryTokenFilter.java:62-70`
 
 **키 생성 시 길이 검증**: `buildSigningKey()` 메서드에서 시크릿이 32바이트 미만이면 `IllegalArgumentException`을 발생시켜 애플리케이션 시작을 차단한다.
 
-> 참조: `services-spring/gateway-service/src/main/java/com/tiketi/gatewayservice/filter/VwrEntryTokenFilter.java:130-139`
+> 참조: `services-spring/gateway-service/src/main/java/guru/urr/gatewayservice/filter/VwrEntryTokenFilter.java:130-139`
 
 ---
 
@@ -258,16 +258,16 @@ if (vwrUserId != null) {
 | Credentials | `true` | 쿠키 전송 허용 |
 | Max-Age | 3600초 (1시간) | 프리플라이트 캐시 시간 |
 
-> 참조: `services-spring/gateway-service/src/main/java/com/tiketi/gatewayservice/config/CorsConfig.java:16-32`
+> 참조: `services-spring/gateway-service/src/main/java/guru/urr/gatewayservice/config/CorsConfig.java:16-32`
 
 **오리진 설정**: `cors.allowed-origins` 환경 변수(`CORS_ALLOWED_ORIGINS`)로 외부에서 주입하며, 쉼표로 구분된 복수 오리진을 `Arrays.asList()`로 파싱한다.
 
-> 참조: `services-spring/gateway-service/src/main/java/com/tiketi/gatewayservice/config/CorsConfig.java:22`
+> 참조: `services-spring/gateway-service/src/main/java/guru/urr/gatewayservice/config/CorsConfig.java:22`
 > 참조: `services-spring/gateway-service/src/main/resources/application.yml:113`
 
 **경로 적용**: `/**` 패턴으로 모든 경로에 동일한 CORS 정책을 적용한다.
 
-> 참조: `services-spring/gateway-service/src/main/java/com/tiketi/gatewayservice/config/CorsConfig.java:30`
+> 참조: `services-spring/gateway-service/src/main/java/guru/urr/gatewayservice/config/CorsConfig.java:30`
 
 ---
 
@@ -277,7 +277,7 @@ if (vwrUserId != null) {
 
 게이트웨이의 `RateLimitFilter`(`@Order(0)`)는 Redis 기반 슬라이딩 윈도우 알고리즘으로 요청 속도를 제한한다. `JwtAuthFilter`(`@Order(-1)`) 이후, `VwrEntryTokenFilter`(`@Order(1)`) 이전에 실행된다.
 
-> 참조: `services-spring/gateway-service/src/main/java/com/tiketi/gatewayservice/filter/RateLimitFilter.java:21-22`
+> 참조: `services-spring/gateway-service/src/main/java/guru/urr/gatewayservice/filter/RateLimitFilter.java:21-22`
 
 **Lua 스크립트**: 원자적(atomic) 실행을 보장하는 Redis Lua 스크립트를 사용한다.
 
@@ -303,7 +303,7 @@ return 1                              -- 허용
 
 **윈도우 크기**: 60,000ms (60초).
 
-> 참조: `services-spring/gateway-service/src/main/java/com/tiketi/gatewayservice/filter/RateLimitFilter.java:26`
+> 참조: `services-spring/gateway-service/src/main/java/guru/urr/gatewayservice/filter/RateLimitFilter.java:26`
 
 **Fail-open 정책**: Redis 연결 실패 시 요청을 차단하지 않고 허용한다. 가용성을 보안보다 우선시하는 설계이다.
 
@@ -315,7 +315,7 @@ return 1                              -- 허용
 }
 ```
 
-> 참조: `services-spring/gateway-service/src/main/java/com/tiketi/gatewayservice/filter/RateLimitFilter.java:94-98`
+> 참조: `services-spring/gateway-service/src/main/java/guru/urr/gatewayservice/filter/RateLimitFilter.java:94-98`
 
 ### 4.2 카테고리별 제한
 
@@ -332,7 +332,7 @@ return 1                              -- 허용
 
 **카테고리 분류 로직**: `resolveCategory()` 메서드에서 요청 경로 접두사로 카테고리를 결정한다. BOOKING 카테고리는 정확한 경로 일치와 정규식 패턴을 조합하여 예약/취소 엔드포인트만 선택적으로 보호한다.
 
-> 참조: `services-spring/gateway-service/src/main/java/com/tiketi/gatewayservice/filter/RateLimitFilter.java:113-128`
+> 참조: `services-spring/gateway-service/src/main/java/guru/urr/gatewayservice/filter/RateLimitFilter.java:113-128`
 
 ### 4.3 클라이언트 식별
 
@@ -341,7 +341,7 @@ return 1                              -- 허용
 - **인증 사용자**: `JwtAuthFilter`가 주입한 `X-User-Id` 헤더를 사용하여 `user:{userId}` 형식의 키를 생성한다.
 - **비인증 사용자**: `request.getRemoteAddr()`로 IP 주소를 가져와 `ip:{remote_addr}` 형식의 키를 생성한다.
 
-> 참조: `services-spring/gateway-service/src/main/java/com/tiketi/gatewayservice/filter/RateLimitFilter.java:103-111`
+> 참조: `services-spring/gateway-service/src/main/java/guru/urr/gatewayservice/filter/RateLimitFilter.java:103-111`
 
 ### 4.4 면제 경로
 
@@ -351,7 +351,7 @@ return 1                              -- 허용
 - `/health` -- 헬스체크
 - `/actuator/*` -- 모니터링
 
-> 참조: `services-spring/gateway-service/src/main/java/com/tiketi/gatewayservice/filter/RateLimitFilter.java:52-56`
+> 참조: `services-spring/gateway-service/src/main/java/guru/urr/gatewayservice/filter/RateLimitFilter.java:52-56`
 
 ### 4.5 응답
 
@@ -361,7 +361,7 @@ Rate Limit 초과 시 다음 JSON 응답을 반환한다.
 - **응답 본문**: `{"error":"Rate limit exceeded","retryAfter":60}`
 - **Retry-After**: 60초
 
-> 참조: `services-spring/gateway-service/src/main/java/com/tiketi/gatewayservice/filter/RateLimitFilter.java:139-146`
+> 참조: `services-spring/gateway-service/src/main/java/guru/urr/gatewayservice/filter/RateLimitFilter.java:139-146`
 
 ---
 
@@ -382,7 +382,7 @@ public record RegisterRequest(
 ) {}
 ```
 
-> 참조: `services-spring/auth-service/src/main/java/com/tiketi/authservice/dto/RegisterRequest.java:7-13`
+> 참조: `services-spring/auth-service/src/main/java/guru/urr/authservice/dto/RegisterRequest.java:7-13`
 
 **LoginRequest 예시**:
 
@@ -393,7 +393,7 @@ public record LoginRequest(
 ) {}
 ```
 
-> 참조: `services-spring/auth-service/src/main/java/com/tiketi/authservice/dto/LoginRequest.java:6-10`
+> 참조: `services-spring/auth-service/src/main/java/guru/urr/authservice/dto/LoginRequest.java:6-10`
 
 **SeatReserveRequest 예시**:
 
@@ -405,7 +405,7 @@ public record SeatReserveRequest(
 ) {}
 ```
 
-> 참조: `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/domain/reservation/dto/SeatReserveRequest.java:7-12`
+> 참조: `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/domain/reservation/dto/SeatReserveRequest.java:7-12`
 
 **CreateReservationRequest 예시**: `@Valid`를 중첩 객체 목록에도 적용하여 하위 항목까지 검증한다.
 
@@ -417,11 +417,11 @@ public record CreateReservationRequest(
 ) {}
 ```
 
-> 참조: `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/domain/reservation/dto/CreateReservationRequest.java:8-13`
+> 참조: `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/domain/reservation/dto/CreateReservationRequest.java:8-13`
 
 컨트롤러에서는 `@Valid @RequestBody`로 검증을 트리거한다.
 
-> 참조: `services-spring/auth-service/src/main/java/com/tiketi/authservice/controller/AuthController.java:40`
+> 참조: `services-spring/auth-service/src/main/java/guru/urr/authservice/controller/AuthController.java:40`
 
 ### 5.2 SQL 인젝션 방지
 
@@ -450,8 +450,8 @@ Hibernate의 `ddl-auto` 설정이 `validate`로 되어 있어, 애플리케이�
 
 인증 토큰은 서버 측 `Set-Cookie` HTTP 헤더를 통해 설정된다. `httpOnly: true` 속성으로 JavaScript에서 `document.cookie`로 접근할 수 없으므로, XSS 공격으로 토큰이 탈취되는 경로가 차단된다.
 
-> 참조: `services-spring/auth-service/src/main/java/com/tiketi/authservice/util/CookieHelper.java:30`
-> 참조: `services-spring/auth-service/src/main/java/com/tiketi/authservice/util/CookieHelper.java:40`
+> 참조: `services-spring/auth-service/src/main/java/guru/urr/authservice/util/CookieHelper.java:30`
+> 참조: `services-spring/auth-service/src/main/java/guru/urr/authservice/util/CookieHelper.java:40`
 
 ---
 
@@ -467,15 +467,15 @@ http
     .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 ```
 
-> 참조: `services-spring/auth-service/src/main/java/com/tiketi/authservice/config/SecurityConfig.java:33-35`
+> 참조: `services-spring/auth-service/src/main/java/guru/urr/authservice/config/SecurityConfig.java:33-35`
 
 **비활성화 사유**:
 
 1. **무상태 인증**: `SessionCreationPolicy.STATELESS`로 서버 측 세션을 사용하지 않는다. CSRF 공격은 브라우저가 자동 전송하는 세션 쿠키를 악용하는 것이 핵심인데, JWT 기반 무상태 인증에서는 세션 쿠키가 존재하지 않는다.
 2. **쿠키 SameSite 속성**: 인증 쿠키에 `SameSite=Lax` 속성이 설정되어 있어, 크로스 사이트 POST/PUT/DELETE 요청에서 쿠키가 전송되지 않는다.
 
-> 참조: `services-spring/auth-service/src/main/java/com/tiketi/authservice/util/CookieHelper.java:34`
-> 참조: `services-spring/auth-service/src/main/java/com/tiketi/authservice/util/CookieHelper.java:44`
+> 참조: `services-spring/auth-service/src/main/java/guru/urr/authservice/util/CookieHelper.java:34`
+> 참조: `services-spring/auth-service/src/main/java/guru/urr/authservice/util/CookieHelper.java:44`
 
 3. **CORS 정책**: 허용된 오리진에서만 요청이 가능하므로, 임의의 악성 사이트에서의 요청이 차단된다.
 
@@ -492,7 +492,7 @@ default-src 'self';
 script-src 'self' 'unsafe-inline' https://accounts.google.com https://apis.google.com;
 style-src 'self' 'unsafe-inline' 'nonce-{random}' https://accounts.google.com;
 img-src 'self' data: https:;
-connect-src 'self' http://localhost:* https://*.tiketi.com https://accounts.google.com;
+connect-src 'self' http://localhost:* https://*.urr.guru https://accounts.google.com;
 frame-src https://accounts.google.com;
 frame-ancestors 'none';
 ```

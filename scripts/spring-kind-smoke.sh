@@ -19,7 +19,7 @@ assert_endpoint() {
   echo -e "${GREEN}OK${RESET}: $url ($actual)"
 }
 
-kubectl get pods -n tiketi-spring
+kubectl get pods -n urr-spring
 
 assert_endpoint "http://localhost:3001/health"       "200"
 assert_endpoint "http://localhost:3001/api/auth/me"  "401"

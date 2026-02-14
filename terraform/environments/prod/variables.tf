@@ -17,7 +17,7 @@ variable "environment" {
 variable "name_prefix" {
   description = "Prefix for resource names"
   type        = string
-  default     = "tiketi-prod"
+  default     = "urr-prod"
 }
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -143,7 +143,7 @@ variable "certificate_arn" {
 }
 
 variable "cors_allowed_origins" {
-  description = "Allowed origins for CORS (e.g. [\"https://tiketi.com\"])"
+  description = "Allowed origins for CORS (e.g. [\"https://urr.guru\"])"
   type        = list(string)
   default     = []
 }

@@ -69,7 +69,7 @@ function processQueue(success: boolean) {
 
 http.interceptors.request.use((config) => {
   // Attach queue entry token for Lambda@Edge and Gateway VWR verification
-  const entryToken = getCookie("tiketi-entry-token");
+  const entryToken = getCookie("urr-entry-token");
   if (entryToken) {
     config.headers["x-queue-entry-token"] = entryToken;
   }

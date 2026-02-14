@@ -4,7 +4,7 @@
 
 ### 1.1 프로젝트 목적
 
-Tiketi는 이벤트 및 공연 티켓 예매 플랫폼으로, 대규모 동시 접속 환경에서 안정적인 좌석 예약, 결제, 대기열 관리를 목표로 설계된 마이크로서비스 아키텍처(MSA) 기반 시스템이다.
+URR는 이벤트 및 공연 티켓 예매 플랫폼으로, 대규모 동시 접속 환경에서 안정적인 좌석 예약, 결제, 대기열 관리를 목표로 설계된 마이크로서비스 아키텍처(MSA) 기반 시스템이다.
 
 ### 1.2 기술 스택 요약
 
@@ -53,9 +53,9 @@ Tiketi는 이벤트 및 공연 티켓 예매 플랫폼으로, 대규모 동시 �
 
 Kafka를 중심으로 서비스 간 비동기 통신이 구현되어 있다. 결제 완료 이벤트는 `payment-events` 토픽을 통해 ticket-service와 stats-service가 독립적으로 소비한다.
 
-- ticket-service Kafka 소비: `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/messaging/PaymentEventConsumer.java:49` -- `@KafkaListener(topics = "payment-events", groupId = "ticket-service-group")`
-- stats-service Kafka 소비: `services-spring/stats-service/src/main/java/com/tiketi/statsservice/messaging/StatsEventConsumer.java:25` -- `@KafkaListener(topics = "payment-events", groupId = "stats-service-group")`
-- 이벤트 발행 토픽: `reservation-events`, `transfer-events`, `membership-events` (`services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/messaging/TicketEventProducer.java:25-77`)
+- ticket-service Kafka 소비: `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/messaging/PaymentEventConsumer.java:49` -- `@KafkaListener(topics = "payment-events", groupId = "ticket-service-group")`
+- stats-service Kafka 소비: `services-spring/stats-service/src/main/java/guru/urr/statsservice/messaging/StatsEventConsumer.java:25` -- `@KafkaListener(topics = "payment-events", groupId = "stats-service-group")`
+- 이벤트 발행 토픽: `reservation-events`, `transfer-events`, `membership-events` (`services-spring/ticket-service/src/main/java/guru/urr/ticketservice/messaging/TicketEventProducer.java:25-77`)
 
 **Saga 패턴**
 
@@ -63,7 +63,7 @@ Kafka를 중심으로 서비스 간 비동기 통신이 구현되어 있다. 결
 
 1. 결제 완료 이벤트 수신: `PaymentEventConsumer.java:49-93`
 2. 예약 확정 처리: `PaymentEventConsumer.java:107` -- `reservationService.confirmReservationPayment(reservationId, paymentMethod)`
-3. 포인트 적립: `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/domain/reservation/service/ReservationService.java:454` -- `membershipService.awardPointsForArtist(userId, artistId, "TICKET_PURCHASE", 100, ...)`
+3. 포인트 적립: `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/domain/reservation/service/ReservationService.java:454` -- `membershipService.awardPointsForArtist(userId, artistId, "TICKET_PURCHASE", 100, ...)`
 4. 확인 이벤트 재발행: `PaymentEventConsumer.java:114-115` -- `ticketEventProducer.publishReservationConfirmed(...)`
 
 **API 게이트웨이 중앙화**
@@ -71,9 +71,9 @@ Kafka를 중심으로 서비스 간 비동기 통신이 구현되어 있다. 결
 gateway-service가 모든 외부 요청의 진입점으로, 인증(JWT), Rate Limiting, VWR 토큰 검증을 한 곳에서 처리한다.
 
 - 라우팅 규칙 (15개 경로): `services-spring/gateway-service/src/main/resources/application.yml:10-75`
-- JWT 인증 필터: `services-spring/gateway-service/src/main/java/com/tiketi/gatewayservice/filter/JwtAuthFilter.java:35`
-- Rate Limit 필터: `services-spring/gateway-service/src/main/java/com/tiketi/gatewayservice/filter/RateLimitFilter.java:22`
-- VWR 토큰 필터: `services-spring/gateway-service/src/main/java/com/tiketi/gatewayservice/filter/VwrEntryTokenFilter.java:26`
+- JWT 인증 필터: `services-spring/gateway-service/src/main/java/guru/urr/gatewayservice/filter/JwtAuthFilter.java:35`
+- Rate Limit 필터: `services-spring/gateway-service/src/main/java/guru/urr/gatewayservice/filter/RateLimitFilter.java:22`
+- VWR 토큰 필터: `services-spring/gateway-service/src/main/java/guru/urr/gatewayservice/filter/VwrEntryTokenFilter.java:26`
 
 ---
 
@@ -94,7 +94,7 @@ Redis Lua 스크립트로 좌석 상태 확인과 잠금 획득을 단일 원자
 
 Redis 잠금 성공 후 PostgreSQL SELECT FOR UPDATE로 DB 수준의 2차 검증을 수행한다.
 
-- FOR UPDATE 쿼리: `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/domain/reservation/service/ReservationService.java:92-99` -- `SELECT id, seat_label, price, status, version FROM seats WHERE id IN (:seatIds) AND event_id = :eventId FOR UPDATE`
+- FOR UPDATE 쿼리: `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/domain/reservation/service/ReservationService.java:92-99` -- `SELECT id, seat_label, price, status, version FROM seats WHERE id IN (:seatIds) AND event_id = :eventId FOR UPDATE`
 - 낙관적 잠금(version): `ReservationService.java:119-132` -- `UPDATE seats SET status = 'locked', version = version + 1, fencing_token = ? ... WHERE id = ? AND version = ?`
 - DB 수준 펜싱 토큰 저장: `services-spring/ticket-service/src/main/resources/db/migration/V8__seats_concurrency_columns.sql:2-5` -- version, fencing_token, locked_by 컬럼
 
@@ -103,7 +103,7 @@ Redis 잠금 성공 후 PostgreSQL SELECT FOR UPDATE로 DB 수준의 2차 검증
 Kafka 이벤트 중복 처리를 방지하기 위한 processed_events 테이블 기반 멱등성 메커니즘이 구현되어 있다.
 
 - 멱등성 테이블 스키마: `services-spring/ticket-service/src/main/resources/db/migration/V14__processed_events.sql:2-6`
-- 중복 체크: `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/messaging/PaymentEventConsumer.java:209-218` -- `isAlreadyProcessed(eventKey)`
+- 중복 체크: `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/messaging/PaymentEventConsumer.java:209-218` -- `isAlreadyProcessed(eventKey)`
 - 처리 완료 기록: `PaymentEventConsumer.java:221-231` -- `markProcessed(eventKey)`
 - 예약 요청 멱등성 키: `ReservationService.java:62-69` -- 동일 `idempotencyKey`에 대해 기존 예약 반환
 
@@ -112,7 +112,7 @@ Kafka 이벤트 중복 처리를 방지하기 위한 processed_events 테이블 
 결제 시 Redis 펜싱 토큰을 재검증하여, TTL 만료 후 다른 사용자가 획득한 잠금에 대해 이전 사용자의 결제가 통과되는 것을 방지한다.
 
 - 결제 검증 Lua 스크립트: `services-spring/ticket-service/src/main/resources/redis/payment_verify.lua:1-19` -- userId와 token 동시 검증 후 CONFIRMED 상태로 전이
-- Java 검증 호출: `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/domain/seat/service/SeatLockService.java:81-98` -- `verifyForPayment(eventId, seatId, userId, token)`
+- Java 검증 호출: `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/domain/seat/service/SeatLockService.java:81-98` -- `verifyForPayment(eventId, seatId, userId, token)`
 - 결제 확정 시 펜싱 토큰 DB 교차 검증: `ReservationService.java:402-417` -- seats 테이블의 fencing_token으로 Redis 검증
 
 ---
@@ -123,7 +123,7 @@ Kafka 이벤트 중복 처리를 방지하기 위한 processed_events 테이블 
 
 Redis Sorted Set을 활용하여 대기열 순서(입장 시간 기준 score)와 활성 사용자 관리(만료 시간 기준 score)를 효율적으로 처리한다.
 
-- 대기열 추가: `services-spring/queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:330` -- `redisTemplate.opsForZSet().add(queueKey(eventId), userId, System.currentTimeMillis())`
+- 대기열 추가: `services-spring/queue-service/src/main/java/guru/urr/queueservice/service/QueueService.java:330` -- `redisTemplate.opsForZSet().add(queueKey(eventId), userId, System.currentTimeMillis())`
 - 활성 사용자 관리: `QueueService.java:301-304` -- expiryScore 기반 TTL 관리
 - 위치 조회: `QueueService.java:319-321` -- `redisTemplate.opsForZSet().rank()` O(log N) 연산
 - 활성 사용자 수 조회: `QueueService.java:296-298` -- 현재 시간 이후 만료 score만 카운트
@@ -147,14 +147,14 @@ Redis Sorted Set을 활용하여 대기열 순서(입장 시간 기준 score)와
 대기열 통과 시 발급되는 JWT 입장 토큰에 userId를 바인딩하여 토큰 탈취를 방지한다.
 
 - 토큰 생성: `QueueService.java:215-227` -- `.claim("uid", userId)` 포함 JWT 생성
-- 게이트웨이 검증: `services-spring/gateway-service/src/main/java/com/tiketi/gatewayservice/filter/VwrEntryTokenFilter.java:88-97` -- VWR 토큰의 uid와 Auth JWT의 userId 일치 여부 확인
+- 게이트웨이 검증: `services-spring/gateway-service/src/main/java/guru/urr/gatewayservice/filter/VwrEntryTokenFilter.java:88-97` -- VWR 토큰의 uid와 Auth JWT의 userId 일치 여부 확인
 - Timing-safe 비교: `VwrEntryTokenFilter.java:64-66` -- `MessageDigest.isEqual()` 사용
 
 **SQS FIFO 통합**
 
 AWS 환경 확장을 위한 SQS FIFO 큐 발행 기능이 구현되어 있다.
 
-- SQS 발행: `services-spring/queue-service/src/main/java/com/tiketi/queueservice/service/SqsPublisher.java:38-68` -- `messageGroupId(eventId)`, `messageDeduplicationId(userId + ":" + eventId)`
+- SQS 발행: `services-spring/queue-service/src/main/java/guru/urr/queueservice/service/SqsPublisher.java:38-68` -- `messageGroupId(eventId)`, `messageDeduplicationId(userId + ":" + eventId)`
 - 활성화 플래그: `SqsPublisher.java:27` -- `@Value("${aws.sqs.enabled:false}")`
 - 입장 시 발행: `QueueService.java:210` -- `sqsPublisher.publishAdmission(eventId, userId, entryToken)`
 
@@ -164,7 +164,7 @@ Lua 스크립트로 만료된 활성 사용자 제거, 가용 슬롯 계산, 대
 
 - 입장 제어 Lua: `services-spring/queue-service/src/main/resources/redis/admission_control.lua:1-46`
 - ZPOPMIN 원자적 팝: `admission_control.lua:32` -- 경쟁 조건 없는 대기열 추출
-- 배치 입장: `services-spring/queue-service/src/main/java/com/tiketi/queueservice/service/AdmissionWorkerService.java:47-118` -- 1초 간격 스케줄러, 분산 락으로 중복 실행 방지
+- 배치 입장: `services-spring/queue-service/src/main/java/guru/urr/queueservice/service/AdmissionWorkerService.java:47-118` -- 1초 간격 스케줄러, 분산 락으로 중복 실행 방지
 
 ---
 
@@ -174,7 +174,7 @@ Lua 스크립트로 만료된 활성 사용자 제거, 가용 슬롯 계산, 대
 
 JWT 검증을 게이트웨이에서 중앙 처리하여 하위 서비스에 JWT 시크릿을 배포하지 않는다.
 
-- JWT 파싱 + 헤더 주입: `services-spring/gateway-service/src/main/java/com/tiketi/gatewayservice/filter/JwtAuthFilter.java:60-77` -- Claims에서 userId, email, role 추출 후 `X-User-Id`, `X-User-Email`, `X-User-Role` 헤더 주입
+- JWT 파싱 + 헤더 주입: `services-spring/gateway-service/src/main/java/guru/urr/gatewayservice/filter/JwtAuthFilter.java:60-77` -- Claims에서 userId, email, role 추출 후 `X-User-Id`, `X-User-Email`, `X-User-Role` 헤더 주입
 
 **외부 헤더 스트리핑 (스푸핑 방지)**
 
@@ -187,14 +187,14 @@ JWT 검증을 게이트웨이에서 중앙 처리하여 하위 서비스에 JWT 
 
 VWR 토큰 검증 시 `MessageDigest.isEqual()` 을 사용하여 타이밍 사이드 채널 공격을 방지한다.
 
-- `services-spring/gateway-service/src/main/java/com/tiketi/gatewayservice/filter/VwrEntryTokenFilter.java:64-66` -- `MessageDigest.isEqual(cloudFrontSecret.getBytes(...), cfHeader.getBytes(...))`
+- `services-spring/gateway-service/src/main/java/guru/urr/gatewayservice/filter/VwrEntryTokenFilter.java:64-66` -- `MessageDigest.isEqual(cloudFrontSecret.getBytes(...), cfHeader.getBytes(...))`
 
 **Rate Limiting: Redis Lua 슬라이딩 윈도우**
 
 Redis ZSET 기반 슬라이딩 윈도우 Rate Limiting을 Lua 스크립트로 원자적으로 수행한다.
 
 - Lua 스크립트: `services-spring/gateway-service/src/main/resources/redis/rate_limit.lua:1-15` -- ZREMRANGEBYSCORE + ZADD + ZCARD를 단일 스크립트로 수행
-- 카테고리별 제한: `services-spring/gateway-service/src/main/java/com/tiketi/gatewayservice/filter/RateLimitFilter.java:113-128` -- AUTH(60rpm), QUEUE(120rpm), BOOKING(30rpm), GENERAL(3000rpm)
+- 카테고리별 제한: `services-spring/gateway-service/src/main/java/guru/urr/gatewayservice/filter/RateLimitFilter.java:113-128` -- AUTH(60rpm), QUEUE(120rpm), BOOKING(30rpm), GENERAL(3000rpm)
 - 설정: `services-spring/gateway-service/src/main/resources/application.yml:115-119`
 - Fail-open 정책: `RateLimitFilter.java:94-98` -- Redis 장애 시 요청 통과 (가용성 우선)
 
@@ -242,7 +242,7 @@ Metrics, Logs, Traces, Health 네 가지 축으로 옵저버빌리티가 구성�
 
 Micrometer Counter/Timer를 통해 비즈니스 지표를 Prometheus에 노출한다.
 
-- 8개 비즈니스 카운터 + 1개 타이머: `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/shared/metrics/BusinessMetrics.java:11-60`
+- 8개 비즈니스 카운터 + 1개 타이머: `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/shared/metrics/BusinessMetrics.java:11-60`
 - 예: `business.reservation.created.total`, `business.payment.processed.total`, `business.transfer.completed.total`
 - Actuator Prometheus 엔드포인트 노출: `services-spring/ticket-service/src/main/resources/application.yml:53-55` -- `include: health,info,prometheus`
 
@@ -345,7 +345,7 @@ Windows(PowerShell)와 Linux/Mac(Bash) 양쪽 환경에서 동일한 작업을 �
 **현재 상태**: 모든 실시간성이 폴링(polling)으로 구현되어 있다. 대기열 상태 폴링(`queueApi.status`), 좌석 상태는 페이지 로드 시 조회한다.
 
 - 폴링 기반 대기열: `apps/web/src/lib/api-client.ts:148-153` -- queueApi의 check/status/heartbeat 모두 HTTP 요청
-- 서버측 동적 폴링 간격: `services-spring/queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:231-238` -- nextPoll 값 반환
+- 서버측 동적 폴링 간격: `services-spring/queue-service/src/main/java/guru/urr/queueservice/service/QueueService.java:231-238` -- nextPoll 값 반환
 
 **문제점**: 대기열 위치 변경, 좌석 실시간 점유 상태 등이 지연 반영된다. 최소 폴링 간격이 1초이므로 순간적인 좌석 경합 상태를 사용자에게 즉시 전달할 수 없다.
 
@@ -623,7 +623,7 @@ Windows(PowerShell)와 Linux/Mac(Bash) 양쪽 환경에서 동일한 작업을 �
 
 | 항목 | 현재 상태 | 목표 | 관련 파일 |
 |------|-----------|------|-----------|
-| **실시간 통신** | 폴링 | WebSocket/SSE | `services-spring/queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:231-238` |
+| **실시간 통신** | 폴링 | WebSocket/SSE | `services-spring/queue-service/src/main/java/guru/urr/queueservice/service/QueueService.java:231-238` |
 | **로드 테스트** | 시나리오만 존재 | 성능 기준선 확립 | `tests/load/scenarios/` |
 | **API 문서화** | 없음 | SpringDoc OpenAPI | `apps/web/src/lib/api-client.ts:133-270` |
 | **WAF 도입** | 없음 | AWS WAF 규칙 적용 | - |
@@ -645,22 +645,22 @@ Windows(PowerShell)와 Linux/Mac(Bash) 양쪽 환경에서 동일한 작업을 �
 
 | 약칭 | 전체 경로 |
 |------|-----------|
-| `SeatLockService.java` | `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/domain/seat/service/SeatLockService.java` |
+| `SeatLockService.java` | `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/domain/seat/service/SeatLockService.java` |
 | `seat_lock_acquire.lua` | `services-spring/ticket-service/src/main/resources/redis/seat_lock_acquire.lua` |
 | `payment_verify.lua` | `services-spring/ticket-service/src/main/resources/redis/payment_verify.lua` |
-| `PaymentEventConsumer.java` | `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/messaging/PaymentEventConsumer.java` |
-| `TicketEventProducer.java` | `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/messaging/TicketEventProducer.java` |
-| `ReservationService.java` | `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/domain/reservation/service/ReservationService.java` |
-| `BusinessMetrics.java` | `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/shared/metrics/BusinessMetrics.java` |
-| `QueueService.java` | `services-spring/queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java` |
-| `SqsPublisher.java` | `services-spring/queue-service/src/main/java/com/tiketi/queueservice/service/SqsPublisher.java` |
-| `AdmissionWorkerService.java` | `services-spring/queue-service/src/main/java/com/tiketi/queueservice/service/AdmissionWorkerService.java` |
+| `PaymentEventConsumer.java` | `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/messaging/PaymentEventConsumer.java` |
+| `TicketEventProducer.java` | `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/messaging/TicketEventProducer.java` |
+| `ReservationService.java` | `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/domain/reservation/service/ReservationService.java` |
+| `BusinessMetrics.java` | `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/shared/metrics/BusinessMetrics.java` |
+| `QueueService.java` | `services-spring/queue-service/src/main/java/guru/urr/queueservice/service/QueueService.java` |
+| `SqsPublisher.java` | `services-spring/queue-service/src/main/java/guru/urr/queueservice/service/SqsPublisher.java` |
+| `AdmissionWorkerService.java` | `services-spring/queue-service/src/main/java/guru/urr/queueservice/service/AdmissionWorkerService.java` |
 | `admission_control.lua` | `services-spring/queue-service/src/main/resources/redis/admission_control.lua` |
-| `JwtAuthFilter.java` | `services-spring/gateway-service/src/main/java/com/tiketi/gatewayservice/filter/JwtAuthFilter.java` |
-| `RateLimitFilter.java` | `services-spring/gateway-service/src/main/java/com/tiketi/gatewayservice/filter/RateLimitFilter.java` |
-| `VwrEntryTokenFilter.java` | `services-spring/gateway-service/src/main/java/com/tiketi/gatewayservice/filter/VwrEntryTokenFilter.java` |
+| `JwtAuthFilter.java` | `services-spring/gateway-service/src/main/java/guru/urr/gatewayservice/filter/JwtAuthFilter.java` |
+| `RateLimitFilter.java` | `services-spring/gateway-service/src/main/java/guru/urr/gatewayservice/filter/RateLimitFilter.java` |
+| `VwrEntryTokenFilter.java` | `services-spring/gateway-service/src/main/java/guru/urr/gatewayservice/filter/VwrEntryTokenFilter.java` |
 | `rate_limit.lua` | `services-spring/gateway-service/src/main/resources/redis/rate_limit.lua` |
-| `StatsEventConsumer.java` | `services-spring/stats-service/src/main/java/com/tiketi/statsservice/messaging/StatsEventConsumer.java` |
+| `StatsEventConsumer.java` | `services-spring/stats-service/src/main/java/guru/urr/statsservice/messaging/StatsEventConsumer.java` |
 | `network-policies.yaml` | `k8s/spring/base/network-policies.yaml` |
 | `middleware.ts` | `apps/web/src/middleware.ts` |
 | `api-client.ts` | `apps/web/src/lib/api-client.ts` |

@@ -22,7 +22,7 @@ provider "aws" {
 
   default_tags {
     tags = {
-      Project     = "Tiketi"
+      Project     = "URR"
       Environment = var.environment
       ManagedBy   = "Terraform"
     }
@@ -36,7 +36,7 @@ provider "aws" {
 
   default_tags {
     tags = {
-      Project     = "Tiketi"
+      Project     = "URR"
       Environment = var.environment
       ManagedBy   = "Terraform"
     }

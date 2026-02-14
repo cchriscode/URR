@@ -1,6 +1,6 @@
 # Comprehensive Frontend and Infrastructure Audit Report
 
-**Project**: Tiketi Ticketing MSA (project-ticketing-copy)
+**Project**: URR Ticketing MSA (project-ticketing-copy)
 **Date**: 2026-02-12
 **Scope**: Frontend (apps/web), Kubernetes (k8s), Terraform (terraform), Lambda (lambda), Scripts (scripts), Cross-Cutting Concerns
 
@@ -56,7 +56,7 @@ This means all CloudFront viewer-request invocations will fail, effectively bloc
 **Description**: The `.gitignore` file contains `**/secrets.env` on line 13, but the file `k8s/spring/overlays/kind/secrets.env` is already tracked by git (confirmed via `git ls-files`). This means the file and its contents -- including plaintext database passwords, JWT secrets, and internal API tokens -- are stored in the git history:
 
 ```
-POSTGRES_PASSWORD=tiketi_password
+POSTGRES_PASSWORD=urr_password
 JWT_SECRET=c3ByaW5nLWtpbmQtdGVzdC1qd3Qtc2VjcmV0LTIwMjYtMDItMTA=
 INTERNAL_API_TOKEN=dev-internal-token-change-me
 QUEUE_ENTRY_TOKEN_SECRET=kind-test-entry-token-secret-min-32-chars-here
@@ -336,7 +336,7 @@ spec:
 **Description**: The entry token cookie is set with the `Secure` flag:
 
 ```js
-document.cookie = `tiketi-entry-token=${data.entryToken}; path=/; max-age=600; SameSite=Strict; Secure`;
+document.cookie = `urr-entry-token=${data.entryToken}; path=/; max-age=600; SameSite=Strict; Secure`;
 ```
 
 The `Secure` flag instructs the browser to only send the cookie over HTTPS connections. During local development (http://localhost:3000), the cookie will be set by the browser (localhost is a special case for some browsers) but behavior is inconsistent across browsers. Chrome treats localhost as a "potentially trustworthy origin" and allows it, but other browsers may not.
@@ -345,7 +345,7 @@ The `Secure` flag instructs the browser to only send the cookie over HTTPS conne
 
 ```js
 const secure = window.location.protocol === 'https:' ? '; Secure' : '';
-document.cookie = `tiketi-entry-token=${data.entryToken}; path=/; max-age=600; SameSite=Strict${secure}`;
+document.cookie = `urr-entry-token=${data.entryToken}; path=/; max-age=600; SameSite=Strict${secure}`;
 ```
 
 ---
@@ -476,7 +476,7 @@ const cards = [
 **Description**: The production CORS allowed origins are hardcoded in the ConfigMap:
 
 ```
-CORS_ALLOWED_ORIGINS=https://tiketi.com,https://www.tiketi.com
+CORS_ALLOWED_ORIGINS=https://urr.guru,https://www.urr.guru
 ```
 
 This is referenced by the gateway service via `configMapKeyRef`. While not a security issue per se, changing CORS origins requires a ConfigMap update and pod restart. The value should be easily configurable and the gateway should validate the `Origin` header against this list strictly.
@@ -695,15 +695,15 @@ While these are development values, hardcoding secrets in scripts that are commi
 
 ---
 
-### L-05. Base Kustomization Uses tiketi-dev Namespace While Overlays Use tiketi-spring
+### L-05. Base Kustomization Uses urr-dev Namespace While Overlays Use urr-spring
 
 **File**: `C:\Users\USER\project-ticketing-copy\k8s\spring\base\kustomization.yaml`, line 3
 **File**: `C:\Users\USER\project-ticketing-copy\k8s\spring\overlays\kind\kustomization.yaml`, line 3
 **File**: `C:\Users\USER\project-ticketing-copy\k8s\spring\overlays\prod\kustomization.yaml`, line 3
 
-**Description**: The base kustomization sets `namespace: tiketi-dev`, while both overlays set `namespace: tiketi-spring`. The overlay namespace correctly overrides the base, but the base namespace is misleading and could cause confusion if someone applies the base directly.
+**Description**: The base kustomization sets `namespace: urr-dev`, while both overlays set `namespace: urr-spring`. The overlay namespace correctly overrides the base, but the base namespace is misleading and could cause confusion if someone applies the base directly.
 
-**Fix**: Either remove the namespace from the base (let overlays define it) or set it to a neutral value like `tiketi-base` with a comment that overlays override this.
+**Fix**: Either remove the namespace from the base (let overlays define it) or set it to a neutral value like `urr-base` with a comment that overlays override this.
 
 ---
 

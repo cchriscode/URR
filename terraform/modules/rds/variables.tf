@@ -70,7 +70,7 @@ variable "additional_databases" {
 variable "master_username" {
   description = "Master username for RDS"
   type        = string
-  default     = "tiketi_admin"
+  default     = "urr_admin"
 }
 
 variable "master_password" {

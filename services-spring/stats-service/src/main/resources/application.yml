@@ -9,13 +9,13 @@ spring:
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
       properties:
-        spring.json.trusted.packages: "com.tiketi.paymentservice.messaging.event,com.tiketi.ticketservice.messaging.event,java.util,java.lang"
+        spring.json.trusted.packages: "com.urr.paymentservice.messaging.event,com.urr.ticketservice.messaging.event,java.util,java.lang"
         spring.json.use.type.headers: false
         spring.json.value.default.type: java.util.LinkedHashMap
   datasource:
     url: ${STATS_DB_URL:jdbc:postgresql://localhost:5436/stats_db}
-    username: ${STATS_DB_USERNAME:tiketi_user}
-    password: ${STATS_DB_PASSWORD:tiketi_password}
+    username: ${STATS_DB_USERNAME:urr_user}
+    password: ${STATS_DB_PASSWORD:urr_password}
   jpa:
     hibernate:
       ddl-auto: validate

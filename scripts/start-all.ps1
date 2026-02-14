@@ -9,7 +9,7 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 
 Write-Host ""
 Write-Host "================================================" -ForegroundColor Cyan
-Write-Host "   TIKETI Spring - Start All Services" -ForegroundColor Cyan
+Write-Host "   URR Spring - Start All Services" -ForegroundColor Cyan
 Write-Host "================================================" -ForegroundColor Cyan
 Write-Host ""
 

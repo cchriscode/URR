@@ -12,8 +12,8 @@ spring:
         spring.json.add.type.headers: false
   datasource:
     url: ${PAYMENT_DB_URL:jdbc:postgresql://localhost:5435/payment_db}
-    username: ${PAYMENT_DB_USERNAME:tiketi_user}
-    password: ${PAYMENT_DB_PASSWORD:tiketi_password}
+    username: ${PAYMENT_DB_USERNAME:urr_user}
+    password: ${PAYMENT_DB_PASSWORD:urr_password}
   jpa:
     hibernate:
       ddl-auto: validate

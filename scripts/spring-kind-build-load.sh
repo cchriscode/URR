@@ -5,13 +5,13 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 cd "$REPO_ROOT"
 
-KIND_CLUSTER_NAME="tiketi-local"
+KIND_CLUSTER_NAME="urr-local"
 
 for arg in "$@"; do
   case "$arg" in
     --name=*) KIND_CLUSTER_NAME="${arg#--name=}" ;;
     # positional fallback for backwards compat
-    tiketi-*) KIND_CLUSTER_NAME="$arg" ;;
+    urr-*) KIND_CLUSTER_NAME="$arg" ;;
   esac
 done
 
@@ -28,14 +28,14 @@ kind get clusters 2>/dev/null | grep -qx "$KIND_CLUSTER_NAME" \
 # ── Spring Boot services ──────────────────────────────────────────
 
 SERVICES=(
-  "gateway-service:tiketi-spring-gateway-service:local"
-  "auth-service:tiketi-spring-auth-service:local"
-  "ticket-service:tiketi-spring-ticket-service:local"
-  "payment-service:tiketi-spring-payment-service:local"
-  "stats-service:tiketi-spring-stats-service:local"
-  "queue-service:tiketi-spring-queue-service:local"
-  "community-service:tiketi-spring-community-service:local"
-  "catalog-service:tiketi-spring-catalog-service:local"
+  "gateway-service:urr-spring-gateway-service:local"
+  "auth-service:urr-spring-auth-service:local"
+  "ticket-service:urr-spring-ticket-service:local"
+  "payment-service:urr-spring-payment-service:local"
+  "stats-service:urr-spring-stats-service:local"
+  "queue-service:urr-spring-queue-service:local"
+  "community-service:urr-spring-community-service:local"
+  "catalog-service:urr-spring-catalog-service:local"
 )
 
 for entry in "${SERVICES[@]}"; do
@@ -57,7 +57,7 @@ done
 
 FRONTEND_PATH="$REPO_ROOT/apps/web"
 FRONTEND_DOCKERFILE="$FRONTEND_PATH/Dockerfile"
-FRONTEND_IMAGE="tiketi-spring-frontend:local"
+FRONTEND_IMAGE="urr-spring-frontend:local"
 
 [ -f "$FRONTEND_DOCKERFILE" ] || { echo "Frontend Dockerfile not found: $FRONTEND_DOCKERFILE"; exit 1; }
 

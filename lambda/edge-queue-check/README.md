@@ -5,7 +5,7 @@ CloudFront viewer-request 함수로, 대기열 진입 토큰을 검증하여 예
 ## 작동 원리
 
 1. CloudFront에서 요청이 들어오면 이 Lambda@Edge 함수가 viewer-request 이벤트로 실행됩니다
-2. `/api/reservations/**`, `/api/tickets/**` 등 보호된 경로인 경우 쿠키에서 `tiketi-entry-token` 확인
+2. `/api/reservations/**`, `/api/tickets/**` 등 보호된 경로인 경우 쿠키에서 `urr-entry-token` 확인
 3. JWT 서명 검증 + 만료 시간 확인
 4. 유효하면 → ALB로 요청 전달
 5. 무효/없으면 → `/queue/{eventId}` 로 302 리다이렉트
@@ -25,7 +25,7 @@ cd lambda/edge-queue-check
 zip -r function.zip index.js
 
 aws lambda create-function \
-  --function-name tiketi-edge-queue-check \
+  --function-name urr-edge-queue-check \
   --runtime nodejs20.x \
   --role arn:aws:iam::ACCOUNT_ID:role/lambda-edge-role \
   --handler index.handler \
@@ -53,7 +53,7 @@ const SECRET = 'your-production-secret-here';
 ```bash
 # 버전 퍼블리시
 aws lambda publish-version \
-  --function-name tiketi-edge-queue-check \
+  --function-name urr-edge-queue-check \
   --region us-east-1
 
 # CloudFront 배포 업데이트 (ARN은 위 명령어 결과에서 확인)
@@ -69,7 +69,7 @@ aws cloudfront update-distribution \
     "LambdaFunctionAssociations": {
       "Quantity": 1,
       "Items": [{
-        "LambdaFunctionARN": "arn:aws:lambda:us-east-1:ACCOUNT_ID:function:tiketi-edge-queue-check:VERSION",
+        "LambdaFunctionARN": "arn:aws:lambda:us-east-1:ACCOUNT_ID:function:urr-edge-queue-check:VERSION",
         "EventType": "viewer-request",
         "IncludeBody": false
       }]
@@ -93,7 +93,7 @@ const event = {
         uri: '/api/reservations',
         headers: {
           cookie: [{
-            value: 'tiketi-entry-token=eyJhbGciOiJIUzI1NiJ9...'
+            value: 'urr-entry-token=eyJhbGciOiJIUzI1NiJ9...'
           }]
         }
       }
@@ -111,7 +111,7 @@ handler(event).then(result => console.log(result));
 curl -i https://your-cloudfront-domain/api/reservations
 
 # 유효한 토큰과 함께 요청 → 200 OK
-curl -i -H "Cookie: tiketi-entry-token=VALID_JWT" \
+curl -i -H "Cookie: urr-entry-token=VALID_JWT" \
   https://your-cloudfront-domain/api/reservations
 ```
 
