@@ -1,479 +1,285 @@
-# 백엔드 핵심 기능 상세
-
-URR 티켓팅 플랫폼의 백엔드 핵심 기능을 서비스별로 정리한 기술 문서이다. 모든 코드 참조는 실제 소스 파일의 정확한 경로와 라인 번호를 기준으로 한다.
+# 03. 핵심 기능 구현 분석
 
 ---
 
-## 1. 인증 시스템 (Auth Service - port 3005)
+## 1. VWR (Virtual Waiting Room) 대기열 시스템
 
-인증 서비스는 사용자 등록, 로그인, JWT 토큰 관리, Google OAuth를 담당한다.
+### 1.1 아키텍처
 
-### 1.1 API 엔드포인트
+VWR 시스템은 **queue-service**에 구현되어 있으며, 완전한 Redis 기반 아키텍처를 사용한다. 별도의 관계형 DB 없이 Redis의 Sorted Set(ZSET)을 핵심 자료구조로 활용하며, 선택적으로 AWS SQS FIFO 큐와 연동하여 입장 이벤트를 외부 시스템에 전달한다.
 
-| 메서드 | 경로 | 설명 |
-|--------|------|------|
-| POST | `/api/auth/register` | 회원가입 |
-| POST | `/api/auth/login` | 로그인 |
-| GET | `/api/auth/me` | 현재 사용자 정보 조회 |
-| POST | `/api/auth/verify-token` | 토큰 유효성 검증 |
-| POST | `/api/auth/refresh` | 토큰 갱신 |
-| POST | `/api/auth/google` | Google OAuth 로그인 |
-| POST | `/api/auth/logout` | 로그아웃 (쿠키 제거) |
+**핵심 구성 요소:**
 
-출처: `services-spring/auth-service/src/main/java/com/tiketi/authservice/controller/AuthController.java:27-108`
+| 구성 요소 | 역할 | 소스 참조 |
+|-----------|------|-----------|
+| `QueueService` | 대기열 입/퇴장, 상태 조회, 폴링 간격 계산 | `queue-service/.../service/QueueService.java:22` |
+| `AdmissionWorkerService` | 스케줄러 기반 배치 입장 처리, stale 사용자 정리 | `queue-service/.../service/AdmissionWorkerService.java:14` |
+| `SqsPublisher` | SQS FIFO 입장 이벤트 발행 | `queue-service/.../service/SqsPublisher.java:15` |
+| `QueueController` | REST API 엔드포인트 | `queue-service/.../controller/QueueController.java:17` |
 
-### 1.2 회원가입 흐름
-
-1. 이메일 중복 검사 수행
-2. 비밀번호를 `PasswordEncoder`로 해시 처리
-3. `UserEntity` 생성 및 저장
-4. Access Token + Refresh Token 생성
-5. 쿠키에 토큰 설정 후 `AuthResponse` 반환 (HTTP 201)
+**임계값 기반 입장 제어:**
 
 ```java
-// 이메일 중복 검사
-userRepository.findByEmail(request.email()).ifPresent(user -> {
-    throw new ApiException("Email already exists");
-});
-
-// 비밀번호 해시 처리
-user.setPasswordHash(passwordEncoder.encode(request.password()));
-
-// 토큰 발급
-String token = jwtService.generateToken(saved);
-String refreshToken = jwtService.generateRefreshToken(saved);
+// QueueService.java:45-46
+@Value("${QUEUE_THRESHOLD:1000}") int threshold,
+@Value("${QUEUE_ACTIVE_TTL_SECONDS:600}") int activeTtlSeconds,
 ```
+> 참조: `queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:45-46`
 
-출처: `services-spring/auth-service/src/main/java/com/tiketi/authservice/service/AuthService.java:60-77`
+`QUEUE_THRESHOLD`는 동시에 활성 상태로 허용하는 최대 사용자 수를 정의한다. 기본값은 1000이며, 이 임계값에 도달하면 이후 사용자는 대기열에 배치된다.
 
-### 1.3 로그인 흐름
+### 1.2 Redis 데이터 구조
 
-1. 이메일로 사용자 조회 (실패 시 "Invalid email or password")
-2. 비밀번호 해시 비교 (`passwordEncoder.matches`)
-3. Access Token + Refresh Token 생성
-4. 쿠키에 토큰 설정 후 응답
+시스템은 5가지 Redis 키 패턴을 사용한다.
 
-출처: `services-spring/auth-service/src/main/java/com/tiketi/authservice/service/AuthService.java:79-102`
+**1) Active Users ZSET: `active:{eventId}`**
 
-### 1.4 JWT 토큰 구조
-
-**설정값:**
-- Access Token 만료: `1800`초 (30분, 기본값)
-- Refresh Token 만료: `604800`초 (7일, 기본값)
-- 서명 알고리즘: HMAC-SHA (최소 32바이트 키 필수)
-
-출처: `services-spring/auth-service/src/main/resources/application.yml:47-52`
-
-**Access Token 클레임:**
+활성 사용자를 관리하며, score 값으로 **만료 타임스탬프**(expiry timestamp)를 사용한다.
 
 ```java
-Jwts.builder()
-    .subject(user.getId().toString())
-    .claim("userId", user.getId().toString())
-    .claim("email", user.getEmail())
-    .claim("role", user.getRole().name())
-    .claim("type", "access")
-    .issuedAt(now)
-    .expiration(expiry)
-    .signWith(signingKey())
-    .compact();
-```
-
-출처: `services-spring/auth-service/src/main/java/com/tiketi/authservice/security/JwtService.java:27-42`
-
-**Refresh Token 클레임:**
-
-```java
-Jwts.builder()
-    .subject(user.getId().toString())
-    .claim("userId", user.getId().toString())
-    .claim("type", "refresh")
-    .issuedAt(now)
-    .expiration(expiry)
-    .signWith(signingKey())
-    .compact();
-```
-
-출처: `services-spring/auth-service/src/main/java/com/tiketi/authservice/security/JwtService.java:44-57`
-
-**서명 키 생성:** Base64 디코딩을 시도하고, 실패 시 원시 바이트로 폴백한다. 32바이트 미만이면 예외를 발생시킨다.
-
-출처: `services-spring/auth-service/src/main/java/com/tiketi/authservice/security/JwtService.java:80-92`
-
-### 1.5 토큰 갱신 흐름
-
-1. `refresh_token` 쿠키 또는 요청 본문에서 Refresh Token 추출
-2. `validateRefreshToken`으로 토큰 파싱 및 `type=refresh` 검증
-3. `userId` 클레임으로 사용자 조회
-4. 새로운 Access Token + Refresh Token 발급 (토큰 로테이션)
-
-```java
-Claims claims = jwtService.validateRefreshToken(refreshTokenValue);
-String userId = claims.get("userId", String.class);
-UserEntity user = userRepository.findById(UUID.fromString(userId))
-    .orElseThrow(() -> new ApiException("User not found"));
-String newAccessToken = jwtService.generateToken(user);
-String newRefreshToken = jwtService.generateRefreshToken(user);
-```
-
-출처: `services-spring/auth-service/src/main/java/com/tiketi/authservice/service/AuthService.java:104-124`
-
-### 1.6 Google OAuth 흐름
-
-1. 클라이언트에서 Google ID Token (`credential`) 전달
-2. `GoogleIdTokenVerifier`로 토큰 검증 (audience: `GOOGLE_CLIENT_ID`)
-3. Google 프로필에서 이메일, 이름, 프로필 사진 추출
-4. 이메일로 기존 사용자 조회:
-   - 없으면 신규 생성 (`passwordHash = "OAUTH_USER_NO_PASSWORD"`)
-   - 있으면 `googleId` 연결
-5. JWT 토큰 발급 및 쿠키 설정
-
-출처: `services-spring/auth-service/src/main/java/com/tiketi/authservice/service/AuthService.java:167-228`
-
----
-
-## 2. 예약 시스템 (Ticket Service - port 3002)
-
-좌석 예약은 동시성 문제를 해결하기 위해 3단계 잠금(Three-Phase Locking) 전략을 사용한다.
-
-### 2.1 3단계 좌석 잠금 메커니즘
-
-#### Phase 1: Redis Lua Script - 분산 잠금 획득 (Fencing Token 포함)
-
-Redis에서 원자적으로 좌석 상태를 확인하고 잠금을 획득한다. Fencing Token은 단조 증가(monotonically increasing) 카운터로, ABA 문제를 방지한다.
-
-```lua
--- KEYS[1] = seat:{eventId}:{seatId}      (HASH: status, userId, token, heldAt)
--- KEYS[2] = seat:{eventId}:{seatId}:token_seq  (fencing token counter)
--- ARGV[1] = userId
--- ARGV[2] = ttl (seconds)
-
-local seatKey = KEYS[1]
-local tokenSeqKey = KEYS[2]
-local userId = ARGV[1]
-local ttl = tonumber(ARGV[2])
-
--- 1. Check current status
-local status = redis.call('HGET', seatKey, 'status')
-if status == 'HELD' or status == 'CONFIRMED' then
-    local currentUser = redis.call('HGET', seatKey, 'userId')
-    if currentUser == userId then
-        -- Same user re-selecting: extend TTL and return existing token
-        redis.call('EXPIRE', seatKey, ttl)
-        local existingToken = redis.call('HGET', seatKey, 'token')
-        return {1, existingToken}
-    end
-    return {0, '-1'}  -- Failure: seat taken by another user
-end
-
--- 2. Generate monotonically increasing fencing token
-local token = redis.call('INCR', tokenSeqKey)
-
--- 3. Atomic state transition: AVAILABLE -> HELD
-redis.call('HMSET', seatKey,
-    'status', 'HELD',
-    'userId', userId,
-    'token', token,
-    'heldAt', tostring(redis.call('TIME')[1])
-)
-redis.call('EXPIRE', seatKey, ttl)
-
-return {1, token}
-```
-
-출처: `services-spring/ticket-service/src/main/resources/redis/seat_lock_acquire.lua:1-36`
-
-**Redis 키 구조:**
-- 좌석 잠금 키: `seat:{eventId}:{seatId}` (Hash: status, userId, token, heldAt)
-- 토큰 시퀀스 키: `seat:{eventId}:{seatId}:token_seq` (정수 카운터)
-- 잠금 TTL: 기본 300초 (`SEAT_LOCK_TTL_SECONDS`)
-
-출처: `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/domain/seat/service/SeatLockService.java:30-31, 110-112`
-
-#### Phase 2: SELECT FOR UPDATE - 데이터베이스 비관적 잠금
-
-Redis 잠금 획득 후, DB에서 `SELECT FOR UPDATE`로 행 수준 잠금을 건다. 좌석 상태가 `available`인지 재확인한다.
-
-```java
-// Phase 2: DB lock with optimistic locking (version check)
-List<Map<String, Object>> seats = namedParameterJdbcTemplate.queryForList("""
-    SELECT id, seat_label, price, status, version
-    FROM seats
-    WHERE id IN (:seatIds) AND event_id = :eventId
-    FOR UPDATE
-    """, new MapSqlParameterSource()
-    .addValue("seatIds", request.seatIds())
-    .addValue("eventId", request.eventId()));
-```
-
-출처: `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/domain/reservation/service/ReservationService.java:79-86`
-
-#### Phase 3: Optimistic Lock - 버전 기반 동시 수정 감지
-
-`version` 컬럼을 사용하여 동시 수정을 감지한다. `WHERE version = ?` 조건이 실패하면 (updated == 0) 동시성 충돌로 판단한다.
-
-```java
-// Phase 3: Update seats with version increment and fencing token
-int updated = jdbcTemplate.update("""
-    UPDATE seats
-    SET status = 'locked', version = version + 1,
-        fencing_token = ?, locked_by = CAST(? AS UUID), updated_at = NOW()
-    WHERE id = ? AND version = ?
-    """, fencingToken, userId, seat.get("id"), currentVersion);
-
-if (updated == 0) {
-    releaseLocks(request.eventId(), request.seatIds(), userId, lockResults);
-    throw new ResponseStatusException(HttpStatus.CONFLICT, "Seat modified concurrently");
+// QueueService.java:301-304
+private void addActiveUser(UUID eventId, String userId) {
+    long expiryScore = System.currentTimeMillis() + (activeTtlSeconds * 1000L);
+    redisTemplate.opsForZSet().add(activeKey(eventId), userId, expiryScore);
+    touchActiveUser(eventId, userId);
 }
 ```
+> 참조: `queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:301-304`
 
-출처: `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/domain/reservation/service/ReservationService.java:104-120`
-
-### 2.2 잠금 해제 (Release) Lua Script
-
-사용자 ID와 Fencing Token이 모두 일치해야만 잠금을 해제한다.
-
-```lua
--- KEYS[1] = seat:{eventId}:{seatId}
--- ARGV[1] = userId
--- ARGV[2] = token
-
-local currentUserId = redis.call('HGET', seatKey, 'userId')
-local currentToken = redis.call('HGET', seatKey, 'token')
-
--- Only release if same user and same token
-if currentUserId ~= userId or currentToken ~= token then
-    return 0
-end
-
-redis.call('DEL', seatKey)
-return 1
-```
-
-출처: `services-spring/ticket-service/src/main/resources/redis/seat_lock_release.lua:1-18`
-
-### 2.3 결제 검증 (Payment Verify) Lua Script
-
-결제 처리 시 좌석 잠금의 유효성을 확인하고, 상태를 `CONFIRMED`로 전환하여 결제 중 잠금 해제를 방지한다.
-
-```lua
--- KEYS[1] = seat:{eventId}:{seatId}
--- ARGV[1] = userId
--- ARGV[2] = token
-
-local currentUserId = redis.call('HGET', seatKey, 'userId')
-local currentToken = redis.call('HGET', seatKey, 'token')
-
--- Verify both user and fencing token
-if currentUserId ~= userId or currentToken ~= token then
-    return 0  -- Failed: lock expired or stolen
-end
-
--- Mark as CONFIRMED (prevents release while payment processes)
-redis.call('HSET', seatKey, 'status', 'CONFIRMED')
-return 1
-```
-
-출처: `services-spring/ticket-service/src/main/resources/redis/payment_verify.lua:1-19`
-
-### 2.4 예약 생성 흐름
-
-1. 좌석 수 검증 (최대 1석: `MAX_SEATS_PER_RESERVATION = 1`)
-2. Phase 1~3 좌석 잠금 수행
-3. 총 금액 계산
-4. 예약 번호 생성 (`TK{timestamp}-{uuid8}`)
-5. `reservations` 테이블에 INSERT (상태: `pending`, 만료: 5분)
-6. `reservation_items` 테이블에 좌석 정보 INSERT
-7. Fencing Token 포함하여 응답 반환
-
-출처: `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/domain/reservation/service/ReservationService.java:52-151`
-
-### 2.5 예약 확정 (결제 완료 후)
-
-`confirmReservationPayment` 메서드에서 다음을 수행한다:
-
-1. 예약의 좌석별 Redis Fencing Token 검증 (`verifyForPayment`)
-2. 예약 상태를 `confirmed`, 결제 상태를 `completed`로 변경
-3. 좌석 상태를 `reserved`로 변경
-4. Redis 좌석 잠금 정리 (`cleanupLock`)
-5. 아티스트 멤버십 포인트 적립 (100포인트, `TICKET_PURCHASE`)
-
-출처: `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/domain/reservation/service/ReservationService.java:362-431`
-
-### 2.6 예약 취소 흐름
-
-1. 예약 조회 및 `FOR UPDATE` 잠금
-2. 이미 취소된 예약인지 확인
-3. 티켓 타입의 `available_quantity` 복원
-4. 좌석 상태를 `available`로 변경 + Redis 잠금 정리
-5. 예약 상태를 `cancelled`, 결제 상태를 `refund_requested`로 변경
-6. `ReservationCancelledEvent` Kafka 이벤트 발행 (결제 서비스에서 실제 환불 처리)
-
-출처: `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/domain/reservation/service/ReservationService.java:453-504`
-
----
-
-## 3. 결제 시스템 (Payment Service - port 3003)
-
-결제 서비스는 Toss Payments 연동을 통한 결제 처리와 환불을 담당한다. 예약, 양도, 멤버십 세 가지 결제 유형을 지원한다.
-
-### 3.1 API 엔드포인트
-
-| 메서드 | 경로 | 설명 |
-|--------|------|------|
-| POST | `/api/payments/prepare` | 결제 준비 |
-| POST | `/api/payments/confirm` | 결제 승인 (Toss) |
-| POST | `/api/payments/process` | 즉시 결제 처리 |
-| GET | `/api/payments/order/{orderId}` | 주문별 결제 조회 |
-| POST | `/api/payments/{paymentKey}/cancel` | 결제 취소/환불 |
-| GET | `/api/payments/user/me` | 내 결제 내역 조회 |
-
-출처: `services-spring/payment-service/src/main/java/com/tiketi/paymentservice/controller/PaymentController.java:22-90`
-
-### 3.2 결제 흐름: Prepare -> Confirm -> Complete
-
-#### 3.2.1 Prepare (결제 준비)
-
-1. `paymentType`에 따라 검증 대상 결정:
-   - `reservation`: Ticket Service에 예약 검증 요청
-   - `transfer`: Ticket Service에 양도 검증 요청
-   - `membership`: Ticket Service에 멤버십 검증 요청
-2. 요청 금액과 검증된 금액 비교 (불일치 시 400 에러)
-3. 기존 결제 중복 확인 (이미 `confirmed`면 에러, `pending`이면 기존 `orderId` 반환)
-4. 주문 번호 생성 (`ORD_{timestamp}_{uuid8}`)
-5. `payments` 테이블에 INSERT (상태: `pending`)
-6. Toss 클라이언트 키와 함께 응답 반환
+현재 활성 사용자 수를 조회할 때는 현재 시각 이후의 score만 카운트하여 만료된 항목을 자동 제외한다.
 
 ```java
-String orderId = "ORD_" + System.currentTimeMillis() + "_"
-    + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+// QueueService.java:295-298
+private int getCurrentUsers(UUID eventId) {
+    Long count = redisTemplate.opsForZSet().count(activeKey(eventId),
+        System.currentTimeMillis(), Double.POSITIVE_INFINITY);
+    return count == null ? 0 : count.intValue();
+}
 ```
+> 참조: `queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:295-298`
 
-출처: `services-spring/payment-service/src/main/java/com/tiketi/paymentservice/service/PaymentService.java:44-114`
+**2) Queue ZSET: `queue:{eventId}`**
 
-#### 3.2.2 Confirm (결제 승인)
-
-1. `orderId`로 결제 조회 (`FOR UPDATE`)
-2. 사용자 소유권 및 금액 일치 검증
-3. 결제 유형이 `reservation`이면 예약 재검증
-4. 결제 상태를 `confirmed`로, `toss_status`를 `DONE`으로 변경
-5. `completeByType`으로 유형별 완료 처리
-6. `PaymentConfirmedEvent` Kafka 이벤트 발행
-
-출처: `services-spring/payment-service/src/main/java/com/tiketi/paymentservice/service/PaymentService.java:116-169`
-
-#### 3.2.3 Process (즉시 결제)
-
-Toss Payments를 거치지 않는 간편 결제 처리 경로이다. Prepare + Confirm을 하나의 요청으로 수행한다.
-
-1. 유형별 금액 검증
-2. 멱등성 확인 (이미 `confirmed`된 결제가 있으면 그대로 반환)
-3. 결제 레코드 생성 (상태: 바로 `confirmed`)
-4. `completeByType`으로 유형별 완료 처리 + Kafka 이벤트 발행
-
-출처: `services-spring/payment-service/src/main/java/com/tiketi/paymentservice/service/PaymentService.java:246-337`
-
-### 3.3 환불 흐름
-
-1. `paymentKey`로 결제 조회 (`FOR UPDATE`)
-2. 사용자 소유권 확인
-3. 상태가 `confirmed`인 경우에만 환불 가능
-4. 결제 상태를 `refunded`로 변경, 환불 금액/사유/시간 기록
-5. `PaymentRefundedEvent` Kafka 이벤트 발행
+대기열 사용자를 관리하며, score 값으로 **진입 타임스탬프**(join timestamp)를 사용한다. score가 낮을수록 먼저 입장한 사용자이므로 FIFO 순서가 보장된다.
 
 ```java
-jdbcTemplate.update("""
-    UPDATE payments
-    SET status = 'refunded', refund_amount = amount,
-        refund_reason = ?, refunded_at = NOW(), updated_at = NOW()
-    WHERE id = ?
-    """, reason, payment.get("id"));
+// QueueService.java:329-332
+private void addToQueue(UUID eventId, String userId) {
+    redisTemplate.opsForZSet().add(queueKey(eventId), userId, System.currentTimeMillis());
+    touchQueueUser(eventId, userId);
+}
 ```
+> 참조: `queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:329-332`
 
-출처: `services-spring/payment-service/src/main/java/com/tiketi/paymentservice/service/PaymentService.java:190-224`
+**3) Heartbeat ZSET: `queue:seen:{eventId}` / `active:seen:{eventId}`**
 
-### 3.4 Kafka 이벤트
-
-- **`PaymentConfirmedEvent`**: 결제 승인 시 발행. 포함 필드: paymentId, orderId, userId, reservationId, referenceId, paymentType, amount, paymentMethod, timestamp
-- **`PaymentRefundedEvent`**: 환불 시 발행. 포함 필드: paymentId, orderId, userId, reservationId, transferId, paymentType, amount, reason, timestamp
-
-출처: `services-spring/payment-service/src/main/java/com/tiketi/paymentservice/service/PaymentService.java:350-353, 219-221`
-
----
-
-## 4. 대기열 시스템 (Queue Service - port 3007) -- Virtual Waiting Room
-
-대기열 서비스는 이벤트별 가상 대기실을 운영하며, Redis ZSET 기반의 순서 관리와 활성 사용자 추적을 수행한다.
-
-### 4.1 API 엔드포인트
-
-| 메서드 | 경로 | 설명 |
-|--------|------|------|
-| POST | `/api/queue/check/{eventId}` | 대기열 진입/상태 확인 |
-| GET | `/api/queue/status/{eventId}` | 대기 상태 조회 |
-| POST | `/api/queue/heartbeat/{eventId}` | 하트비트 (활성 유지) |
-| POST | `/api/queue/leave/{eventId}` | 대기열 이탈 |
-| GET | `/api/queue/admin/{eventId}` | 관리자 대기열 정보 (관리자 전용) |
-| POST | `/api/queue/admin/clear/{eventId}` | 대기열 초기화 (관리자 전용) |
-
-출처: `services-spring/queue-service/src/main/java/com/tiketi/queueservice/controller/QueueController.java:17-80`
-
-### 4.2 Redis ZSET 대기열 구조
-
-**키 설계:**
-
-| 키 패턴 | 타입 | 용도 | Score |
-|---------|------|------|-------|
-| `queue:{eventId}` | ZSET | 대기열 (순서 관리) | `System.currentTimeMillis()` (진입 시각) |
-| `active:{eventId}` | ZSET | 활성 사용자 | 만료 타임스탬프 (currentTime + TTL) |
-| `queue:seen:{eventId}` | ZSET | 대기열 하트비트 | 최근 확인 시각 |
-| `active:seen:{eventId}` | ZSET | 활성 사용자 하트비트 | 최근 확인 시각 |
-| `queue:active-events` | SET | 활성 이벤트 목록 | - |
-
-출처: `services-spring/queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:271-285`
-
-### 4.3 대기열 진입 로직 (`check`)
-
-```
-사용자 요청
-  |
-  +-- 이미 대기열에 있는가? --> YES --> 터치 + 대기 응답 반환
-  |
-  +-- 활성 사용자인가? --> YES --> 터치 + 활성 응답 반환 (entryToken 포함)
-  |
-  +-- 대기열 크기 > 0 OR 현재 활성 사용자 >= threshold?
-  |     |
-  |     +-- YES --> 대기열에 추가 --> 대기 응답 반환
-  |     |
-  |     +-- NO --> 활성 사용자로 추가 --> 활성 응답 반환 (entryToken 포함)
-```
-
-출처: `services-spring/queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:63-92`
-
-**활성 사용자 판정:** ZSET의 score(만료 타임스탬프)가 현재 시간보다 큰 경우에만 활성으로 판단한다.
+사용자의 마지막 활동 시각을 추적한다. 일정 시간 이상 heartbeat가 없는 사용자는 stale로 판정하여 정리한다.
 
 ```java
-Double score = redisTemplate.opsForZSet().score(activeKey(eventId), userId);
-if (score == null) return false;
-return score > System.currentTimeMillis();
+// QueueService.java:341-346
+private void touchQueueUser(UUID eventId, String userId) {
+    try {
+        redisTemplate.opsForZSet().add(queueSeenKey(eventId), userId, System.currentTimeMillis());
+    } catch (Exception ignored) {
+    }
+}
 ```
-
-출처: `services-spring/queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:289-298`
-
-**활성 사용자 수 조회:** `ZCOUNT`를 사용하여 현재 시간 이후의 score를 가진 멤버 수를 집계한다.
+> 참조: `queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:341-346`
 
 ```java
-Long count = redisTemplate.opsForZSet().count(activeKey(eventId),
-    System.currentTimeMillis(), Double.POSITIVE_INFINITY);
+// QueueService.java:348-355
+private void touchActiveUser(UUID eventId, String userId) {
+    try {
+        redisTemplate.opsForZSet().add(activeSeenKey(eventId), userId, System.currentTimeMillis());
+        long newExpiry = System.currentTimeMillis() + (activeTtlSeconds * 1000L);
+        redisTemplate.opsForZSet().add(activeKey(eventId), userId, newExpiry);
+    } catch (Exception ignored) {
+    }
+}
 ```
+> 참조: `queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:348-355`
 
-출처: `services-spring/queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:300-309`
+**4) Active Events Set: `queue:active-events`**
 
-### 4.4 Entry Token (진입 토큰) 생성
-
-활성 사용자에게 JWT 기반 진입 토큰을 발급한다. 이 토큰은 실제 예약 페이지 접근 권한으로 사용된다.
+Redis `KEYS` 명령어 사용을 회피하기 위한 SET 자료구조로, 현재 대기열이 활성화된 이벤트 ID를 저장한다.
 
 ```java
+// QueueService.java:262-267
+private void trackActiveEvent(UUID eventId) {
+    try {
+        redisTemplate.opsForSet().add("queue:active-events", eventId.toString());
+    } catch (Exception ignored) {
+    }
+}
+```
+> 참조: `queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:262-267`
+
+**5) TTL 설정**
+
+| 설정 키 | 기본값 | 용도 |
+|---------|--------|------|
+| `QUEUE_ACTIVE_TTL_SECONDS` | 600초 (10분) | 활성 사용자 만료 시간 |
+| `QUEUE_SEEN_TTL_SECONDS` | 600초 (10분) | Heartbeat stale 판정 기준 |
+| `QUEUE_THRESHOLD` | 1000 | 최대 동시 활성 사용자 수 |
+
+> 참조: `queue-service/src/main/java/com/tiketi/queueservice/service/AdmissionWorkerService.java:32-34`
+
+### 1.3 입장 흐름 (check 엔드포인트)
+
+`POST /api/queue/check/{eventId}` 엔드포인트가 대기열 입장의 핵심 흐름을 처리한다.
+
+> 참조: `queue-service/src/main/java/com/tiketi/queueservice/controller/QueueController.java:27-34`
+
+`QueueService.check()` 메서드의 전체 분기 로직은 다음과 같다.
+
+```java
+// QueueService.java:60-91
+public Map<String, Object> check(UUID eventId, String userId) {
+    Map<String, Object> eventInfo = ticketInternalClient.getEventQueueInfo(eventId);
+
+    if (isInQueue(eventId, userId)) {
+        touchQueueUser(eventId, userId);
+        int position = getQueuePosition(eventId, userId);
+        int queueSize = getQueueSize(eventId);
+        return buildQueuedResponse(position, queueSize, eventInfo, eventId);
+    }
+
+    if (isActiveUser(eventId, userId)) {
+        touchActiveUser(eventId, userId);
+        return buildActiveResponse(eventInfo, eventId, userId);
+    }
+
+    int currentUsers = getCurrentUsers(eventId);
+    int queueSize = getQueueSize(eventId);
+
+    if (queueSize > 0 || currentUsers >= threshold) {
+        addToQueue(eventId, userId);
+        trackActiveEvent(eventId);
+        queueMetrics.recordQueueJoined();
+        int position = getQueuePosition(eventId, userId);
+        queueSize = getQueueSize(eventId);
+        return buildQueuedResponse(position, queueSize, eventInfo, eventId);
+    }
+
+    addActiveUser(eventId, userId);
+    trackActiveEvent(eventId);
+    queueMetrics.recordQueueAdmitted();
+    return buildActiveResponse(eventInfo, eventId, userId);
+}
+```
+> 참조: `queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:60-91`
+
+**분기 흐름 상세:**
+
+| 조건 | 처리 | 반환 상태 |
+|------|------|-----------|
+| 이미 대기열에 있는 경우 | heartbeat 갱신 + 현재 위치 반환 | `queued: true` |
+| 이미 활성 사용자인 경우 | TTL 연장 + entryToken 발급 | `queued: false, status: active` |
+| `queueSize > 0` 또는 `currentUsers >= threshold` | 대기열에 추가 | `queued: true` |
+| 임계값 미만, 대기열 비어있음 | 즉시 입장 (active ZSET에 추가) | `queued: false, status: active` |
+
+입장 허용 시 `buildActiveResponse()`에서 entryToken을 생성하고 SQS에 입장 이벤트를 발행한다.
+
+```java
+// QueueService.java:197-213
+private Map<String, Object> buildActiveResponse(Map<String, Object> eventInfo, UUID eventId, String userId) {
+    String entryToken = generateEntryToken(eventId.toString(), userId);
+    // ...
+    sqsPublisher.publishAdmission(eventId, userId, entryToken);
+    return result;
+}
+```
+> 참조: `queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:197-213`
+
+### 1.4 동적 폴링 간격
+
+클라이언트의 폴링 빈도를 대기열 위치에 따라 동적으로 조절하여 서버 부하를 최적화한다.
+
+```java
+// QueueService.java:231-238
+private int calculateNextPoll(int position) {
+    if (position <= 0) return 3;
+    if (position <= 1000) return 1;
+    if (position <= 5000) return 5;
+    if (position <= 10000) return 10;
+    if (position <= 100000) return 30;
+    return 60;
+}
+```
+> 참조: `queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:231-238`
+
+| 대기열 위치 | 폴링 간격(초) | 설계 의도 |
+|------------|--------------|-----------|
+| <= 0 (활성) | 3 | 활성 상태 유지 확인 |
+| <= 1,000 | 1 | 곧 입장할 사용자에게 실시간 업데이트 |
+| <= 5,000 | 5 | 적절한 반응성 유지 |
+| <= 10,000 | 10 | 부하 절감 시작 |
+| <= 100,000 | 30 | 대규모 대기열 부하 관리 |
+| > 100,000 | 60 | 최소 폴링으로 서버 보호 |
+
+### 1.5 대기 시간 추정
+
+처리량 슬라이딩 윈도우(1분 기반)를 활용하여 예상 대기 시간을 계산한다.
+
+```java
+// QueueService.java:36-38
+private final AtomicLong recentAdmissions = new AtomicLong(0);
+private final AtomicLong throughputWindowStart = new AtomicLong(System.currentTimeMillis());
+private static final long THROUGHPUT_WINDOW_MS = 60_000; // 1-minute window
+```
+> 참조: `queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:36-38`
+
+```java
+// QueueService.java:242-258
+private int estimateWait(int position) {
+    if (position <= 0) return 0;
+
+    long now = System.currentTimeMillis();
+    long elapsed = now - throughputWindowStart.get();
+    long admissions = recentAdmissions.get();
+
+    if (elapsed < 5000 || admissions <= 0) {
+        return Math.max(position * 30, 0);  // Fallback: position x 30초
+    }
+
+    double throughputPerSecond = (admissions * 1000.0) / elapsed;
+    if (throughputPerSecond <= 0) {
+        return Math.max(position * 30, 0);
+    }
+    return (int) Math.ceil(position / throughputPerSecond);
+}
+```
+> 참조: `queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:242-258`
+
+**알고리즘:**
+
+1. 최근 1분간의 입장 허용 수(`recentAdmissions`)와 경과 시간(`elapsed`)으로 초당 처리량을 계산한다.
+2. `estimatedWait = position / admissions_per_second`
+3. 데이터가 부족할 경우(경과 시간 5초 미만 또는 입장 수 0) fallback으로 `position * 30초`를 반환한다.
+
+`AdmissionWorkerService`에서 배치 입장 처리 시 `recordAdmissions()`를 호출하여 처리량 데이터를 갱신한다.
+
+```java
+// QueueService.java:168-177
+public synchronized void recordAdmissions(int count) {
+    long now = System.currentTimeMillis();
+    long windowStart = throughputWindowStart.get();
+    if (now - windowStart > THROUGHPUT_WINDOW_MS) {
+        recentAdmissions.set(count);
+        throughputWindowStart.set(now);
+    } else {
+        recentAdmissions.addAndGet(count);
+    }
+}
+```
+> 참조: `queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:168-177`
+
+### 1.6 JWT 입장 토큰
+
+활성 사용자에게 발급되는 입장 토큰은 HMAC-SHA256으로 서명된 JWT이다.
+
+```java
+// QueueService.java:215-227
 private String generateEntryToken(String eventId, String userId) {
     long nowMs = System.currentTimeMillis();
     Date issuedAt = new Date(nowMs);
@@ -488,235 +294,1123 @@ private String generateEntryToken(String eventId, String userId) {
         .compact();
 }
 ```
+> 참조: `queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:215-227`
 
-출처: `services-spring/queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:215-227`
+**토큰 구성:**
 
-### 4.5 동적 폴링 간격 (Position 기반)
-
-대기열 위치에 따라 클라이언트의 폴링 주기를 동적으로 조정한다. 앞에 있을수록 자주, 뒤에 있을수록 느리게 폴링한다.
-
-| 대기열 위치 | 폴링 간격 (초) |
-|------------|--------------|
-| 0 이하 | 3 |
-| 1 - 1,000 | 1 |
-| 1,001 - 5,000 | 5 |
-| 5,001 - 10,000 | 10 |
-| 10,001 - 100,000 | 30 |
-| 100,001 이상 | 60 |
+| 필드 | 값 | 설명 |
+|------|---|------|
+| `subject` | eventId | 어떤 이벤트에 대한 입장인지 식별 |
+| `uid` (claim) | userId | 입장 허용된 사용자 식별 |
+| `iat` | 발급 시각 | 토큰 발급 시간 |
+| `exp` | 발급 시각 + TTL | 토큰 만료 시간 |
+| 서명 알고리즘 | HMAC-SHA256 | `entryTokenKey`로 서명 |
 
 ```java
-private int calculateNextPoll(int position) {
-    if (position <= 0) return 3;
-    if (position <= 1000) return 1;
-    if (position <= 5000) return 5;
-    if (position <= 10000) return 10;
-    if (position <= 100000) return 30;
-    return 60;
-}
+// QueueService.java:47-48
+@Value("${queue.entry-token.secret}") String entryTokenSecret,
+@Value("${queue.entry-token.ttl-seconds:600}") int entryTokenTtlSeconds
 ```
+> 참조: `queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:47-48`
 
-출처: `services-spring/queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:231-238`
+TTL 기본값은 600초(10분)이며, `queue.entry-token.ttl-seconds` 설정으로 변경 가능하다. 게이트웨이에서도 동일한 secret을 사용하여 토큰을 검증한다.
 
-### 4.6 대기 시간 추정 알고리즘 (Throughput 기반)
+> 참조: `gateway-service/src/main/resources/application.yml:106-107`
 
-최근 1분간의 입장 처리 속도(throughput)를 기반으로 예상 대기 시간을 계산한다.
+### 1.7 SQS FIFO 통합
+
+`SqsPublisher`는 입장 이벤트를 AWS SQS FIFO 큐에 fire-and-forget 방식으로 발행한다.
 
 ```java
-private int estimateWait(int position) {
-    if (position <= 0) return 0;
-
-    long now = System.currentTimeMillis();
-    long elapsed = now - throughputWindowStart.get();
-    long admissions = recentAdmissions.get();
-
-    // 데이터 부족 시 기본값: position * 30초
-    if (elapsed < 5000 || admissions <= 0) {
-        return Math.max(position * 30, 0);
+// SqsPublisher.java:38-68
+public void publishAdmission(UUID eventId, String userId, String entryToken) {
+    if (!enabled) {
+        return;  // SQS 비활성 시 조용히 스킵
     }
 
-    // throughput = 최근 입장 수 / 경과 시간(초)
-    double throughputPerSecond = (admissions * 1000.0) / elapsed;
-    if (throughputPerSecond <= 0) {
-        return Math.max(position * 30, 0);
+    try {
+        Map<String, Object> body = Map.of(
+                "action", "admitted",
+                "eventId", eventId.toString(),
+                "userId", userId,
+                "entryToken", entryToken,
+                "timestamp", System.currentTimeMillis()
+        );
+
+        String messageBody = objectMapper.writeValueAsString(body);
+        String deduplicationId = userId + ":" + eventId;
+
+        sqsClient.sendMessage(SendMessageRequest.builder()
+                .queueUrl(queueUrl)
+                .messageBody(messageBody)
+                .messageGroupId(eventId.toString())
+                .messageDeduplicationId(deduplicationId)
+                .build());
+    } catch (Exception e) {
+        log.error("SQS publish failed (fallback to Redis-only): user={} event={} error={}",
+                userId, eventId, e.getMessage());
     }
-    return (int) Math.ceil(position / throughputPerSecond);
 }
 ```
+> 참조: `queue-service/src/main/java/com/tiketi/queueservice/service/SqsPublisher.java:38-68`
 
-- **스루풋 윈도우**: 1분 (`THROUGHPUT_WINDOW_MS = 60_000`)
-- **입장 기록**: `AdmissionWorkerService`에서 `recordAdmissions(count)` 호출 시 갱신
-- **윈도우 리셋**: 1분 경과 시 카운터 초기화
+**FIFO 보장 메커니즘:**
 
-출처: `services-spring/queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:242-258`
+| 속성 | 값 | 목적 |
+|------|---|------|
+| `MessageGroupId` | `eventId` | 동일 이벤트 내 메시지 순서 보장 |
+| `MessageDeduplicationId` | `userId:eventId` | 5분 중복 방지 윈도우로 동일 사용자 중복 입장 방지 |
 
-### 4.7 인메모리 폴백 (ConcurrentHashMap)
-
-Redis 연결 실패 시 `ConcurrentHashMap` 기반의 인메모리 대기열로 폴백한다. 멀티 인스턴스 환경에서는 사용할 수 없다.
+**Fallback 전략:** SQS 전송 실패 시 예외를 로깅하고 Redis-only 모드로 동작한다. `enabled` 플래그가 `false`이거나 `sqsClient`가 null이면 SQS 발행을 건너뛴다.
 
 ```java
-private final ConcurrentMap<String, LinkedHashSet<String>> fallbackQueue = new ConcurrentHashMap<>();
-private final ConcurrentMap<String, Set<String>> fallbackActive = new ConcurrentHashMap<>();
+// SqsPublisher.java:24-32
+public SqsPublisher(
+        @org.springframework.lang.Nullable SqsClient sqsClient,
+        @Value("${aws.sqs.queue-url:}") String queueUrl,
+        @Value("${aws.sqs.enabled:false}") boolean enabled) {
+    this.sqsClient = sqsClient;
+    this.queueUrl = queueUrl;
+    this.objectMapper = new ObjectMapper();
+    this.enabled = enabled && sqsClient != null && !queueUrl.isBlank();
+}
 ```
+> 참조: `queue-service/src/main/java/com/tiketi/queueservice/service/SqsPublisher.java:24-32`
 
-모든 Redis 연산에서 `catch (Exception ex)` 블록으로 폴백이 구현되어 있으며, 경고 로그를 남긴다:
+SQS 클라이언트 Bean은 `aws.sqs.enabled=true`일 때만 생성된다.
 
-> "Redis unavailable - falling back to in-memory queue. This mode is NOT suitable for multi-instance deployment."
-
-출처: `services-spring/queue-service/src/main/java/com/tiketi/queueservice/service/QueueService.java:37-38, 294-297`
-
-### 4.8 설정값
-
-| 설정 | 환경변수 | 기본값 | 설명 |
-|------|---------|--------|------|
-| 임계치 | `QUEUE_THRESHOLD` | 1000 | 활성 사용자 최대 수 |
-| 활성 TTL | `QUEUE_ACTIVE_TTL_SECONDS` | 600 | 활성 사용자 만료 시간 (초) |
-| 입장 주기 | `QUEUE_ADMISSION_INTERVAL_MS` | 1000 | 입장 배치 실행 주기 (ms) |
-| 입장 배치 크기 | `QUEUE_ADMISSION_BATCH_SIZE` | 100 | 1회 입장 처리 수 |
-| 비활성 정리 주기 | `QUEUE_STALE_CLEANUP_INTERVAL_MS` | 30000 | 비활성 사용자 정리 주기 (ms) |
-| 진입 토큰 비밀키 | `QUEUE_ENTRY_TOKEN_SECRET` | (필수) | Entry Token 서명 키 |
-| 진입 토큰 TTL | `QUEUE_ENTRY_TOKEN_TTL_SECONDS` | 600 | Entry Token 만료 시간 (초) |
-
-출처: `services-spring/queue-service/src/main/resources/application.yml:37-45`
-
-### 4.9 프로덕션 Redis 클러스터 설정
-
-프로덕션 프로필(`prod`)에서는 Redis 클러스터 모드를 사용한다.
-
-```yaml
-spring:
-  config:
-    activate:
-      on-profile: prod
-  data:
-    redis:
-      cluster:
-        nodes:
-          - redis-cluster-0.redis-cluster:6379
-          - redis-cluster-1.redis-cluster:6379
-          - redis-cluster-2.redis-cluster:6379
-        max-redirects: 3
-      lettuce:
-        cluster:
-          refresh:
-            adaptive: true
-            period: 30s
+```java
+// SqsConfig.java:14
+@ConditionalOnProperty(name = "aws.sqs.enabled", havingValue = "true")
+public class SqsConfig {
 ```
+> 참조: `queue-service/src/main/java/com/tiketi/queueservice/config/SqsConfig.java:14`
 
-출처: `services-spring/queue-service/src/main/resources/application.yml:78-95`
+### 1.8 배치 입장 처리 (AdmissionWorkerService)
+
+`AdmissionWorkerService`는 스케줄러 기반으로 대기열에서 활성 상태로 사용자를 배치 이동시킨다.
+
+**입장 처리 (1초 주기):**
+
+```java
+// AdmissionWorkerService.java:47-48
+@Scheduled(fixedDelayString = "${queue.admission.interval-ms:1000}")
+public void admitUsers() {
+```
+> 참조: `queue-service/src/main/java/com/tiketi/queueservice/service/AdmissionWorkerService.java:47-48`
+
+Lua 스크립트(`admission_control.lua`)를 사용하여 원자적으로 배치 입장을 처리한다.
+
+```lua
+-- admission_control.lua:17-46
+-- 1. 만료된 활성 사용자 제거
+redis.call('ZREMRANGEBYSCORE', activeKey, '-inf', now)
+
+-- 2. 현재 활성 사용자 수 확인
+local activeCount = redis.call('ZCARD', activeKey)
+
+-- 3. 사용 가능한 슬롯 계산
+local available = maxActive - activeCount
+if available <= 0 then
+    return {0, activeCount}
+end
+
+local toAdmit = math.min(available, admitCount)
+
+-- 4. ZPOPMIN - 대기열에서 원자적으로 꺼내기
+local popped = redis.call('ZPOPMIN', queueKey, toAdmit)
+
+-- 5. 활성 ZSET에 추가
+for i = 1, #popped, 2 do
+    local userId = popped[i]
+    redis.call('ZADD', activeKey, now + activeTtlMs, userId)
+    redis.call('ZREM', queueSeenKey, userId)
+    admitted = admitted + 1
+end
+```
+> 참조: `queue-service/src/main/resources/redis/admission_control.lua:17-46`
+
+**Stale 사용자 정리 (30초 주기):**
+
+```java
+// AdmissionWorkerService.java:120-121
+@Scheduled(fixedDelayString = "${queue.stale-cleanup.interval-ms:30000}")
+public void cleanupStaleUsers() {
+```
+> 참조: `queue-service/src/main/java/com/tiketi/queueservice/service/AdmissionWorkerService.java:120-121`
+
+```lua
+-- stale_cleanup.lua:11-19
+local staleUsers = redis.call('ZRANGEBYSCORE', heartbeatKey,
+    '-inf', cutoff, 'LIMIT', 0, batchSize)
+
+if #staleUsers == 0 then
+    return {0}
+end
+
+redis.call('ZREM', heartbeatKey, unpack(staleUsers))
+redis.call('ZREM', queueKey, unpack(staleUsers))
+```
+> 참조: `queue-service/src/main/resources/redis/stale_cleanup.lua:11-19`
+
+배치 크기(기본 1000)로 나누어 처리하며, 배치 간 100ms 대기하여 Redis 부하를 분산한다.
+
+> 참조: `queue-service/src/main/java/com/tiketi/queueservice/service/AdmissionWorkerService.java:140-159`
 
 ---
 
-## 5. 멤버십 시스템
+## 2. 좌석 동시성 제어 (3-Layer Locking)
 
-멤버십 시스템은 아티스트별 구독 관리, 포인트 적립, 티어 산정을 담당한다. Ticket Service(port 3002) 내에 포함되어 있다.
+### 2.1 Layer 1: Redis Lua 분산 잠금 (Fencing Token)
 
-### 5.1 API 엔드포인트
+`SeatLockService`는 Redis Lua 스크립트를 사용하여 좌석별 분산 잠금을 관리한다.
 
-| 메서드 | 경로 | 설명 |
-|--------|------|------|
-| POST | `/api/memberships/subscribe` | 멤버십 구독 신청 |
-| GET | `/api/memberships/my` | 내 멤버십 목록 |
-| GET | `/api/memberships/my/{artistId}` | 특정 아티스트 멤버십 상세 |
-| GET | `/api/memberships/benefits/{artistId}` | 아티스트별 혜택 조회 |
+> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/seat/service/SeatLockService.java:13`
 
-출처: `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/domain/membership/controller/MembershipController.java:22-67`
-
-### 5.2 구독 흐름
-
-1. 아티스트 존재 및 `membership_price` 확인
-2. 기존 멤버십 확인:
-   - `active` 상태 -> 충돌 에러
-   - `pending` 상태 -> 기존 멤버십 ID 반환
-   - 만료/취소 -> 상태를 `pending`으로 변경
-3. 신규 멤버십 생성 (티어: `SILVER`, 포인트: 0, 상태: `pending`)
-4. 결제 완료 후 `activateMembership` 호출
-
-출처: `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/domain/membership/service/MembershipService.java:33-76`
-
-### 5.3 멤버십 활성화
-
-결제 완료 후 호출된다:
-
-1. 만료일 설정 (현재 + 1년)
-2. 상태를 `active`로, `joined_at` 기록
-3. 가입 보너스 포인트 적립 (`JOIN_BONUS_POINTS = 200`)
-   - 신규 가입: `MEMBERSHIP_JOIN` + "Welcome bonus for membership join"
-   - 갱신: `MEMBERSHIP_RENEW` + "Membership renewed"
+**Lua 스크립트 빈 등록:**
 
 ```java
-OffsetDateTime expiresAt = OffsetDateTime.now().plusYears(1);
-jdbcTemplate.update("""
-    UPDATE artist_memberships
-    SET status = 'active', expires_at = ?, joined_at = NOW(), updated_at = NOW()
-    WHERE id = ?
-    """, Timestamp.from(expiresAt.toInstant()), membershipId);
+// RedisConfig.java:14-17
+@Bean
+public DefaultRedisScript<List> seatLockAcquireScript() {
+    DefaultRedisScript<List> script = new DefaultRedisScript<>();
+    script.setScriptSource(new ResourceScriptSource(new ClassPathResource("redis/seat_lock_acquire.lua")));
+```
+> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/shared/config/RedisConfig.java:14-17`
+
+**키 구조:**
+
+```java
+// SeatLockService.java:110-112
+private String seatKey(UUID eventId, UUID seatId) {
+    return "seat:" + eventId + ":" + seatId;
+}
+```
+> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/seat/service/SeatLockService.java:110-112`
+
+- **좌석 HASH**: `seat:{eventId}:{seatId}` -- 필드: `status`, `userId`, `token`, `heldAt`
+- **펜싱 토큰 카운터**: `seat:{eventId}:{seatId}:token_seq` -- INCR로 단조 증가
+
+#### seat_lock_acquire.lua
+
+```lua
+-- seat_lock_acquire.lua (전체)
+-- KEYS[1] = seat:{eventId}:{seatId}      (HASH: status, userId, token, heldAt)
+-- KEYS[2] = seat:{eventId}:{seatId}:token_seq  (fencing token counter)
+-- ARGV[1] = userId
+-- ARGV[2] = ttl (seconds)
+
+local seatKey = KEYS[1]
+local tokenSeqKey = KEYS[2]
+local userId = ARGV[1]
+local ttl = tonumber(ARGV[2])
+
+-- 1. 현재 상태 확인
+local status = redis.call('HGET', seatKey, 'status')
+if status == 'HELD' or status == 'CONFIRMED' then
+    local currentUser = redis.call('HGET', seatKey, 'userId')
+    if currentUser == userId then
+        -- 동일 사용자 재진입: TTL 연장 + 기존 토큰 반환
+        redis.call('EXPIRE', seatKey, ttl)
+        local existingToken = redis.call('HGET', seatKey, 'token')
+        return {1, existingToken}
+    end
+    return {0, '-1'}  -- 실패: 타 사용자가 점유 중
+end
+
+-- 2. 단조 증가 펜싱 토큰 생성
+local token = redis.call('INCR', tokenSeqKey)
+
+-- 3. 원자적 상태 전이: AVAILABLE -> HELD
+redis.call('HMSET', seatKey,
+    'status', 'HELD',
+    'userId', userId,
+    'token', token,
+    'heldAt', tostring(redis.call('TIME')[1])
+)
+redis.call('EXPIRE', seatKey, ttl)
+
+return {1, token}
+```
+> 참조: `ticket-service/src/main/resources/redis/seat_lock_acquire.lua:1-36`
+
+**핵심 동작:**
+
+| 시나리오 | 동작 | 반환값 |
+|---------|------|--------|
+| 좌석 없음 (AVAILABLE) | HASH 생성, HELD 상태 설정, 펜싱 토큰 발급 | `{1, token}` |
+| 동일 사용자 재진입 | TTL 연장, 기존 토큰 반환 | `{1, existingToken}` |
+| 타 사용자 점유 중 | 거부 | `{0, -1}` |
+
+**TTL 설정:**
+
+```java
+// SeatLockService.java:30
+@Value("${SEAT_LOCK_TTL_SECONDS:300}") int seatLockTtlSeconds
+```
+> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/seat/service/SeatLockService.java:30`
+
+기본 300초(5분)이며, Redis EXPIRE 명령으로 자동 해제가 보장된다.
+
+**Java 측 잠금 획득:**
+
+```java
+// SeatLockService.java:39-63
+public SeatLockResult acquireLock(UUID eventId, UUID seatId, String userId) {
+    String seatKey = seatKey(eventId, seatId);
+    String tokenSeqKey = seatKey + ":token_seq";
+    try {
+        @SuppressWarnings("unchecked")
+        List<Object> result = redisTemplate.execute(
+            seatLockAcquireScript,
+            List.of(seatKey, tokenSeqKey),
+            userId,
+            String.valueOf(seatLockTtlSeconds)
+        );
+
+        if (result == null || result.size() < 2) {
+            return new SeatLockResult(false, -1);
+        }
+
+        long success = Long.parseLong(result.get(0).toString());
+        long token = Long.parseLong(result.get(1).toString());
+        return new SeatLockResult(success == 1, token);
+    } catch (Exception ex) {
+        log.error("Redis seat lock failed for {}: {}", seatKey, ex.getMessage());
+        return new SeatLockResult(false, -1);
+    }
+}
+```
+> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/seat/service/SeatLockService.java:39-63`
+
+반환 타입은 record 패턴을 사용한다.
+
+```java
+// SeatLockService.java:23
+public record SeatLockResult(boolean success, long fencingToken) {}
+```
+> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/seat/service/SeatLockService.java:23`
+
+#### seat_lock_release.lua
+
+```lua
+-- seat_lock_release.lua (전체)
+local currentUserId = redis.call('HGET', seatKey, 'userId')
+local currentToken = redis.call('HGET', seatKey, 'token')
+
+-- userId + token 동시 검증 후 해제
+if currentUserId ~= userId or currentToken ~= token then
+    return 0
+end
+
+redis.call('DEL', seatKey)
+return 1
+```
+> 참조: `ticket-service/src/main/resources/redis/seat_lock_release.lua:1-18`
+
+userId와 token을 모두 검증하여 잘못된 해제를 방지한다.
+
+#### payment_verify.lua
+
+```lua
+-- payment_verify.lua (전체)
+local currentUserId = redis.call('HGET', seatKey, 'userId')
+local currentToken = redis.call('HGET', seatKey, 'token')
+
+-- 사용자와 펜싱 토큰 동시 검증
+if currentUserId ~= userId or currentToken ~= token then
+    return 0  -- 실패: 잠금 만료 또는 탈취
+end
+
+-- CONFIRMED로 상태 변경 (결제 처리 중 해제 방지)
+redis.call('HSET', seatKey, 'status', 'CONFIRMED')
+return 1
+```
+> 참조: `ticket-service/src/main/resources/redis/payment_verify.lua:1-19`
+
+결제 확인 시점에 잠금이 여전히 유효한지 검증하고, 상태를 `CONFIRMED`로 변경하여 결제 처리 중 다른 사용자의 접근을 차단한다.
+
+### 2.2 Layer 2: DB 비관적 잠금 (FOR UPDATE)
+
+Redis 잠금 획득 후 DB 수준에서도 `SELECT ... FOR UPDATE`로 비관적 잠금을 건다.
+
+```java
+// ReservationService.java:92-99
+List<Map<String, Object>> seats = namedParameterJdbcTemplate.queryForList("""
+    SELECT id, seat_label, price, status, version
+    FROM seats
+    WHERE id IN (:seatIds) AND event_id = :eventId
+    FOR UPDATE
+    """, new MapSqlParameterSource()
+    .addValue("seatIds", request.seatIds())
+    .addValue("eventId", request.eventId()));
+```
+> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/reservation/service/ReservationService.java:92-99`
+
+DB 잠금 후 좌석 상태를 확인하고, `version` 필드를 사용한 낙관적 잠금을 추가로 적용한다.
+
+```java
+// ReservationService.java:117-133
+for (int i = 0; i < seats.size(); i++) {
+    Map<String, Object> seat = seats.get(i);
+    int currentVersion = ((Number) seat.get("version")).intValue();
+    long fencingToken = lockResults.get(i).fencingToken();
+
+    int updated = jdbcTemplate.update("""
+        UPDATE seats
+        SET status = 'locked', version = version + 1,
+            fencing_token = ?, locked_by = CAST(? AS UUID), updated_at = NOW()
+        WHERE id = ? AND version = ?
+        """, fencingToken, userId, seat.get("id"), currentVersion);
+
+    if (updated == 0) {
+        releaseLocks(request.eventId(), request.seatIds(), userId, lockResults);
+        throw new ResponseStatusException(HttpStatus.CONFLICT, "Seat modified concurrently");
+    }
+}
+```
+> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/reservation/service/ReservationService.java:117-133`
+
+`version` 필드를 `WHERE` 조건에 포함하여 동시 수정 감지(낙관적 잠금 폴백)를 수행하며, 업데이트 성공 시 `version + 1`로 증가시킨다. 펜싱 토큰도 DB에 기록하여 결제 시 검증에 사용한다.
+
+### 2.3 Layer 3: 멱등성 키
+
+`reservations` 테이블의 `idempotency_key` 컬럼으로 중복 예매를 방지한다.
+
+```java
+// ReservationService.java:62-69
+if (request.idempotencyKey() != null && !request.idempotencyKey().isBlank()) {
+    List<Map<String, Object>> existing = jdbcTemplate.queryForList(
+        "SELECT id, reservation_number, total_amount, status, payment_status, expires_at FROM reservations WHERE idempotency_key = ?",
+        request.idempotencyKey());
+    if (!existing.isEmpty()) {
+        return Map.of("message", "Seat reserved temporarily", "reservation", existing.getFirst());
+    }
+}
+```
+> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/reservation/service/ReservationService.java:62-69`
+
+동일한 `idempotency_key`로 재요청 시 기존 예매 정보를 그대로 반환하며, Redis 잠금이나 DB 잠금을 다시 시도하지 않는다. 네트워크 재시도, 중복 클릭 등으로 인한 이중 예매를 원천 차단한다.
+
+### 2.4 전체 잠금 흐름
+
+`reserveSeats()` 메서드의 전체 흐름은 다음과 같다.
+
+> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/reservation/service/ReservationService.java:56-167`
+
+```
+1. 멱등성 확인 (idempotency_key 조회)
+   └─ 기존 예매 존재 시 → 즉시 반환
+
+2. Phase 1: Redis Lua 잠금 획득 (좌석별)
+   ├─ seat_lock_acquire.lua 실행
+   ├─ 실패 시 → 이미 획득한 잠금 모두 해제 + CONFLICT 응답
+   └─ 성공 시 → fencingToken 수집
+
+3. Phase 2: DB FOR UPDATE 잠금
+   ├─ SELECT ... FOR UPDATE (비관적 잠금)
+   ├─ 좌석 상태 확인 (available인지 검증)
+   └─ UPDATE seats SET status='locked', version=version+1, fencing_token=?
+
+4. Phase 3: 예매 + 아이템 INSERT
+   ├─ INSERT INTO reservations (status='pending', expires_at=NOW()+5분)
+   └─ INSERT INTO reservation_items (좌석별)
+
+5. 응답 반환 (reservationId, fencingToken 포함)
+
+6. 실패 시: 모든 Redis 잠금 해제
 ```
 
-출처: `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/domain/membership/service/MembershipService.java:78-101`
+```java
+// ReservationService.java:169-174 (잠금 해제 헬퍼)
+private void releaseLocks(UUID eventId, List<UUID> seatIds, String userId,
+                           List<SeatLockService.SeatLockResult> lockResults) {
+    for (int i = 0; i < lockResults.size(); i++) {
+        seatLockService.releaseLock(eventId, seatIds.get(i), userId, lockResults.get(i).fencingToken());
+    }
+}
+```
+> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/reservation/service/ReservationService.java:169-174`
 
-### 5.4 티어 시스템
+---
 
-포인트 기반으로 유효 티어(effective tier)를 산정한다. 별도의 BRONZE 가입 티어는 없으며, 비회원을 BRONZE로 취급한다.
+## 3. 예매 플로우
 
-| 티어 | 포인트 임계치 | 선예매 단계 | 예매 수수료 | 양도 수수료 | 양도 접근 |
-|------|-------------|-----------|-----------|-----------|---------|
-| BRONZE (비회원) | - | 일반예매 | 0원 | - | 불가 |
-| SILVER | 0 이상 | 선예매 3 | 3,000원 | 10% | 가능 |
-| GOLD | 500 이상 | 선예매 2 | 2,000원 | 5% | 가능 |
-| DIAMOND | 1,500 이상 | 선예매 1 | 1,000원 | 5% | 가능 |
+### 3.1 전체 순서
+
+```
+클라이언트 → 게이트웨이(Rate Limit + VWR 토큰 검증) → ticket-service
+```
+
+게이트웨이에서 서비스별 Rate Limit을 적용한다.
+
+```yaml
+# gateway-service/src/main/resources/application.yml:115-119
+rate-limit:
+  auth-rpm: ${RATE_LIMIT_AUTH_RPM:60}
+  queue-rpm: ${RATE_LIMIT_QUEUE_RPM:120}
+  booking-rpm: ${RATE_LIMIT_BOOKING_RPM:30}
+  general-rpm: ${RATE_LIMIT_GENERAL_RPM:3000}
+```
+> 참조: `gateway-service/src/main/resources/application.yml:115-119`
+
+좌석 예매의 경우 `POST /api/seats/reserve` 엔드포인트를 통해 진입한다.
 
 ```java
+// SeatController.java:43-49
+@PostMapping("/reserve")
+public Map<String, Object> reserve(
+    HttpServletRequest request,
+    @Valid @RequestBody SeatReserveRequest body
+) {
+    AuthUser user = jwtTokenParser.requireUser(request);
+    return reservationService.reserveSeats(user.userId(), body);
+}
+```
+> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/seat/controller/SeatController.java:43-49`
+
+일반 예매의 경우 `POST /api/reservations` 엔드포인트를 사용한다.
+
+```java
+// ReservationController.java:30-37
+@PostMapping
+public Map<String, Object> create(
+    HttpServletRequest request,
+    @Valid @RequestBody CreateReservationRequest body
+) {
+    AuthUser user = jwtTokenParser.requireUser(request);
+    return reservationService.createReservation(user.userId(), body);
+}
+```
+> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/reservation/controller/ReservationController.java:30-37`
+
+### 3.2 ReservationService.reserveSeats() 상세
+
+`@Transactional`로 전체 과정을 단일 트랜잭션으로 처리한다. 앞서 2.4절에서 설명한 3-Layer Locking 흐름을 따르며, 최종적으로 예매 레코드가 `pending` 상태로 생성된다.
+
+```java
+// ReservationService.java:136-137
+int totalAmount = seats.stream().mapToInt(s -> ((Number) s.get("price")).intValue()).sum();
+OffsetDateTime expiresAt = OffsetDateTime.now().plusMinutes(5);
+```
+> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/reservation/service/ReservationService.java:136-137`
+
+예매 만료 시간은 생성 시점으로부터 **5분**이다. 좌석별 1석 제한이 적용된다.
+
+```java
+// ReservationService.java:35
+private static final int MAX_SEATS_PER_RESERVATION = 1;
+```
+> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/reservation/service/ReservationService.java:35`
+
+### 3.3 만료 처리: ReservationCleanupScheduler
+
+`ReservationCleanupScheduler`가 30초 주기로 만료된 pending 예매를 정리한다.
+
+```java
+// ReservationCleanupScheduler.java:35-36
+@Scheduled(fixedRateString = "${reservation.cleanup.interval-ms:30000}")
+@Transactional
+public void cleanupExpiredReservations() {
+```
+> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/scheduling/ReservationCleanupScheduler.java:35-36`
+
+**처리 흐름:**
+
+```java
+// ReservationCleanupScheduler.java:39-45
+List<Map<String, Object>> expired = jdbcTemplate.queryForList("""
+    SELECT id, event_id
+    FROM reservations
+    WHERE status = 'pending'
+      AND expires_at < NOW()
+    FOR UPDATE SKIP LOCKED
+    """);
+```
+> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/scheduling/ReservationCleanupScheduler.java:39-45`
+
+`FOR UPDATE SKIP LOCKED`를 사용하여 이미 다른 프로세스가 처리 중인 행은 건너뛰고 교착 상태를 방지한다.
+
+만료된 예매마다 다음 처리를 수행한다.
+
+```java
+// ReservationCleanupScheduler.java:62-89
+// 좌석: available로 복원, version 증가, fencing_token 초기화, Redis 잠금 해제
+if (seatId != null) {
+    jdbcTemplate.update("""
+        UPDATE seats SET status = 'available', version = version + 1,
+        fencing_token = 0, locked_by = NULL, updated_at = NOW()
+        WHERE id = ?
+        """, seatId);
+    seatLockService.cleanupLock(eventId, (UUID) seatId);
+}
+// 티켓 타입: 수량 복원
+if (ticketTypeId != null) {
+    jdbcTemplate.update(
+        "UPDATE ticket_types SET available_quantity = available_quantity + ? WHERE id = ?",
+        quantity, ticketTypeId);
+}
+// 예매 상태: expired로 변경
+jdbcTemplate.update(
+    "UPDATE reservations SET status = 'expired', updated_at = NOW() WHERE id = ?",
+    reservationId);
+```
+> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/scheduling/ReservationCleanupScheduler.java:62-89`
+
+### 3.4 예매 확인: PaymentEventConsumer
+
+Kafka `payment-events` 토픽을 구독하여 결제 확인 이벤트를 처리한다.
+
+```java
+// PaymentEventConsumer.java:49-50
+@KafkaListener(topics = "payment-events", groupId = "ticket-service-group")
+public void handlePaymentEvent(Map<String, Object> event) {
+```
+> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/messaging/PaymentEventConsumer.java:49-50`
+
+이벤트 타입별 분기 처리를 수행한다.
+
+```java
+// PaymentEventConsumer.java:60-69
+String type = str(event.get("type"));
+if ("PAYMENT_REFUNDED".equals(type)) {
+    handleRefund(event);
+} else if ("PAYMENT_CONFIRMED".equals(type)) {
+    String paymentType = str(event.get("paymentType"));
+    switch (paymentType != null ? paymentType : "reservation") {
+        case "transfer" -> handleTransferPayment(event);
+        case "membership" -> handleMembershipPayment(event);
+        default -> handleReservationPayment(event);
+    }
+}
+```
+> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/messaging/PaymentEventConsumer.java:60-69`
+
+일반 예매 결제 확인 시:
+
+```java
+// PaymentEventConsumer.java:95-116
+private void handleReservationPayment(Map<String, Object> event) {
+    UUID reservationId = uuid(event.get("reservationId"));
+    String paymentMethod = str(event.get("paymentMethod"));
+    // ...
+    reservationService.confirmReservationPayment(reservationId, paymentMethod);
+    metrics.recordReservationConfirmed();
+    // ...
+    ticketEventProducer.publishReservationConfirmed(new ReservationConfirmedEvent(...));
+}
+```
+> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/messaging/PaymentEventConsumer.java:95-116`
+
+**멱등성 보장:** `processed_events` 테이블을 사용하여 중복 이벤트 처리를 방지한다.
+
+```java
+// PaymentEventConsumer.java:209-219
+private boolean isAlreadyProcessed(String eventKey) {
+    try {
+        Integer count = jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM processed_events WHERE event_key = ? AND consumer_group = ?",
+            Integer.class, eventKey, CONSUMER_GROUP);
+        return count != null && count > 0;
+    } catch (Exception e) {
+        return false;
+    }
+}
+```
+> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/messaging/PaymentEventConsumer.java:209-219`
+
+### 3.5 결제 확인 시 잠금 검증
+
+`confirmReservationPayment()`에서 결제 확인 전 Redis 펜싱 토큰을 재검증한다.
+
+```java
+// ReservationService.java:391-418
+public void confirmReservationPayment(UUID reservationId, String paymentMethod) {
+    // 예매 + 이벤트 정보 조회
+    List<Map<String, Object>> resRows = jdbcTemplate.queryForList(
+        "SELECT r.user_id, r.event_id, e.artist_id FROM reservations r JOIN events e ON r.event_id = e.id WHERE r.id = ?",
+        reservationId);
+
+    // 좌석별 펜싱 토큰 검증
+    for (Map<String, Object> item : items) {
+        if (seatIdObj != null && tokenObj != null) {
+            UUID seatId = (UUID) seatIdObj;
+            long token = ((Number) tokenObj).longValue();
+            if (token > 0 && !seatLockService.verifyForPayment(eventId, seatId, userId, token)) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Seat lock expired or stolen. Please try again.");
+            }
+        }
+    }
+
+    // 예매 상태 업데이트: pending -> confirmed
+    int updated = jdbcTemplate.update("""
+        UPDATE reservations
+        SET status = 'confirmed', payment_status = 'completed', payment_method = ?, updated_at = NOW()
+        WHERE id = ? AND status = 'pending'
+        """, paymentMethod, reservationId);
+}
+```
+> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/reservation/service/ReservationService.java:391-418`
+
+---
+
+## 4. 결제 시스템
+
+### 4.1 결제 유형
+
+`PaymentService`는 세 가지 결제 유형을 지원한다.
+
+```java
+// PaymentService.java:57-77
+switch (paymentType) {
+    case "transfer" -> {
+        // 양도 구매 결제
+        Map<String, Object> transfer = ticketInternalClient.validateTransfer(referenceId, userId);
+        validatedAmount = requiredInt(transfer, "total_amount", "totalAmount");
+    }
+    case "membership" -> {
+        // 멤버십 구독 결제
+        Map<String, Object> membership = ticketInternalClient.validateMembership(referenceId, userId);
+        validatedAmount = requiredInt(membership, "total_amount", "totalAmount");
+    }
+    default -> {
+        // 일반 예매 결제 (reservation)
+        Map<String, Object> reservation = ticketInternalClient.validateReservation(request.reservationId(), userId);
+        validatedAmount = requiredInt(reservation, "total_amount", "totalAmount");
+    }
+}
+```
+> 참조: `payment-service/src/main/java/com/tiketi/paymentservice/service/PaymentService.java:57-77`
+
+| 유형 | `paymentType` 값 | 참조 ID 필드 | 검증 대상 |
+|------|------------------|-------------|-----------|
+| 일반 예매 | `reservation` (기본값) | `reservationId` | 예매 상태 + 금액 |
+| 양도 구매 | `transfer` | `referenceId` | 양도 상태 + 금액 |
+| 멤버십 구독 | `membership` | `referenceId` | 멤버십 상태 + 가격 |
+
+### 4.2 결제 흐름
+
+**Step 1: 결제 초기화 (prepare)**
+
+```
+POST /api/payments/prepare
+```
+> 참조: `payment-service/src/main/java/com/tiketi/paymentservice/controller/PaymentController.java:33-40`
+
+```java
+// PaymentService.java:49-118
+@Transactional
+public Map<String, Object> prepare(String userId, PreparePaymentRequest request) {
+    // 1. 결제 유형별 ticket-service 내부 API로 유효성 검증
+    // 2. 금액 불일치 확인
+    if (validatedAmount != request.amount()) {
+        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Amount mismatch");
+    }
+    // 3. 기존 결제 중복 확인
+    // 4. 주문번호 생성 + payments 레코드 INSERT (status: pending)
+    String orderId = "ORD_" + System.currentTimeMillis() + "_" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+    // 5. orderId, amount, clientKey 반환 (프론트엔드 Toss Payments SDK용)
+    return Map.of("orderId", orderId, "amount", request.amount(), "clientKey", tossClientKey);
+}
+```
+> 참조: `payment-service/src/main/java/com/tiketi/paymentservice/service/PaymentService.java:49-118`
+
+PreparePaymentRequest DTO:
+
+```java
+// PreparePaymentRequest.java:7-12
+public record PreparePaymentRequest(
+    UUID reservationId,
+    @NotNull @Min(1) Integer amount,
+    String paymentType,
+    UUID referenceId
+) {}
+```
+> 참조: `payment-service/src/main/java/com/tiketi/paymentservice/dto/PreparePaymentRequest.java:7-12`
+
+**Step 2: 결제 확인 (confirm)**
+
+```
+POST /api/payments/confirm
+```
+> 참조: `payment-service/src/main/java/com/tiketi/paymentservice/controller/PaymentController.java:42-49`
+
+```java
+// PaymentService.java:120-173
+@Transactional
+public Map<String, Object> confirm(String userId, ConfirmPaymentRequest request) {
+    // 1. order_id로 결제 조회 (FOR UPDATE)
+    List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+        SELECT id, reservation_id, user_id, amount, status, payment_type, reference_id
+        FROM payments
+        WHERE order_id = ?
+        FOR UPDATE
+        """, request.orderId());
+
+    // 2. 소유자 확인, 금액 확인, 이미 확인된 결제 방어
+    // 3. payments 테이블 업데이트 (status: confirmed, toss_status: DONE)
+    jdbcTemplate.update("""
+        UPDATE payments
+        SET payment_key = ?, method = 'toss', status = 'confirmed',
+            toss_status = 'DONE', toss_approved_at = ?, updated_at = NOW()
+        WHERE id = ?
+        """, request.paymentKey(), now, payment.get("id"));
+
+    // 4. 유형별 완료 처리
+    completeByType(paymentType, payment, userId, "toss");
+}
+```
+> 참조: `payment-service/src/main/java/com/tiketi/paymentservice/service/PaymentService.java:120-173`
+
+**Step 3: 유형별 완료 처리 (completeByType)**
+
+동기 확인(RestClient)과 비동기 확인(Kafka)을 이중으로 수행한다.
+
+```java
+// PaymentService.java:343-376
+private void completeByType(String paymentType, Map<String, Object> payment, String userId, String paymentMethod) {
+    // 동기 확인: ticket-service 내부 API 직접 호출
+    try {
+        switch (paymentType) {
+            case "transfer" -> {
+                if (referenceId != null) ticketInternalClient.confirmTransfer(referenceId, userId, paymentMethod);
+            }
+            case "membership" -> {
+                if (referenceId != null) ticketInternalClient.activateMembership(referenceId);
+            }
+            default -> {
+                if (reservationId != null) ticketInternalClient.confirmReservation(reservationId, paymentMethod);
+            }
+        }
+    } catch (Exception e) {
+        log.warn("Synchronous confirmation failed for {} {}, falling back to Kafka: {}",
+            paymentType, reservationId != null ? reservationId : referenceId, e.getMessage());
+    }
+
+    // 비동기 확인: Kafka payment-events 토픽 발행
+    paymentEventProducer.publish(new PaymentConfirmedEvent(
+        paymentId, orderId, userId, reservationId, referenceId,
+        paymentType, amount, paymentMethod, Instant.now()));
+}
+```
+> 참조: `payment-service/src/main/java/com/tiketi/paymentservice/service/PaymentService.java:343-376`
+
+동기 호출이 실패해도 Kafka 이벤트를 통해 eventual consistency를 보장한다. 또한 5분 주기의 `PaymentReconciliationScheduler`가 추가 안전망으로 동작한다.
+
+```java
+// PaymentReconciliationScheduler.java:36-37
+@Scheduled(fixedRateString = "${reservation.reconciliation.interval-ms:300000}")
+public void reconcilePendingReservations() {
+```
+> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/scheduling/PaymentReconciliationScheduler.java:36-37`
+
+### 4.3 결제 상태 관리
+
+**payments 테이블 주요 필드:**
+
+```java
+// PaymentService.java:110-115
+jdbcTemplate.update("""
+    INSERT INTO payments (reservation_id, user_id, event_id, order_id, amount, status, payment_type, reference_id)
+    VALUES (CAST(? AS UUID), CAST(? AS UUID), CAST(? AS UUID), ?, ?, 'pending', ?, CAST(? AS UUID))
+    """,
+    reservationIdText, userId, eventIdText, orderId, request.amount(),
+    paymentType, referenceId != null ? referenceId.toString() : null);
+```
+> 참조: `payment-service/src/main/java/com/tiketi/paymentservice/service/PaymentService.java:110-115`
+
+| 필드 | 용도 |
+|------|------|
+| `order_id` | `ORD_` 접두사 + 타임스탬프 + UUID 조각 (고유 주문번호) |
+| `payment_key` | Toss Payments에서 발급한 결제 키 |
+| `status` | `pending` -> `confirmed` -> `refunded` |
+| `toss_status` | Toss Payments API 응답 상태 (`DONE` 등) |
+| `payment_type` | `reservation` / `transfer` / `membership` |
+| `reference_id` | 양도 또는 멤버십 참조 ID |
+
+**Kafka 이벤트 구조 (PaymentConfirmedEvent):**
+
+```java
+// PaymentConfirmedEvent.java:6-24
+public record PaymentConfirmedEvent(
+    String type,           // "PAYMENT_CONFIRMED"
+    UUID paymentId,
+    String orderId,
+    String userId,
+    UUID reservationId,
+    UUID referenceId,
+    String paymentType,    // reservation / transfer / membership
+    int amount,
+    String paymentMethod,
+    Instant timestamp
+) {
+    public PaymentConfirmedEvent(UUID paymentId, String orderId, String userId,
+                                  UUID reservationId, UUID referenceId, String paymentType,
+                                  int amount, String paymentMethod, Instant timestamp) {
+        this("PAYMENT_CONFIRMED", paymentId, orderId, userId, reservationId,
+             referenceId, paymentType, amount, paymentMethod, timestamp);
+    }
+}
+```
+> 참조: `payment-service/src/main/java/com/tiketi/paymentservice/messaging/event/PaymentConfirmedEvent.java:6-24`
+
+**결제 취소/환불:**
+
+```java
+// PaymentService.java:194-228
+@Transactional
+public Map<String, Object> cancel(String userId, String paymentKey, CancelPaymentRequest request) {
+    // payment_key로 조회 (FOR UPDATE)
+    // confirmed 상태인지 확인
+    // status: refunded, refund_amount, refund_reason 업데이트
+    // Kafka PaymentRefundedEvent 발행
+    paymentEventProducer.publishRefund(new PaymentRefundedEvent(...));
+}
+```
+> 참조: `payment-service/src/main/java/com/tiketi/paymentservice/service/PaymentService.java:194-228`
+
+---
+
+## 5. 양도 (Ticket Transfer) 시스템
+
+### 5.1 양도 등록
+
+`POST /api/transfers` 엔드포인트를 통해 양도 등록을 수행한다.
+
+> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/transfer/controller/TransferController.java:29-37`
+
+```java
+// TransferService.java:30-97
+@Transactional
+public Map<String, Object> createListing(String userId, UUID reservationId) {
+```
+> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/transfer/service/TransferService.java:30-97`
+
+**검증 단계:**
+
+1. **예매 소유자 확인:** 예매의 `user_id`가 요청자와 일치해야 한다.
+
+```java
+// TransferService.java:45-46
+if (!String.valueOf(res.get("user_id")).equals(userId)) {
+    throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not your reservation");
+}
+```
+> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/transfer/service/TransferService.java:45-46`
+
+2. **confirmed 상태 확인:** 결제가 완료된 예매만 양도 가능하다.
+
+```java
+// TransferService.java:48-49
+if (!"confirmed".equals(String.valueOf(res.get("status")))) {
+    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Only confirmed reservations can be transferred");
+}
+```
+> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/transfer/service/TransferService.java:48-49`
+
+3. **기존 등록 중복 확인:**
+
+```java
+// TransferService.java:56-61
+Integer existingCount = jdbcTemplate.queryForObject(
+    "SELECT COUNT(*) FROM ticket_transfers WHERE reservation_id = ? AND status = 'listed'",
+    Integer.class, reservationId);
+if (existingCount != null && existingCount > 0) {
+    throw new ResponseStatusException(HttpStatus.CONFLICT, "Transfer already listed for this reservation");
+}
+```
+> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/transfer/service/TransferService.java:56-61`
+
+4. **멤버십 등급별 수수료 계산:**
+
+```java
+// TransferService.java:64-79
+int feePercent = 10;
+if (artistId != null) {
+    List<Map<String, Object>> memberRows = jdbcTemplate.queryForList(
+        "SELECT id, tier, points, status FROM artist_memberships WHERE user_id = CAST(? AS UUID) AND artist_id = ? AND status = 'active'",
+        userId, artistId);
+    if (memberRows.isEmpty()) {
+        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Active membership required for this artist");
+    }
+
+    int points = ((Number) memberRows.getFirst().get("points")).intValue();
+    String effectiveTier = computeEffectiveTier(points);
+
+    if ("BRONZE".equals(effectiveTier)) {
+        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Bronze tier cannot transfer tickets");
+    }
+    feePercent = "SILVER".equals(effectiveTier) ? 10 : 5;
+}
+```
+> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/transfer/service/TransferService.java:64-79`
+
+| 등급 | 양도 가능 여부 | 수수료 |
+|------|-------------|--------|
+| BRONZE | 불가 (403 Forbidden) | - |
+| SILVER | 가능 | 10% |
+| GOLD | 가능 | 5% |
+| DIAMOND | 가능 | 5% |
+
+**가격 산출:**
+
+```java
+// TransferService.java:82-84
+int originalPrice = ((Number) res.get("total_amount")).intValue();
+int transferFee = originalPrice * feePercent / 100;
+int totalPrice = originalPrice + transferFee;
+```
+> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/transfer/service/TransferService.java:82-84`
+
+### 5.2 양도 구매
+
+양도 구매는 결제 시스템을 통해 처리되며, `PAYMENT_CONFIRMED` 이벤트의 `paymentType: "transfer"`로 분기된다.
+
+**구매 검증:**
+
+```java
+// TransferService.java:200-235
+public Map<String, Object> validateForPurchase(UUID transferId, String buyerId) {
+    // listed 상태 확인
+    if (!"listed".equals(String.valueOf(transfer.get("status")))) {
+        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Transfer is no longer available");
+    }
+    // 자기 양도 구매 방지
+    if (String.valueOf(transfer.get("seller_id")).equals(buyerId)) {
+        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot buy your own transfer");
+    }
+    // 구매자 멤버십 확인
+    if (artistId != null) {
+        Integer memberCount = jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM artist_memberships WHERE user_id = CAST(? AS UUID) AND artist_id = ? AND status = 'active'",
+            Integer.class, buyerId, artistId);
+        if (memberCount == null || memberCount == 0) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Buyer must have active membership for this artist");
+        }
+    }
+}
+```
+> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/transfer/service/TransferService.java:200-235`
+
+**구매 완료 (completePurchase):**
+
+```java
+// TransferService.java:237-263
+@Transactional
+public void completePurchase(UUID transferId, String buyerId, String paymentMethod) {
+    // FOR UPDATE 잠금
+    List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+        "SELECT id, reservation_id, seller_id, status FROM ticket_transfers WHERE id = ? FOR UPDATE", transferId);
+
+    // listed 상태 확인
+    UUID reservationId = (UUID) transfer.get("reservation_id");
+
+    // 소유권 이전: reservation의 user_id를 구매자로 변경
+    jdbcTemplate.update(
+        "UPDATE reservations SET user_id = CAST(? AS UUID), updated_at = NOW() WHERE id = ?",
+        buyerId, reservationId);
+
+    // 양도 상태: completed로 변경
+    jdbcTemplate.update("""
+        UPDATE ticket_transfers
+        SET status = 'completed', buyer_id = CAST(? AS UUID), completed_at = NOW(), updated_at = NOW()
+        WHERE id = ?
+        """, buyerId, transferId);
+}
+```
+> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/transfer/service/TransferService.java:237-263`
+
+**Kafka 이벤트 발행:**
+
+양도 완료 시 `PaymentEventConsumer`에서 `TransferCompletedEvent`를 발행한다.
+
+```java
+// PaymentEventConsumer.java:149-150
+ticketEventProducer.publishTransferCompleted(new TransferCompletedEvent(
+    referenceId, reservationId, sellerId, userId, amount, Instant.now()));
+```
+> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/messaging/PaymentEventConsumer.java:149-150`
+
+---
+
+## 6. 멤버십 & 포인트 시스템
+
+### 6.1 멤버십 구조
+
+멤버십은 **아티스트별 구독** 모델을 따른다. `artist_memberships` 테이블에 사용자-아티스트 관계가 저장된다.
+
+```java
+// MembershipService.java:65-71
+Map<String, Object> row = jdbcTemplate.queryForList("""
+    INSERT INTO artist_memberships (user_id, artist_id, tier, points, status, expires_at)
+    VALUES (CAST(? AS UUID), ?, 'SILVER', 0, 'pending', NOW())
+    RETURNING *
+    """, userId, artistId)
+    .stream().findFirst()
+    .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Failed to create membership"));
+```
+> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/membership/service/MembershipService.java:65-71`
+
+신규 가입 시 `tier: SILVER`, `points: 0`, `status: pending`으로 생성된다.
+
+**등급 체계:**
+
+```java
+// MembershipService.java:23-25
 private static final int GOLD_THRESHOLD = 500;
 private static final int DIAMOND_THRESHOLD = 1500;
+private static final int JOIN_BONUS_POINTS = 200;
+```
+> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/membership/service/MembershipService.java:23-25`
 
+```java
+// MembershipService.java:246-250
 private String computeEffectiveTier(int points) {
     if (points >= DIAMOND_THRESHOLD) return "DIAMOND";
     if (points >= GOLD_THRESHOLD) return "GOLD";
     return "SILVER";
 }
 ```
+> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/membership/service/MembershipService.java:246-250`
 
-출처: `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/domain/membership/service/MembershipService.java:23-25, 246-250`
+| 등급 | 포인트 범위 | 승급 임계값 |
+|------|-----------|------------|
+| SILVER | 0 ~ 499 | - (기본) |
+| GOLD | 500 ~ 1,499 | 500점 |
+| DIAMOND | 1,500+ | 1,500점 |
 
-### 5.5 티어별 혜택 상세
+**상태 전이:** `pending` -> `active` (결제 완료 후)
 
 ```java
-case "DIAMOND" -> {
-    benefits.put("preSalePhase", 1);
-    benefits.put("preSaleLabel", "선예매 1");
-    benefits.put("bookingFeeSurcharge", 1000);
-    benefits.put("transferAccess", true);
-    benefits.put("transferFeePercent", 5);
-}
-case "GOLD" -> {
-    benefits.put("preSalePhase", 2);
-    benefits.put("preSaleLabel", "선예매 2");
-    benefits.put("bookingFeeSurcharge", 2000);
-    benefits.put("transferAccess", true);
-    benefits.put("transferFeePercent", 5);
-}
-case "SILVER" -> {
-    benefits.put("preSalePhase", 3);
-    benefits.put("preSaleLabel", "선예매 3");
-    benefits.put("bookingFeeSurcharge", 3000);
-    benefits.put("transferAccess", true);
-    benefits.put("transferFeePercent", 10);
+// MembershipService.java:78-101
+@Transactional
+public void activateMembership(UUID membershipId) {
+    // pending 상태 확인
+    // active로 변경, 만료일을 1년 후로 설정
+    OffsetDateTime expiresAt = OffsetDateTime.now().plusYears(1);
+    jdbcTemplate.update("""
+        UPDATE artist_memberships
+        SET status = 'active', expires_at = ?, joined_at = NOW(), updated_at = NOW()
+        WHERE id = ?
+        """, Timestamp.from(expiresAt.toInstant()), membershipId);
+
+    // 가입 보너스 포인트 200점 지급
+    addPoints(membershipId, actionType, JOIN_BONUS_POINTS, desc, null);
 }
 ```
+> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/membership/service/MembershipService.java:78-101`
 
-출처: `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/domain/membership/service/MembershipService.java:252-289`
+### 6.2 포인트 적립
 
-### 5.6 포인트 적립 시스템
-
-포인트는 `membership_point_logs` 테이블에 기록되며, `artist_memberships.points`를 누적 갱신한다. 포인트 변경 시 자동으로 티어를 재산정한다.
+**포인트 적립 메커니즘:**
 
 ```java
-public void addPoints(UUID membershipId, String actionType, int points,
-                      String description, UUID referenceId) {
-    // 1. 포인트 로그 INSERT
+// MembershipService.java:202-223
+@Transactional
+public void addPoints(UUID membershipId, String actionType, int points, String description, UUID referenceId) {
+    // 1. membership_point_logs에 이력 기록
     jdbcTemplate.update("""
-        INSERT INTO membership_point_logs
-        (membership_id, action_type, points, description, reference_id)
+        INSERT INTO membership_point_logs (membership_id, action_type, points, description, reference_id)
         VALUES (?, ?, ?, ?, ?)
         """, membershipId, actionType, points, description, referenceId);
 
@@ -725,7 +1419,7 @@ public void addPoints(UUID membershipId, String actionType, int points,
         "UPDATE artist_memberships SET points = points + ?, updated_at = NOW() WHERE id = ?",
         points, membershipId);
 
-    // 3. 티어 재산정
+    // 3. 등급 재계산 및 업데이트
     Integer totalPoints = jdbcTemplate.queryForObject(
         "SELECT points FROM artist_memberships WHERE id = ?", Integer.class, membershipId);
     String newTier = computeEffectiveTier(totalPoints);
@@ -734,269 +1428,277 @@ public void addPoints(UUID membershipId, String actionType, int points,
         newTier, membershipId);
 }
 ```
+> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/membership/service/MembershipService.java:202-223`
 
-**포인트 적립 액션 유형:**
-
-| 액션 | 포인트 | 설명 |
-|------|--------|------|
-| `MEMBERSHIP_JOIN` | 200 | 멤버십 가입 보너스 |
-| `MEMBERSHIP_RENEW` | 200 | 멤버십 갱신 보너스 |
-| `TICKET_PURCHASE` | 100 | 티켓 구매 |
-| `COMMUNITY_POST` | 30 | 커뮤니티 글 작성 |
-| `COMMUNITY_COMMENT` | 10 | 커뮤니티 댓글 작성 |
-
-출처: `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/domain/membership/service/MembershipService.java:202-223`
-
----
-
-## 6. 양도 시스템
-
-양도 시스템은 확정된 예약 티켓의 마켓플레이스 등록, 구매, 소유권 이전을 처리한다. Ticket Service(port 3002) 내에 포함되어 있다.
-
-### 6.1 API 엔드포인트
-
-| 메서드 | 경로 | 설명 |
-|--------|------|------|
-| POST | `/api/transfers` | 양도 등록 |
-| GET | `/api/transfers` | 양도 가능 목록 조회 (artistId 필터 가능) |
-| GET | `/api/transfers/my` | 내 양도 목록 |
-| GET | `/api/transfers/{id}` | 양도 상세 |
-| POST | `/api/transfers/{id}/cancel` | 양도 취소 |
-
-출처: `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/domain/transfer/controller/TransferController.java:19-76`
-
-### 6.2 양도 등록 흐름 (`createListing`)
-
-1. 예약 검증: `confirmed` 상태이고 본인 소유인지 확인
-2. 중복 등록 확인: 동일 예약에 `listed` 상태의 양도가 있는지 검사
-3. 멤버십 검증 및 수수료 계산:
-   - 아티스트가 있는 경우 활성 멤버십 필수
-   - BRONZE 티어는 양도 불가
-   - SILVER 티어: 수수료 10%
-   - GOLD/DIAMOND 티어: 수수료 5%
-4. 총 금액 산정: `원가 + (원가 * 수수료율 / 100)`
-5. `ticket_transfers` 테이블에 INSERT (상태: `listed`)
+**특정 아티스트 멤버십에 포인트 부여:**
 
 ```java
-int feePercent = 10;
-if (artistId != null) {
-    // ...멤버십 조회...
-    if ("BRONZE".equals(effectiveTier)) {
-        throw new ResponseStatusException(HttpStatus.FORBIDDEN,
-            "Bronze tier cannot transfer tickets");
+// MembershipService.java:225-235
+public void awardPointsForArtist(String userId, UUID artistId, String actionType, int points, String description, UUID referenceId) {
+    List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+        "SELECT id FROM artist_memberships WHERE user_id = CAST(? AS UUID) AND artist_id = ? AND status = 'active'",
+        userId, artistId);
+    if (rows.isEmpty()) {
+        log.debug("No active membership for user {} artist {}, skipping points", userId, artistId);
+        return;
     }
-    feePercent = "SILVER".equals(effectiveTier) ? 10 : 5;
-}
-
-int originalPrice = ((Number) res.get("total_amount")).intValue();
-int transferFee = originalPrice * feePercent / 100;
-int totalPrice = originalPrice + transferFee;
-```
-
-출처: `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/domain/transfer/service/TransferService.java:29-97`
-
-### 6.3 양도 구매 검증 (`validateForPurchase`)
-
-1. 양도 상태가 `listed`인지 확인
-2. 자기 양도 구매 방지 (seller_id != buyerId)
-3. 구매자도 해당 아티스트의 활성 멤버십 필요
-4. 결제 서비스에 `total_amount` 반환
-
-출처: `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/domain/transfer/service/TransferService.java:200-235`
-
-### 6.4 양도 완료 흐름 (`completePurchase`)
-
-결제 완료 후 호출된다:
-
-1. 양도 레코드 조회 (`FOR UPDATE`)
-2. 상태가 `listed`인지 재확인
-3. 예약의 `user_id`를 구매자로 변경 (소유권 이전)
-4. 양도 상태를 `completed`로 변경, `buyer_id`와 `completed_at` 기록
-
-```java
-jdbcTemplate.update(
-    "UPDATE reservations SET user_id = CAST(? AS UUID), updated_at = NOW() WHERE id = ?",
-    buyerId, reservationId);
-
-jdbcTemplate.update("""
-    UPDATE ticket_transfers
-    SET status = 'completed', buyer_id = CAST(? AS UUID),
-        completed_at = NOW(), updated_at = NOW()
-    WHERE id = ?
-    """, buyerId, transferId);
-```
-
-출처: `services-spring/ticket-service/src/main/java/com/tiketi/ticketservice/domain/transfer/service/TransferService.java:237-263`
-
----
-
-## 7. 커뮤니티 시스템 (Community Service - port 3006)
-
-커뮤니티 서비스는 아티스트별 게시판의 게시글/댓글 CRUD와 멤버십 포인트 연동을 처리한다.
-
-### 7.1 게시글 (Post) 서비스
-
-**CRUD 작업:**
-
-| 작업 | 메서드 | 설명 |
-|------|--------|------|
-| 목록 조회 | `list(artistId, page, limit)` | 아티스트별 필터, 고정글 우선 정렬, 페이지네이션 |
-| 상세 조회 | `detail(id)` | 조회수 증가 + 게시글 반환 |
-| 작성 | `create(request, user)` | 게시글 생성 + 30포인트 적립 |
-| 수정 | `update(id, request, user)` | 작성자만 수정 가능 |
-| 삭제 | `delete(id, user)` | 작성자 또는 관리자만 삭제 가능 |
-
-출처: `services-spring/community-service/src/main/java/com/tiketi/communityservice/service/PostService.java:20-163`
-
-**게시글 작성 시 포인트 적립:**
-
-```java
-private static final int POST_POINTS = 30;
-
-// 게시글 생성 후
-ticketInternalClient.awardMembershipPoints(
-    user.userId(), request.artistId(),
-    "COMMUNITY_POST", POST_POINTS,
-    "커뮤니티 글 작성", postId);
-```
-
-출처: `services-spring/community-service/src/main/java/com/tiketi/communityservice/service/PostService.java:23, 112-117`
-
-**정렬 방식:** 고정글(`is_pinned DESC`) 우선, 그다음 최신순(`created_at DESC`)
-
-출처: `services-spring/community-service/src/main/java/com/tiketi/communityservice/service/PostService.java:48`
-
-### 7.2 댓글 (Comment) 서비스
-
-**CRUD 작업:**
-
-| 작업 | 메서드 | 설명 |
-|------|--------|------|
-| 목록 조회 | `listByPost(postId, page, limit)` | 게시글별 댓글, 작성순 정렬, 페이지네이션 |
-| 작성 | `create(postId, request, user)` | 댓글 생성 + comment_count 증가 + 10포인트 적립 |
-| 삭제 | `delete(commentId, user)` | 작성자/관리자 삭제 + comment_count 감소 |
-
-출처: `services-spring/community-service/src/main/java/com/tiketi/communityservice/service/CommentService.java:19-123`
-
-**댓글 작성 시 포인트 적립:**
-
-```java
-private static final int COMMENT_POINTS = 10;
-
-// 댓글 생성 후
-ticketInternalClient.awardMembershipPoints(
-    user.userId(), artistId,
-    "COMMUNITY_COMMENT", COMMENT_POINTS,
-    "커뮤니티 댓글 작성", commentId);
-```
-
-출처: `services-spring/community-service/src/main/java/com/tiketi/communityservice/service/CommentService.java:22, 91-96`
-
-**댓글 수 관리:** 댓글 생성 시 `comment_count + 1`, 삭제 시 `GREATEST(comment_count - 1, 0)`으로 음수 방지
-
-출처: `services-spring/community-service/src/main/java/com/tiketi/communityservice/service/CommentService.java:85-86, 118-119`
-
----
-
-## 8. 통계 시스템 (Stats Service - port 3004)
-
-통계 서비스는 Kafka 이벤트를 소비하여 통계 데이터를 집계하고, 관리자 대시보드를 위한 분석 API를 제공한다.
-
-### 8.1 분석 엔드포인트 (14개, 모두 관리자 전용)
-
-| 메서드 | 경로 | 파라미터 | 설명 |
-|--------|------|---------|------|
-| GET | `/api/stats/overview` | - | 전체 개요 |
-| GET | `/api/stats/daily` | `days=30` | 일별 통계 |
-| GET | `/api/stats/events` | `limit=10, sortBy=revenue` | 이벤트별 통계 |
-| GET | `/api/stats/events/{eventId}` | - | 개별 이벤트 통계 |
-| GET | `/api/stats/payments` | - | 결제 통계 |
-| GET | `/api/stats/revenue` | `period=daily, days=30` | 매출 통계 |
-| GET | `/api/stats/users` | `days=30` | 사용자 통계 |
-| GET | `/api/stats/hourly-traffic` | `days=7` | 시간대별 트래픽 |
-| GET | `/api/stats/conversion` | `days=30` | 전환율 통계 |
-| GET | `/api/stats/cancellations` | `days=30` | 취소 통계 |
-| GET | `/api/stats/realtime` | - | 실시간 통계 |
-| GET | `/api/stats/seat-preferences` | `eventId` (선택) | 좌석 선호도 |
-| GET | `/api/stats/user-behavior` | `days=30` | 사용자 행동 분석 |
-| GET | `/api/stats/performance` | - | 시스템 성능 통계 |
-
-모든 엔드포인트는 `jwtTokenParser.requireAdmin(authorization)`으로 관리자 권한을 검증한다.
-
-출처: `services-spring/stats-service/src/main/java/com/tiketi/statsservice/controller/StatsController.java:16-144`
-
-### 8.2 Kafka 이벤트 소비
-
-세 개의 Kafka 토픽을 소비한다. Consumer Group: `stats-service-group`
-
-#### 8.2.1 `payment-events` 토픽
-
-이벤트 유형 판별 순서:
-1. `type` 필드로 명시적 판별 (`PAYMENT_REFUNDED`, `PAYMENT_CONFIRMED`)
-2. 폴백: duck-typing (`reason` 필드 존재 시 환불로 판단)
-
-처리 내용:
-- `PAYMENT_REFUNDED`: 환불 금액 기록
-- `PAYMENT_CONFIRMED` + `paymentType=transfer`: 양도 결제 기록
-
-출처: `services-spring/stats-service/src/main/java/com/tiketi/statsservice/messaging/StatsEventConsumer.java:25-68`
-
-#### 8.2.2 `reservation-events` 토픽
-
-이벤트 유형:
-- `RESERVATION_CONFIRMED`: 예약 확정 (eventId, amount 기록)
-- `RESERVATION_CANCELLED`: 예약 취소 (eventId 기록)
-- `RESERVATION_CREATED`: 예약 생성 (eventId 기록)
-
-폴백: `paymentMethod` 필드 존재 + `reason` 미존재 시 확정, `reason` 존재 시 취소, 그 외 생성
-
-출처: `services-spring/stats-service/src/main/java/com/tiketi/statsservice/messaging/StatsEventConsumer.java:70-114`
-
-#### 8.2.3 `membership-events` 토픽
-
-멤버십 활성화 이벤트를 기록한다.
-
-출처: `services-spring/stats-service/src/main/java/com/tiketi/statsservice/messaging/StatsEventConsumer.java:116-134`
-
-### 8.3 이벤트 중복 제거 전략
-
-`processed_events` 테이블을 사용하여 이벤트 처리 중복을 방지한다.
-
-**이벤트 키 생성:**
-
-```java
-private String buildEventKey(Map<String, Object> event) {
-    String type = str(event.get("type"));
-    String timestamp = str(event.get("timestamp"));
-    String id = str(event.get("reservationId"));
-    if (id == null) id = str(event.get("paymentId"));
-    if (id == null) id = str(event.get("membershipId"));
-    if (id == null) id = str(event.get("transferId"));
-
-    if (type != null && id != null && timestamp != null) {
-        return type + ":" + id + ":" + timestamp;
-    }
-    return null;  // 키 생성 불가 시 중복 검사 건너뜀
+    UUID membershipId = (UUID) rows.getFirst().get("id");
+    addPoints(membershipId, actionType, points, description, referenceId);
 }
 ```
+> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/membership/service/MembershipService.java:225-235`
 
-출처: `services-spring/stats-service/src/main/java/com/tiketi/statsservice/messaging/StatsEventConsumer.java:138-150`
-
-**중복 확인 및 기록:**
+**전체 멤버십에 포인트 부여:**
 
 ```java
-// 중복 확인
-Integer count = jdbcTemplate.queryForObject(
-    "SELECT COUNT(*) FROM processed_events WHERE event_key = ?",
-    Integer.class, eventKey);
-
-// 처리 완료 기록 (UPSERT)
-jdbcTemplate.update(
-    "INSERT INTO processed_events (event_key, processed_at) "
-    + "VALUES (?, NOW()) ON CONFLICT (event_key) DO NOTHING",
-    eventKey);
+// MembershipService.java:237-244
+public void awardPointsToAllMemberships(String userId, String actionType, int points, String description, UUID referenceId) {
+    List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+        "SELECT id FROM artist_memberships WHERE user_id = CAST(? AS UUID) AND status = 'active'", userId);
+    for (Map<String, Object> row : rows) {
+        UUID membershipId = (UUID) row.get("id");
+        addPoints(membershipId, actionType, points, description, referenceId);
+    }
+}
 ```
+> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/membership/service/MembershipService.java:237-244`
 
-키 형식: `{type}:{entityId}:{timestamp}` (예: `PAYMENT_CONFIRMED:uuid:2026-02-14T10:00:00Z`)
+**커뮤니티 활동 포인트:** community-service에서 ticket-service의 내부 API를 호출하여 포인트를 적립한다.
 
-출처: `services-spring/stats-service/src/main/java/com/tiketi/statsservice/messaging/StatsEventConsumer.java:152-170`
+```java
+// community-service/.../shared/client/TicketInternalClient.java:42-58
+@CircuitBreaker(name = "internalService", fallbackMethod = "awardMembershipPointsArtistFallback")
+public void awardMembershipPoints(String userId, UUID artistId, String actionType,
+                                   int points, String description, UUID referenceId) {
+    Map<String, Object> body = new java.util.HashMap<>();
+    body.put("userId", userId);
+    body.put("actionType", actionType);
+    body.put("points", points);
+    body.put("description", description);
+    body.put("referenceId", referenceId);
+    if (artistId != null) {
+        body.put("artistId", artistId);
+    }
+    restClient.post()
+        .uri("/internal/memberships/award-points")
+        .header("Authorization", "Bearer " + internalApiToken)
+        .body(body)
+        .retrieve()
+        .toBodilessEntity();
+}
+```
+> 참조: `community-service/src/main/java/com/tiketi/communityservice/shared/client/TicketInternalClient.java:42-58`
+
+Circuit Breaker 패턴을 적용하여 ticket-service 장애 시 fallback으로 경고 로그만 남기고 실패를 허용한다. `@Retry` 어노테이션은 의도적으로 적용하지 않았다(POST는 멱등하지 않으므로 재시도 시 포인트 중복 적립 위험).
+
+> 참조: `community-service/src/main/java/com/tiketi/communityservice/shared/client/TicketInternalClient.java:41`
+
+**내부 API 엔드포인트:**
+
+```java
+// InternalMembershipController.java:26-46
+@PostMapping("/award-points")
+public Map<String, Object> awardPoints(
+        @RequestBody AwardPointsRequest request,
+        @RequestHeader(value = "Authorization", required = false) String authorization) {
+    internalTokenValidator.requireValidToken(authorization);
+    try {
+        if (request.artistId() != null) {
+            membershipService.awardPointsForArtist(
+                request.userId(), request.artistId(), request.actionType(),
+                request.points(), request.description(), request.referenceId());
+        } else {
+            membershipService.awardPointsToAllMemberships(
+                request.userId(), request.actionType(), request.points(),
+                request.description(), request.referenceId());
+        }
+        return Map.of("ok", true);
+    } catch (Exception e) {
+        return Map.of("ok", false, "error", e.getMessage());
+    }
+}
+```
+> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/internal/controller/InternalMembershipController.java:26-46`
+
+요청 DTO:
+
+```java
+// AwardPointsRequest.java:5-12
+public record AwardPointsRequest(
+    String userId,
+    String actionType,
+    int points,
+    String description,
+    UUID referenceId,
+    UUID artistId  // null이면 전체 멤버십에 포인트 부여
+) {}
+```
+> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/internal/dto/AwardPointsRequest.java:5-12`
+
+**티켓 구매 시 포인트 적립:**
+
+예매 확인 시 해당 아티스트 멤버십에 100포인트를 적립한다.
+
+```java
+// ReservationService.java:449-459
+try {
+    if (!resRows.isEmpty() && resRows.getFirst().get("artist_id") != null) {
+        UUID artistId = (UUID) resRows.getFirst().get("artist_id");
+        String userId = String.valueOf(resRows.getFirst().get("user_id"));
+        membershipService.awardPointsForArtist(userId, artistId, "TICKET_PURCHASE", 100,
+            "Points for ticket purchase", reservationId);
+    }
+} catch (Exception e) {
+    log.warn("Failed to award membership points for reservation {}: {}", reservationId, e.getMessage());
+}
+```
+> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/reservation/service/ReservationService.java:449-459`
+
+### 6.3 멤버십 혜택
+
+등급별 혜택은 `getBenefitsForTier()` 메서드에서 정의한다.
+
+```java
+// MembershipService.java:252-290
+private Map<String, Object> getBenefitsForTier(String tier) {
+    Map<String, Object> benefits = new LinkedHashMap<>();
+    switch (tier) {
+        case "DIAMOND" -> {
+            benefits.put("preSalePhase", 1);
+            benefits.put("preSaleLabel", "선예매 1");
+            benefits.put("bookingFeeSurcharge", 1000);
+            benefits.put("transferAccess", true);
+            benefits.put("transferFeePercent", 5);
+        }
+        case "GOLD" -> {
+            benefits.put("preSalePhase", 2);
+            benefits.put("preSaleLabel", "선예매 2");
+            benefits.put("bookingFeeSurcharge", 2000);
+            benefits.put("transferAccess", true);
+            benefits.put("transferFeePercent", 5);
+        }
+        case "SILVER" -> {
+            benefits.put("preSalePhase", 3);
+            benefits.put("preSaleLabel", "선예매 3");
+            benefits.put("bookingFeeSurcharge", 3000);
+            benefits.put("transferAccess", true);
+            benefits.put("transferFeePercent", 10);
+        }
+        default -> {  // BRONZE (비회원)
+            benefits.put("preSalePhase", null);
+            benefits.put("preSaleLabel", "일반예매");
+            benefits.put("bookingFeeSurcharge", 0);
+            benefits.put("transferAccess", false);
+            benefits.put("transferFeePercent", null);
+        }
+    }
+}
+```
+> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/domain/membership/service/MembershipService.java:252-290`
+
+| 등급 | 선예매 | 예매 수수료 | 양도 접근 | 양도 수수료 |
+|------|--------|-----------|----------|------------|
+| DIAMOND | 선예매 1 (최우선) | 1,000원 | 가능 | 5% |
+| GOLD | 선예매 2 | 2,000원 | 가능 | 5% |
+| SILVER | 선예매 3 | 3,000원 | 가능 | 10% |
+| BRONZE (비회원) | 일반예매 | 0원 | 불가 | - |
+
+---
+
+## 7. 스케줄러 & 배치 처리
+
+### 7.1 ReservationCleanupScheduler
+
+**역할:** 만료된 pending 예매를 정리하여 좌석/티켓 수량을 복원한다.
+
+**주기:** 30초 (`reservation.cleanup.interval-ms`)
+
+```java
+// ReservationCleanupScheduler.java:35
+@Scheduled(fixedRateString = "${reservation.cleanup.interval-ms:30000}")
+```
+> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/scheduling/ReservationCleanupScheduler.java:35`
+
+**처리 대상:** `status = 'pending'` AND `expires_at < NOW()`
+
+**처리 내용:**
+1. 좌석: `available`로 복원, `version` 증가, `fencing_token` 초기화, Redis 잠금 해제
+2. 티켓 타입: `available_quantity` 복원
+3. 예매: `status = 'expired'`로 변경
+4. 메트릭: `recordReservationExpired()` 기록
+
+> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/scheduling/ReservationCleanupScheduler.java:37-100`
+
+`FOR UPDATE SKIP LOCKED`를 사용하여 다중 인스턴스 환경에서의 동시 처리 충돌을 방지한다.
+
+### 7.2 PaymentReconciliationScheduler
+
+**역할:** Kafka 이벤트 유실 시 결제 확인 누락을 보정한다.
+
+**주기:** 5분 (`reservation.reconciliation.interval-ms`)
+
+```java
+// PaymentReconciliationScheduler.java:36
+@Scheduled(fixedRateString = "${reservation.reconciliation.interval-ms:300000}")
+```
+> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/scheduling/PaymentReconciliationScheduler.java:36`
+
+**처리 대상:** `status = 'pending'` AND `payment_status = 'pending'` AND `created_at < NOW() - 5분` AND `expires_at > NOW()`
+
+**처리 흐름:**
+1. pending 예매 중 5분 이상 경과한 건을 최대 50건 조회
+2. payment-service 내부 API로 해당 예매의 결제 상태 확인
+3. 결제가 `confirmed` 상태이면 `confirmReservationPayment()` 호출
+
+```java
+// PaymentReconciliationScheduler.java:56-76
+for (Map<String, Object> reservation : pendingReservations) {
+    UUID reservationId = (UUID) reservation.get("id");
+    try {
+        Map<String, Object> paymentInfo = paymentInternalClient.getPaymentByReservation(reservationId);
+        boolean found = Boolean.TRUE.equals(paymentInfo.get("found"));
+        String status = String.valueOf(paymentInfo.get("status"));
+
+        if (found && "confirmed".equals(status)) {
+            reservationService.confirmReservationPayment(reservationId, method);
+        }
+    } catch (Exception e) {
+        log.warn("Reconciliation: failed to check reservation {}: {}", reservationId, e.getMessage());
+    }
+}
+```
+> 참조: `ticket-service/src/main/java/com/tiketi/ticketservice/scheduling/PaymentReconciliationScheduler.java:56-76`
+
+### 7.3 AdmissionWorkerService (대기열 스케줄러)
+
+**입장 배치 처리 주기:** 1초 (`queue.admission.interval-ms`)
+
+> 참조: `queue-service/src/main/java/com/tiketi/queueservice/service/AdmissionWorkerService.java:47`
+
+**Stale 사용자 정리 주기:** 30초 (`queue.stale-cleanup.interval-ms`)
+
+> 참조: `queue-service/src/main/java/com/tiketi/queueservice/service/AdmissionWorkerService.java:120`
+
+분산 환경에서 단일 이벤트에 대한 중복 처리를 방지하기 위해 Redis 기반 분산 잠금을 사용한다.
+
+```java
+// AdmissionWorkerService.java:65-75
+String lockKey = "admission:lock:" + eventId;
+Boolean acquired = redisTemplate.opsForValue().setIfAbsent(lockKey, "1",
+    java.time.Duration.ofSeconds(4));
+
+if (acquired == null || !acquired) {
+    log.debug("Skipping event {} - lock held by another worker", eventId);
+    continue;
+}
+```
+> 참조: `queue-service/src/main/java/com/tiketi/queueservice/service/AdmissionWorkerService.java:65-75`
+
+### 7.4 스케줄러 구성 요약
+
+| 스케줄러 | 서비스 | 주기 | 설정 키 |
+|---------|--------|------|---------|
+| `cleanupExpiredReservations` | ticket-service | 30초 | `reservation.cleanup.interval-ms` |
+| `reconcilePendingReservations` | ticket-service | 5분 | `reservation.reconciliation.interval-ms` |
+| `admitUsers` | queue-service | 1초 | `queue.admission.interval-ms` |
+| `cleanupStaleUsers` | queue-service | 30초 | `queue.stale-cleanup.interval-ms` |
