@@ -137,6 +137,35 @@ stats-service-group도 같은 이벤트를 1번 처리
 | 실제 역할 | 대기열 입장 허용 이벤트(`admitted`) 외부 전달 보조 채널 | 결제 -> 예매/양도/멤버십 처리 -> 통계 집계 메인 이벤트 파이프라인 |
 | 순서/중복 제어 | `messageGroupId=eventId`, `messageDeduplicationId=userId:eventId` | 파티션 키 + 앱 멱등성(`processed_events`) |
 | 장애 시 동작 | 발행 실패 시 로그 후 계속 진행(대기열 핵심은 Redis로 유지) | at-least-once 전제, 소비 측에서 멱등성으로 중복 방어 |
+
+### URR 퍼블리셔 정리 (파일 기준)
+
+결론: 우리 프로젝트는 `SQS 퍼블리셔 1개 + Kafka 퍼블리셔 2개`를 사용한다.
+
+| 메시징 | 퍼블리셔 | 파일 | 발행 시점 | 비고 |
+|---|---|---|---|---|
+| SQS FIFO | `SqsPublisher` | `services-spring/queue-service/src/main/java/guru/urr/queueservice/service/SqsPublisher.java` | 대기열 사용자가 active로 전환되어 `entryToken` 발급 시 | 로컬(kind) 기본 `SQS_ENABLED=false` |
+| Kafka | `PaymentEventProducer` | `services-spring/payment-service/src/main/java/guru/urr/paymentservice/messaging/PaymentEventProducer.java` | 결제 확정/환불 처리 시 `payment-events` 발행 | 결제 도메인 이벤트 시작점 |
+| Kafka | `TicketEventProducer` | `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/messaging/TicketEventProducer.java` | 결제 이벤트 처리 후 `reservation/transfer/membership` 후속 이벤트 발행 | 예매/양도/멤버십 도메인 이벤트 확장 |
+
+### 퍼블리셔/컨슈머 쉽게 이해하기
+
+- `퍼블리셔(Publisher)`는 메시지를 보내는 쪽이다.
+- `컨슈머(Consumer)`는 메시지를 받아 실제 처리를 하는 쪽이다.
+- 비유하면:
+  - 퍼블리셔 = "공지 올리는 사람"
+  - 컨슈머 = "공지를 읽고 실제 일을 하는 사람"
+
+### URR 퍼블리셔/컨슈머 매핑 (파일 기준)
+
+| 메시징 | 퍼블리셔(보냄) | 컨슈머(받아 처리) | 실제로 오가는 메시지 |
+|---|---|---|---|
+| SQS FIFO | `SqsPublisher` | `lambda/ticket-worker/index.js` | `admitted` |
+| Kafka (`payment-events`) | `PaymentEventProducer` | `PaymentEventConsumer`(ticket-service), `StatsEventConsumer`(stats-service) | `PAYMENT_CONFIRMED`, `PAYMENT_REFUNDED` |
+| Kafka (`reservation-events`) | `TicketEventProducer` | `StatsEventConsumer` | `RESERVATION_CREATED`, `RESERVATION_CONFIRMED`, `RESERVATION_CANCELLED` |
+| Kafka (`membership-events`) | `TicketEventProducer` | `StatsEventConsumer` | 멤버십 활성화 이벤트 |
+| Kafka (`transfer-events`) | `TicketEventProducer` | 현재 코드 기준 명시적 컨슈머 없음 | 양도 완료 이벤트 |
+
 ---
 
 ## 7. URR 프로젝트에서 SQS가 하는 역할
