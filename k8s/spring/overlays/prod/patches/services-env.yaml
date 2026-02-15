@@ -207,6 +207,18 @@ spec:
                 configMapKeyRef:
                   name: spring-prod-config
                   key: SQS_QUEUE_URL
+            - name: VWR_DYNAMODB_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: spring-prod-config
+                  key: VWR_DYNAMODB_ENABLED
+                  optional: true
+            - name: VWR_DYNAMODB_COUNTERS_TABLE
+              valueFrom:
+                configMapKeyRef:
+                  name: spring-prod-config
+                  key: VWR_DYNAMODB_COUNTERS_TABLE
+                  optional: true
 ---
 apiVersion: apps/v1
 kind: Deployment

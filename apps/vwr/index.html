@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>URR - 대기 중</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0a0a0a;
+      color: #e5e5e5;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .container {
+      text-align: center;
+      max-width: 420px;
+      padding: 40px 24px;
+    }
+    .logo {
+      font-size: 28px;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 32px;
+      letter-spacing: -0.5px;
+    }
+    .title {
+      font-size: 20px;
+      font-weight: 600;
+      color: #fff;
+      margin-bottom: 8px;
+    }
+    .subtitle {
+      font-size: 14px;
+      color: #888;
+      margin-bottom: 32px;
+    }
+    .position-display {
+      font-size: 48px;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 4px;
+    }
+    .position-label {
+      font-size: 14px;
+      color: #888;
+      margin-bottom: 24px;
+    }
+    .progress-bar {
+      width: 100%;
+      height: 6px;
+      background: #222;
+      border-radius: 3px;
+      overflow: hidden;
+      margin-bottom: 12px;
+    }
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+      border-radius: 3px;
+      transition: width 0.5s ease;
+      width: 0%;
+    }
+    .stats {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 32px;
+      font-size: 13px;
+      color: #888;
+    }
+    .wait-time {
+      font-size: 16px;
+      color: #a78bfa;
+      margin-bottom: 32px;
+    }
+    .notice {
+      font-size: 13px;
+      color: #666;
+      padding: 12px 16px;
+      background: #111;
+      border-radius: 8px;
+    }
+    .error {
+      color: #ef4444;
+      font-size: 14px;
+      margin-top: 16px;
+      display: none;
+    }
+    .hidden { display: none; }
+    .loading {
+      color: #888;
+      font-size: 16px;
+    }
+    .spinner {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 2px solid #333;
+      border-top-color: #8b5cf6;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo">URR</div>
+
+    <!-- Loading state -->
+    <div id="loading" class="loading">
+      <span class="spinner"></span>대기열에 접속 중...
+    </div>
+
+    <!-- Queue state -->
+    <div id="queue-info" class="hidden">
+      <div class="title">잠시 대기해주세요</div>
+      <div class="subtitle">현재 접속자가 많아 순서대로 안내하고 있습니다</div>
+
+      <div class="position-display" id="position">-</div>
+      <div class="position-label">번째</div>
+
+      <div class="progress-bar">
+        <div class="progress-fill" id="progress"></div>
+      </div>
+
+      <div class="stats">
+        <span>서비스 중: <strong id="serving">-</strong>번째까지</span>
+        <span>전체 대기: <strong id="total">-</strong>명</span>
+      </div>
+
+      <div class="wait-time">
+        예상 대기: 약 <strong id="wait-time">-</strong>
+      </div>
+
+      <div class="notice">
+        이 페이지를 닫지 마세요. 차례가 되면 자동으로 이동합니다.
+      </div>
+    </div>
+
+    <div id="error" class="error"></div>
+  </div>
+
+  <script>
+    (function() {
+      'use strict';
+
+      // Extract eventId from URL path: /vwr/{eventId}
+      const pathParts = window.location.pathname.split('/').filter(Boolean);
+      const eventId = pathParts[pathParts.length - 1];
+
+      if (!eventId || eventId === 'vwr') {
+        showError('잘못된 접근입니다.');
+        return;
+      }
+
+      // API base URL (API Gateway endpoint, injected at build or from same origin)
+      const API_BASE = window.__VWR_API_URL || '/vwr-api';
+
+      const STORAGE_KEY = 'urr-vwr-' + eventId;
+      const COOKIE_NAME = 'urr-vwr-token';
+
+      let pollTimer = null;
+
+      // Check if we already have a requestId from a previous session
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        try {
+          const data = JSON.parse(saved);
+          if (data.requestId && data.position) {
+            showQueueInfo();
+            updateDisplay(data.position, 0, 0, 0);
+            startPolling(data.requestId);
+            return;
+          }
+        } catch (e) { /* ignore */ }
+      }
+
+      // New session: assign a position
+      assignPosition();
+
+      async function assignPosition() {
+        try {
+          const res = await fetch(API_BASE + '/vwr/assign/' + eventId, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: getUserId() }),
+          });
+
+          if (!res.ok) {
+            const err = await res.json().catch(function() { return {}; });
+            if (res.status === 404) {
+              // VWR not active — redirect to actual site
+              window.location.href = '/events/' + eventId;
+              return;
+            }
+            showError(err.error || '대기열 접속에 실패했습니다.');
+            return;
+          }
+
+          const data = await res.json();
+
+          // Save to localStorage for page refresh
+          localStorage.setItem(STORAGE_KEY, JSON.stringify({
+            requestId: data.requestId,
+            position: data.position,
+          }));
+
+          showQueueInfo();
+          updateDisplay(data.position, data.servingCounter, data.estimatedWait, 0);
+          startPolling(data.requestId);
+        } catch (e) {
+          showError('네트워크 오류가 발생했습니다. 페이지를 새로고침해주세요.');
+        }
+      }
+
+      function startPolling(requestId) {
+        checkPosition(requestId);
+      }
+
+      async function checkPosition(requestId) {
+        try {
+          const url = API_BASE + '/vwr/check/' + eventId + '/' + requestId
+            + '?userId=' + encodeURIComponent(getUserId());
+          const res = await fetch(url);
+
+          if (!res.ok) {
+            if (res.status === 404) {
+              // Position expired — re-assign
+              localStorage.removeItem(STORAGE_KEY);
+              assignPosition();
+              return;
+            }
+            schedulePoll(requestId, 5);
+            return;
+          }
+
+          const data = await res.json();
+
+          if (data.admitted && data.token) {
+            // Admitted! Store token and redirect
+            setCookie(COOKIE_NAME, data.token, 600);
+            localStorage.removeItem(STORAGE_KEY);
+            window.location.href = '/events/' + eventId;
+            return;
+          }
+
+          updateDisplay(data.position, data.servingCounter, data.estimatedWait, data.totalInQueue);
+          schedulePoll(requestId, data.nextPoll || 5);
+        } catch (e) {
+          schedulePoll(requestId, 5);
+        }
+      }
+
+      function schedulePoll(requestId, seconds) {
+        if (pollTimer) clearTimeout(pollTimer);
+        pollTimer = setTimeout(function() { checkPosition(requestId); }, seconds * 1000);
+      }
+
+      function updateDisplay(position, serving, waitSeconds, total) {
+        document.getElementById('position').textContent = position.toLocaleString();
+        document.getElementById('serving').textContent = (serving || 0).toLocaleString();
+        document.getElementById('total').textContent = ((total || position) - (serving || 0)).toLocaleString();
+        document.getElementById('wait-time').textContent = formatWait(waitSeconds || 0);
+
+        // Progress bar
+        var pct = serving > 0 ? Math.min(100, Math.floor((serving / position) * 100)) : 0;
+        if (position <= serving) pct = 100;
+        document.getElementById('progress').style.width = pct + '%';
+      }
+
+      function formatWait(seconds) {
+        if (seconds <= 0) return '곧 입장';
+        if (seconds < 60) return seconds + '초';
+        var min = Math.floor(seconds / 60);
+        var sec = seconds % 60;
+        return sec > 0 ? min + '분 ' + sec + '초' : min + '분';
+      }
+
+      function showQueueInfo() {
+        document.getElementById('loading').classList.add('hidden');
+        document.getElementById('queue-info').classList.remove('hidden');
+      }
+
+      function showError(msg) {
+        document.getElementById('loading').classList.add('hidden');
+        var el = document.getElementById('error');
+        el.textContent = msg;
+        el.style.display = 'block';
+      }
+
+      function getUserId() {
+        // Use a persistent anonymous ID
+        var id = localStorage.getItem('urr-anon-id');
+        if (!id) {
+          id = 'anon-' + Math.random().toString(36).slice(2, 10);
+          localStorage.setItem('urr-anon-id', id);
+        }
+        return id;
+      }
+
+      function setCookie(name, value, maxAge) {
+        document.cookie = name + '=' + encodeURIComponent(value)
+          + ';path=/;max-age=' + maxAge + ';SameSite=Strict;Secure';
+      }
+    })();
+  </script>
+</body>
+</html>

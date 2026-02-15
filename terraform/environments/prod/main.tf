@@ -258,10 +258,62 @@ module "cloudfront" {
   s3_bucket_name                 = module.s3.frontend_bucket_name
   s3_bucket_regional_domain_name = module.s3.frontend_bucket_regional_domain_name
   cors_allowed_origins           = var.cors_allowed_origins
+
+  # VWR Tier 1
+  vwr_token_secret       = module.secrets.queue_entry_token_secret_value
+  vwr_api_gateway_domain = replace(module.api_gateway_vwr.api_gateway_invoke_url, "/https?:\\/\\/([^/]+).*/", "$1")
+  vwr_api_gateway_stage  = module.api_gateway_vwr.api_gateway_stage_name
 }
 
 # ═════════════════════════════════════════════════════════════════════════════
-# 13. Lambda Worker - SQS Consumer (depends on: VPC, RDS, ElastiCache, SQS, IAM)
+# 13. DynamoDB - VWR Tier 1 Tables (no dependencies)
+# ═════════════════════════════════════════════════════════════════════════════
+
+module "dynamodb_vwr" {
+  source = "../../modules/dynamodb-vwr"
+
+  name_prefix                   = var.name_prefix
+  enable_point_in_time_recovery = true
+}
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 14. VWR API Gateway + Lambda (depends on: DynamoDB VWR, Secrets)
+# ═════════════════════════════════════════════════════════════════════════════
+
+module "api_gateway_vwr" {
+  source = "../../modules/api-gateway-vwr"
+
+  name_prefix            = var.name_prefix
+  lambda_invoke_arn      = module.lambda_vwr.vwr_api_invoke_arn
+  cors_origin            = var.cors_allowed_origins[0]
+  throttling_burst_limit = 10000
+  throttling_rate_limit  = 5000
+}
+
+module "lambda_vwr" {
+  source = "../../modules/lambda-vwr"
+
+  name_prefix                    = var.name_prefix
+  lambda_source_dir              = "${path.root}/../../lambda/vwr-api"
+  counter_advancer_source_dir    = "${path.root}/../../lambda/vwr-counter-advancer"
+  reserved_concurrent_executions = 100
+  counter_advance_batch_size     = 500
+
+  dynamodb_counters_table_name = module.dynamodb_vwr.counters_table_name
+  dynamodb_positions_table_name = module.dynamodb_vwr.positions_table_name
+  dynamodb_table_arns = [
+    module.dynamodb_vwr.counters_table_arn,
+    module.dynamodb_vwr.positions_table_arn,
+    module.dynamodb_vwr.positions_table_gsi_arn,
+  ]
+
+  vwr_token_secret          = module.secrets.queue_entry_token_secret_value
+  cors_origin               = var.cors_allowed_origins[0]
+  api_gateway_execution_arn = module.api_gateway_vwr.api_gateway_execution_arn
+}
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 15. Lambda Worker - SQS Consumer (depends on: VPC, RDS, ElastiCache, SQS, IAM)
 # ═════════════════════════════════════════════════════════════════════════════
 
 module "lambda_worker" {

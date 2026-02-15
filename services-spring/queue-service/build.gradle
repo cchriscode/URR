@@ -26,6 +26,7 @@ dependencies {
 	implementation 'io.github.resilience4j:resilience4j-spring-boot3:2.2.0'
 	implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
 	implementation 'software.amazon.awssdk:sqs:2.29.0'
+	implementation 'software.amazon.awssdk:dynamodb:2.29.0'
 	implementation 'software.amazon.awssdk:sts:2.29.0'
 	implementation 'io.micrometer:micrometer-registry-prometheus'
 	implementation 'io.micrometer:micrometer-tracing-bridge-brave'

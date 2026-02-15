@@ -66,3 +66,30 @@ variable "cors_allowed_origins" {
   type        = list(string)
   default     = ["*"]
 }
+
+# VWR Tier 1 variables
+
+variable "vwr_token_secret" {
+  description = "HMAC secret for Tier 1 VWR JWT tokens (falls back to queue_entry_token_secret)"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "vwr_active_events" {
+  description = "List of event IDs with active VWR (baked into Lambda@Edge config)"
+  type        = list(string)
+  default     = []
+}
+
+variable "vwr_api_gateway_domain" {
+  description = "Domain name of the VWR API Gateway (e.g., abc123.execute-api.ap-northeast-2.amazonaws.com)"
+  type        = string
+  default     = ""
+}
+
+variable "vwr_api_gateway_stage" {
+  description = "Stage name of the VWR API Gateway"
+  type        = string
+  default     = "v1"
+}

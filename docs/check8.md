@@ -6,7 +6,7 @@
 1. 메시징이 왜 필요한지
 2. URR에서 쓰는 3가지 기술(Redis ZSet, SQS, Kafka)이 각각 무엇인지
 3. 셋이 어떤 관계로 연결되어 있는지
-4. VWR(Virtual Waiting Room)이 프론트엔드부터 백엔드까지 어떻게 동작하는지
+4. VWR(Virtual Waiting Room)의 2단계 아키텍처: 앞단(CDN 유량 제어) + 뒷단(이벤트별 대기열)
 5. 실제 코드에서 어떻게 구현되어 있는지
 
 ---
@@ -253,38 +253,244 @@ AdmissionWorkerService (매 1초)
 
 ---
 
-## 5. VWR — 사용자가 경험하는 대기열 (Virtual Waiting Room)
+## 5. VWR — 2단계 대기열 아키텍처 (Virtual Waiting Room)
 
 VWR은 "가상 대기실"이다. 콘서트 티켓 예매할 때, 수만 명이 동시에 접속하면 서버가 터진다. VWR은 사용자를 줄 세워서 순서대로 입장시키는 시스템이다.
 
-쉽게 말하면:
-- 놀이공원 인기 놀이기구 앞에 줄을 선다.
-- 화면에 "현재 42번째, 예상 2분"이 보인다.
-- 내 차례가 오면 자동으로 좌석 선택 페이지로 넘어간다.
+URR의 VWR은 **2단계(2-Tier)** 구조다.
 
-앞에서 설명한 Redis ZSet이 이 VWR의 핵심 엔진이고, 여기서는 **사용자 화면부터 서버까지 전체 흐름**을 설명한다.
+### 5.1 왜 2단계인가
 
-### 5.1 전체 사용자 여정
+문제 상황을 놀이공원으로 비유하자:
+
+- **1단계만 있을 때**: 놀이공원 입구를 열면 수만 명이 한꺼번에 들어와서 놀이기구 앞이 아수라장. 놀이기구(서버)가 고장남.
+- **2단계 구조**: 놀이공원 입구(Tier 1)에서 먼저 번호표를 나눠주고 천천히 입장시킴 → 놀이기구 앞(Tier 2)에서는 적정 인원만 대기.
+
+| | Tier 1 — 앞단 VWR | Tier 2 — 뒷단 대기열 |
+|---|---|---|
+| **비유** | 놀이공원 입구 번호표 | 놀이기구 앞 대기줄 |
+| **위치** | CDN (CloudFront) 앞단 | ALB 뒤 (queue-service) |
+| **목적** | 서버 보호 + ASG 시간 확보 | 이벤트별 입장 순서 관리 |
+| **트래픽** | 수백만 명 동시 → 서버리스로 흡수 | 수천~수만 명 → Redis로 순번 관리 |
+| **핵심 기술** | 정적 페이지(S3) + 서버리스(Lambda+DynamoDB) | queue-service + Redis ZSet |
+| **구현 상태** | **구현 완료 (미배포)** | **구현 완료 (배포 중)** |
+
+### 5.2 전체 구조
 
 ```
-① 이벤트 상세 페이지        ② 대기열 페이지           ③ 좌석 선택/예매          ④ 결제
-   /events/[id]             /queue/[eventId]          /events/[id]/seats        /payment/[id]
-                                                      /events/[id]/book
-   ┌──────────┐            ┌──────────────┐          ┌──────────────┐         ┌──────────┐
-   │ 예매하기  │──클릭──→   │ 42번째 대기중  │──차례──→  │ 좌석 선택     │──결제──→ │ 결제 완료 │
-   │  버튼    │            │ 예상 2분 대기  │          │ 또는 바로예매  │         │          │
-   └──────────┘            └──────────────┘          └──────────────┘         └──────────┘
-                                  │
-                           이 페이지를 닫지 마세요!
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                     URR VWR 2단계 아키텍처                                         │
+│                                                                                 │
+│  ┌──────────────────────────────────────────┐                                  │
+│  │  Tier 1: 앞단 VWR (CDN 레벨 유량 제어)     │                                  │
+│  │                                          │                                  │
+│  │  사용자 → CloudFront → S3 정적 페이지       │                                  │
+│  │             ("잠시 대기해주세요")            │                                  │
+│  │               │                          │                                  │
+│  │               ▼                          │                                  │
+│  │     CloudFront → API Gateway → Lambda     │                                  │
+│  │               │                          │                                  │
+│  │               ▼                          │                                  │
+│  │           DynamoDB                       │                                  │
+│  │       (순번 atomic counter               │                                  │
+│  │        + servingCounter)                 │                                  │
+│  │               │                          │                                  │
+│  │               ▼                          │                                  │
+│  │    순번 ≤ servingCounter → JWT 발급       │                                  │
+│  └──────────────┬───────────────────────────┘                                  │
+│                 │ 토큰 있는 사용자만 통과                                         │
+│                 ▼                                                               │
+│  ┌──────────────────────────────────────────┐                                  │
+│  │  Lambda@Edge (토큰 검증)                   │                                  │
+│  │  토큰 없음 → S3 대기 페이지로 리다이렉트     │                                  │
+│  │  토큰 있음 → ALB로 통과                    │                                  │
+│  └──────────────┬───────────────────────────┘                                  │
+│                 │                                                               │
+│                 ▼                                                               │
+│  ┌──────────────────────────────────────────┐                                  │
+│  │  Tier 2: 뒷단 대기열 (이벤트별 입장 관리)    │                                  │
+│  │                                          │                                  │
+│  │  ALB → gateway-service → queue-service   │                                  │
+│  │                            │              │                                  │
+│  │                         Redis ZSet        │                                  │
+│  │                     (이벤트별 순번 관리)     │                                  │
+│  │                     threshold=1000명       │                                  │
+│  │                            │              │                                  │
+│  │                   입장 허용 → entryToken    │                                  │
+│  │                            │              │                                  │
+│  │                   좌석 선택 / 예매 페이지    │                                  │
+│  └──────────────────────────────────────────┘                                  │
+└─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-1. 사용자가 이벤트 상세에서 "예매하기" 클릭 → `/queue/[eventId]`로 이동
-2. 대기열 페이지에서 자동으로 queue-service에 입장 요청
-3. 자리가 있으면 바로 통과, 없으면 대기열에 줄 서기
-4. 내 차례가 오면 자동으로 좌석 선택(지정석) 또는 예매(비지정석) 페이지로 이동
-5. entryToken(입장권)이 쿠키에 저장되어, 이후 API 요청에 자동 첨부
+### 5.3 Tier 1 — 앞단 VWR (CDN 레벨 유량 제어)
 
-### 5.2 프론트엔드 — 대기열 페이지
+> **구현 상태**: 구현 완료 (미배포). 코드 작성 완료, 프로덕션 배포 전.
+
+#### 목적
+- **서버 보호**: 수백만 동시 접속이 ALB/EKS까지 도달하지 못하게 막는다.
+- **ASG 시간 확보**: 트래픽 급증 시 Auto Scaling Group이 서버를 늘리는 시간(수 분)을 번다.
+- **공정한 순번**: 먼저 온 사람이 먼저 들어가는 FIFO 순서를 보장한다.
+
+#### 전체 흐름
+
+```
+사용자 브라우저
+   │
+   ├─ 1) CloudFront → S3 정적 HTML ("잠시 대기해주세요")
+   │     vanilla HTML/CSS/JS, 프레임워크 없음 (CDN 캐시 극대화)
+   │     JavaScript가 API를 주기적으로 호출
+   │
+   ├─ 2) CloudFront → API Gateway → Lambda (순번 요청)
+   │     POST /vwr/assign/{eventId}
+   │     → DynamoDB atomic counter (ADD nextPosition :one)
+   │     → 응답: "당신은 12,345번째입니다"
+   │
+   ├─ 3) CloudFront → API Gateway → Lambda (내 차례 확인)
+   │     GET /vwr/check/{eventId}/{requestId}
+   │     → DynamoDB에서 내 position과 servingCounter 비교
+   │     → 내 순번 ≤ servingCounter이면 입장 가능
+   │     → Tier 1 JWT 토큰 발급 (urr-vwr-token 쿠키)
+   │
+   └─ 4) 토큰으로 실제 사이트 접속
+         → Lambda@Edge가 Tier 1 JWT 검증
+         → 통과 시 ALB → Tier 2 대기열
+```
+
+> AWS 공식 "Virtual Waiting Room on AWS" 패턴(2025년 11월 deprecated, 전략적 이유이며 기술적 결함 아님)을 참고하되, SQS 파이프라인 대신 **DynamoDB atomic counter**를 직접 사용해 단순화했다.
+
+#### 핵심 메커니즘
+
+**순번 부여 (DynamoDB Atomic Counter)**
+1. 사용자 접속 → S3 정적 페이지의 JS가 CloudFront를 통해 API Gateway 호출
+2. Lambda가 DynamoDB `UpdateItem`으로 원자적 카운터 증가 (`ADD nextPosition :one`)
+3. 같은 Lambda가 positions 테이블에 순번 기록 (TTL 24시간)
+4. 결과: `position = 12345` (단조 증가, 중복 불가)
+
+> SQS를 쓰지 않는 이유: DynamoDB atomic counter가 더 단순하고, 별도 소비자 Lambda가 필요 없다. hot partition 위험이 있지만 on-demand 모드의 adaptive capacity로 대응 가능하다.
+
+**서빙 카운터 (Serving Counter)**
+- DynamoDB counters 테이블에 `servingCounter` 값을 관리
+- **Counter Advancer Lambda**가 EventBridge로 1분마다 트리거 → 내부에서 6회 반복(10초 간격)
+- 한 번에 500명씩 카운터 증가 (배치 사이즈 조절 가능)
+- 조건: `servingCounter < nextPosition`일 때만 증가 (과잉 입장 방지)
+- 예: servingCounter=5000이면 1~5000번까지 입장 가능
+
+**입장 판정**
+- 내 순번(12345) ≤ servingCounter(15000) → 입장 가능 → Tier 1 JWT 발급
+- 내 순번(12345) > servingCounter(5000) → 대기 계속 → 다음 폴링까지 대기
+
+**유량 제어의 핵심**
+- 서빙 카운터 증가 속도 = 유량 제어 속도
+- 카운터를 천천히 올리면 → 적은 사람만 통과 (서버 보호)
+- 카운터를 빠르게 올리면 → 많은 사람 통과 (ASG 완료 후)
+- 관리자가 수동으로 `/api/admin/vwr/advance/{eventId}`로 카운터를 밀어올릴 수도 있다
+
+#### Tier 1 컴포넌트와 파일 위치
+
+| 컴포넌트 | 처리 방식 | 동시 처리 규모 | 파일 위치 |
+|---|---|---|---|
+| S3 정적 대기 페이지 | CDN 엣지 캐시 | 사실상 무제한 | `apps/vwr/index.html` |
+| API Gateway | 관리형 서비스, 스로틀링 | 10,000 TPS (burst) | `terraform/modules/api-gateway-vwr/` |
+| VWR API Lambda | 서버리스 (순번 발급/확인) | 100 동시 실행 (prod) | `lambda/vwr-api/` |
+| Counter Advancer Lambda | 스케줄 기반 (1분 간격) | 1 동시 실행 | `lambda/vwr-counter-advancer/` |
+| DynamoDB | 온디맨드 용량 | 수만 RPS | `terraform/modules/dynamodb-vwr/` |
+| Lambda@Edge | viewer-request 훅 | CloudFront 비례 | `lambda/edge-queue-check/index.js` |
+| CloudFront Function | `/vwr-api` prefix 제거 | CloudFront 비례 | `terraform/modules/cloudfront/main.tf` |
+
+> 모든 컴포넌트가 서버리스이므로 서버가 터질 일이 없다. 그래서 "앞단을 얇게 유지"할 수 있다.
+
+#### 관리자 API (VWR 제어)
+
+queue-service에 관리자 전용 VWR 제어 엔드포인트가 있다.
+
+파일: `services-spring/queue-service/.../controller/VwrAdminController.java`
+
+| 엔드포인트 | 용도 |
+|---|---|
+| `POST /api/admin/vwr/activate/{eventId}` | VWR 활성화 (DynamoDB 초기화) |
+| `POST /api/admin/vwr/deactivate/{eventId}` | VWR 비활성화 |
+| `GET /api/admin/vwr/status/{eventId}` | 카운터 상태 조회 |
+| `POST /api/admin/vwr/advance/{eventId}` | 수동 서빙 카운터 증가 |
+
+> `vwr.dynamodb.enabled=true` 환경변수로 활성화. 기본값 false (DynamoDB 없이도 queue-service 정상 동작).
+
+### 5.4 Tier 2 — 뒷단 대기열 (이벤트별 입장 관리)
+
+> **구현 상태**: 구현 완료. 현재 동작 중.
+
+Tier 1을 통과한 사용자가 도달하는 곳. 이벤트(공연)별로 동시 입장 인원을 관리한다. 기술 상세는 **섹션 4 (Redis ZSet)** 참고.
+
+#### 목적
+- **이벤트별 용량 관리**: 공연마다 threshold=1000명으로 동시 입장자 제한
+- **공정한 순서**: Redis ZSet으로 대기 순번 관리 (ZADD → ZRANK)
+- **비즈니스 로직**: 좌석 선택 시간 제한, 하트비트, 좀비 정리
+
+#### Tier 1과의 차이
+
+| | Tier 1 (앞단 VWR) | Tier 2 (뒷단 대기열) |
+|---|---|---|
+| **대상** | 전체 사이트 트래픽 | 특정 이벤트의 예매 트래픽 |
+| **대기 이유** | 서버 과부하 방지 | 이벤트 좌석 수 제한 |
+| **대기 시간** | 짧음 (ASG 완료까지, 수 분) | 길 수 있음 (순번에 따라 수십 분) |
+| **스케일** | 수백만 명 | 수천~수만 명 |
+| **대기 화면** | S3 정적 HTML ("잠시 대기해주세요") | Next.js 동적 페이지 (순번/예상시간) |
+
+### 5.5 2단계 사용자 여정
+
+```
+① 접속                ② Tier 1 대기           ③ Tier 2 대기            ④ 좌석 선택           ⑤ 결제
+   이벤트 상세            VWR 정적 페이지          대기열 페이지             /events/[id]/seats
+   /events/[id]          (S3 + CloudFront)       /queue/[eventId]         /events/[id]/book
+
+   ┌──────────┐        ┌───────────────┐       ┌──────────────┐        ┌──────────────┐     ┌──────────┐
+   │ 예매하기  │──→     │ 잠시 대기해주세요│──→    │ 42번째 대기중  │──→     │ 좌석 선택     │──→  │ 결제 완료 │
+   │  버튼    │        │ 12,345번째     │       │ 예상 2분 대기  │        │ 또는 바로예매  │     │          │
+   └──────────┘        └───────────────┘       └──────────────┘        └──────────────┘     └──────────┘
+                        서버리스 처리              Redis ZSet 관리
+                        ASG 시간 확보              이벤트별 입장 제어
+                             │                          │
+                        순번 ≤ serving_counter      내 차례 → entryToken
+                        → JWT로 Tier 2 진입         → 좌석 선택 자동 이동
+```
+
+**Tier 1 미배포 시 (Tier 2만 동작):**
+1. 사용자가 "예매하기" 클릭 → `/queue/[eventId]`로 바로 이동
+2. queue-service가 Redis ZSet으로 대기열 관리
+3. 내 차례가 되면 entryToken 발급 → 좌석 선택 이동
+
+**Tier 1 배포 후 (2단계 전체 동작):**
+1. 사용자가 "예매하기" 클릭 → Lambda@Edge가 VWR 활성 여부 확인
+2. VWR 활성 이벤트면 → S3 정적 대기 페이지(`/vwr/{eventId}`)로 리다이렉트
+3. 정적 페이지 JS가 API Gateway를 통해 순번 발급 + 폴링
+4. 내 순번 ≤ servingCounter → Tier 1 JWT(`urr-vwr-token` 쿠키) 발급
+5. 자동으로 `/events/{eventId}`로 리다이렉트 → Lambda@Edge가 JWT 검증 → ALB 도달
+6. Tier 2 대기열 (queue-service + Redis ZSet) → entryToken 발급 → 좌석 선택
+
+### 5.6 구현 상태
+
+| 컴포넌트 | 상태 | 위치 |
+|---|---|---|
+| **Tier 2** | | |
+| queue-service | 구현 완료 (배포 중) | `services-spring/queue-service/` |
+| Redis ZSet 대기열 | 구현 완료 (배포 중) | `QueueService.java`, `AdmissionWorkerService.java` |
+| entryToken (JWT) | 구현 완료 (배포 중) | `QueueService.java:215` |
+| VwrEntryTokenFilter | 구현 완료 (배포 중) | `gateway-service/.../VwrEntryTokenFilter.java` |
+| 대기열 프론트엔드 | 구현 완료 (배포 중) | `apps/web/src/app/queue/[eventId]/page.tsx` |
+| 폴링 훅 | 구현 완료 (배포 중) | `apps/web/src/hooks/use-queue-polling.ts` |
+| **Tier 1** | | |
+| S3 정적 대기 페이지 | 구현 완료 (미배포) | `apps/vwr/index.html` |
+| API Gateway | 구현 완료 (미배포) | `terraform/modules/api-gateway-vwr/` |
+| VWR API Lambda (순번/확인) | 구현 완료 (미배포) | `lambda/vwr-api/` |
+| Counter Advancer Lambda | 구현 완료 (미배포) | `lambda/vwr-counter-advancer/` |
+| DynamoDB 순번/카운터 | 구현 완료 (미배포) | `terraform/modules/dynamodb-vwr/` |
+| Lambda@Edge 토큰 검증 | 구현 완료 (미배포) | `lambda/edge-queue-check/index.js` |
+| CloudFront VWR 라우팅 | 구현 완료 (미배포) | `terraform/modules/cloudfront/main.tf` |
+| 관리자 API | 구현 완료 (미배포) | `queue-service/.../VwrAdminController.java` |
+
+### 5.7 Tier 2 상세 — 프론트엔드 대기열 페이지
+
+> 아래는 현재 구현된 Tier 2의 프론트엔드 상세.
 
 파일: `apps/web/src/app/queue/[eventId]/page.tsx`
 
@@ -309,7 +515,7 @@ queueApi.check(eventId) 호출  →  POST /api/queue/check/{eventId}
 
 ```
 ┌─────────────────────────────────┐
-│      🎵 콘서트 제목              │
+│      콘서트 제목                 │
 │      아티스트 이름               │
 │                                 │
 │      현재 42번째                 │
@@ -321,7 +527,7 @@ queueApi.check(eventId) 호출  →  POST /api/queue/check/{eventId}
 │                                 │
 │  현재 접속자: 987 / 1,000       │
 │                                 │
-│  ⚠️ 이 페이지를 닫지 마세요!     │
+│  이 페이지를 닫지 마세요!        │
 │                                 │
 │       [ 대기열 나가기 ]          │
 └─────────────────────────────────┘
@@ -333,43 +539,24 @@ queueApi.check(eventId) 호출  →  POST /api/queue/check/{eventId}
 - `estimatedWait`: 예상 대기 시간 (초)
 - `currentUsers / threshold`: 현재 입장자 / 최대 허용 인원
 
-### 5.3 프론트엔드 — 폴링 (자동 새로고침)
+#### 폴링 (자동 새로고침)
 
-WebSocket(실시간 연결)이 아니라 **HTTP 폴링**(주기적으로 서버에 물어보기)을 쓴다.
-
-파일: `apps/web/src/hooks/use-queue-polling.ts`
-
-```
-폴링 루프:
-   ↓
-queueApi.status(eventId) 호출  →  GET /api/queue/status/{eventId}
-   ↓
-응답에서 nextPoll(다음 폴링 간격) 추출
-   ↓
-setTimeout(nextPoll초 후 다시 호출)
-   ↓
-status가 "active"로 바뀌면 → 자동 리다이렉트
-```
-
-**폴링 간격은 서버가 정한다** (순번에 따라 다름):
+WebSocket이 아니라 **HTTP 폴링**을 쓴다. 파일: `apps/web/src/hooks/use-queue-polling.ts`
 
 | 내 순번 | 폴링 간격 | 이유 |
 |---|---|---|
 | 0 이하 (이미 입장) | 3초 | 빠른 확인 |
-| 1~1,000 | 1초 | 곧 들어가니까 자주 확인 |
+| 1~1,000 | 1초 | 곧 입장 |
 | 1,001~5,000 | 5초 | 좀 기다려야 함 |
 | 5,001~10,000 | 10초 | |
 | 10,001~100,000 | 30초 | 서버 부하 줄이기 |
 | 100,001 이상 | 60초 | 한참 걸림 |
 
-> **왜 WebSocket 안 쓰고 폴링?**: 수만 명이 대기할 때 WebSocket 연결을 전부 유지하면 서버 리소스가 부족해진다. HTTP 폴링은 요청할 때만 연결하고 끊으므로 훨씬 가볍다. CDN/프록시도 쉽게 통과한다.
+> **왜 WebSocket 안 쓰고 폴링?**: 수만 명이 대기할 때 WebSocket 연결을 전부 유지하면 서버 리소스가 부족해진다. HTTP 폴링은 요청할 때만 연결하고 끊으므로 훨씬 가볍다.
 
-### 5.4 Entry Token — 대기열 통과 증명서
+### 5.8 Entry Token — 대기열 통과 증명서
 
-대기열을 통과한 사용자에게 발급하는 JWT(JSON Web Token)이다. "이 사람은 정상적으로 줄 서서 입장한 사람이다"를 증명한다.
-
-#### 왜 필요한가
-entryToken이 없으면, 누구나 대기열을 건너뛰고 `/events/[id]/seats` URL을 직접 입력해서 좌석 선택 페이지에 접근할 수 있다. entryToken은 이걸 막는다.
+Tier 2 대기열을 통과한 사용자에게 발급하는 JWT. "이 사람은 정상적으로 줄 서서 입장한 사람이다"를 증명한다.
 
 #### 토큰 내용
 
@@ -413,7 +600,17 @@ entryToken 생성
 - 헤더 첨부: `apps/web/src/lib/api-client.ts:70` — Axios 인터셉터가 자동 처리
 - 서버 검증: `gateway-service/.../filter/VwrEntryTokenFilter.java`
 
-### 5.5 Gateway — 대기열 우회 방지
+> **Tier 1 vs Tier 2 토큰 구분**:
+> | | Tier 1 VWR 토큰 | Tier 2 entryToken |
+> |---|---|---|
+> | **쿠키 이름** | `urr-vwr-token` | `urr-entry-token` |
+> | **발급 주체** | VWR API Lambda | queue-service |
+> | **역할** | Lambda@Edge → ALB 통과 허용 | 좌석 선택/예매 API 접근 허용 |
+> | **JWT claim** | `tier: 1` | `sub: eventId, uid: userId` |
+> | **유효 시간** | 10분 | 10분 |
+> | **검증 위치** | Lambda@Edge (CDN) | VwrEntryTokenFilter (gateway-service) |
+
+### 5.9 Gateway — 대기열 우회 방지
 
 게이트웨이에 `VwrEntryTokenFilter`가 있다. 좌석 선택(`/api/seats/**`)과 예약(`/api/reservations/**`) API를 호출할 때, entryToken이 유효한지 검사한다.
 
@@ -439,98 +636,84 @@ JWT 서명 검증 (QUEUE_ENTRY_TOKEN_SECRET으로)
 
 > **CloudFront 바이패스**: 프로덕션에서 Lambda@Edge가 CDN 레벨에서 이미 토큰을 검증한 경우, `X-CloudFront-Verified` 헤더가 있으면 게이트웨이에서 재검증을 건너뛴다.
 
-### 5.6 좌석 선택 페이지의 이중 검증
-
-좌석 선택 페이지(`/events/[id]/seats`)에도 프론트엔드 레벨 큐 가드가 있다.
-
-파일: `apps/web/src/app/events/[id]/seats/page.tsx:81`
-
-```javascript
-// 페이지 로드 시 queue status 한 번 확인
-if (queueStatus.queued || queueStatus.status === "queued") {
-  // 아직 대기 중이면 → 대기열 페이지로 강제 이동
-  router.replace(`/queue/${eventId}`);
-} else {
-  // 입장 완료 → 폴링 중지, 좌석 선택 허용
-  setQueueChecked(true);
-}
-```
-
-즉, **서버(gateway)와 클라이언트(seats page) 양쪽에서 이중으로** 대기열 통과 여부를 검증한다.
-
-### 5.7 VWR 전체 시퀀스 다이어그램
+### 5.10 2단계 전체 시퀀스 다이어그램
 
 ```mermaid
 sequenceDiagram
   autonumber
   actor U as 사용자 (브라우저)
-  participant FE as 프론트엔드 (Next.js)
+  participant CF as CloudFront + S3
+  participant AG as API Gateway + Lambda (vwr-api)
+  participant DB as DynamoDB (counters + positions)
+  participant LE as Lambda@Edge
   participant GW as gateway-service
   participant Q as queue-service
   participant R as Redis ZSet
-  participant W as AdmissionWorker
 
-  Note over U,R: Phase 1: 대기열 진입
-  U->>FE: "예매하기" 클릭
-  FE->>GW: POST /api/queue/check/{eventId}
-  GW->>Q: 라우팅
+  Note over U,DB: Tier 1: 앞단 VWR (CDN 레벨 유량 제어)
+  U->>CF: "예매하기" 클릭
+  CF-->>U: S3 정적 대기 페이지 ("잠시 대기해주세요")
+  U->>AG: POST /vwr/assign/{eventId}
+  AG->>DB: ADD nextPosition :one (atomic counter)
+  AG-->>U: {position: 12345, requestId}
+
+  loop 2~15초 간격 폴링 (정적 페이지 JS)
+    U->>AG: GET /vwr/check/{eventId}/{requestId}
+    AG->>DB: position과 servingCounter 비교
+    alt position > servingCounter
+      AG-->>U: {admitted: false, position, servingCounter}
+    else position ≤ servingCounter
+      AG->>AG: Tier 1 JWT 발급 (tier:1 claim)
+      AG-->>U: {admitted: true, token} → 쿠키 urr-vwr-token에 저장
+    end
+  end
+
+  Note over U,R: Lambda@Edge 토큰 검증 (Tier 1 → Tier 2 전환점)
+  U->>LE: 실제 사이트 접속 (JWT 포함)
+  LE->>LE: Tier 1 JWT 검증
+  alt 토큰 유효
+    LE->>GW: ALB로 통과
+  else 토큰 무효/없음
+    LE-->>U: S3 대기 페이지로 리다이렉트
+  end
+
+  Note over U,R: Tier 2: 뒷단 대기열 (이벤트별 입장 관리)
+  GW->>Q: POST /api/queue/check/{eventId}
   Q->>R: ZCARD queue, ZCOUNT active
   alt 자리 있음 (바로 입장)
     Q->>R: ZADD active:{eventId}
     Q->>Q: entryToken(JWT) 생성
-    Q-->>FE: {queued:false, entryToken}
-    FE->>FE: 쿠키 저장 (urr-entry-token)
-    FE->>U: 자동 리다이렉트 → 좌석 선택
-  else 자리 없음 (대기)
-    Q->>R: ZADD queue:{eventId} (score=현재시각)
-    Q-->>FE: {queued:true, position:42, estimatedWait:120}
-    FE->>U: 대기 화면 표시
+    Q-->>U: {queued:false, entryToken}
+    Note over U: 좌석 선택 페이지로 이동
+  else 자리 없음 (이벤트별 대기)
+    Q->>R: ZADD queue:{eventId}
+    Q-->>U: {queued:true, position:42}
+    Note over U: Tier 2 대기열 페이지에서 폴링
   end
 
-  Note over U,R: Phase 2: 폴링 (대기 중)
-  loop 매 1~60초 (nextPoll 간격)
-    FE->>GW: GET /api/queue/status/{eventId}
-    GW->>Q: 라우팅
-    Q->>R: ZRANK queue:{eventId}
-    Q-->>FE: {position, estimatedWait, nextPoll}
-    FE->>U: 순번/대기시간 갱신
-  end
-
-  Note over W,R: Phase 3: 백그라운드 입장 처리
-  W->>R: admission_control.lua (ZPOPMIN → ZADD active)
-
-  Note over U,R: Phase 4: 입장 허용
-  FE->>GW: GET /api/queue/status/{eventId}
-  GW->>Q: 라우팅
-  Q->>R: active에 있음, score > now
-  Q->>Q: entryToken 생성
-  Q-->>FE: {status:"active", entryToken}
-  FE->>FE: 쿠키 저장
-  FE->>U: 자동 리다이렉트 → 좌석 선택
-
-  Note over U,GW: Phase 5: 좌석 선택 (토큰 검증)
-  U->>FE: 좌석 클릭 → 예매 요청
-  FE->>GW: POST /api/seats/reserve (헤더: x-queue-entry-token)
+  Note over U,GW: 좌석 선택 (entryToken 검증)
+  U->>GW: POST /api/seats/reserve (x-queue-entry-token)
   GW->>GW: VwrEntryTokenFilter 검증
   alt 토큰 유효
-    GW->>Q: 요청 통과 → ticket-service로 라우팅
-  else 토큰 무효/없음
-    GW-->>FE: 403 Forbidden
-    FE->>U: 대기열로 리다이렉트
+    GW->>Q: ticket-service로 라우팅
+  else 토큰 무효
+    GW-->>U: 403 Forbidden
   end
 ```
 
-### 5.8 VWR 보안 요약
+### 5.11 VWR 보안 요약
 
-| 보안 포인트 | 구현 방법 | 방어 대상 |
-|---|---|---|
-| 대기열 우회 방지 | entryToken(JWT) 필수 검증 | URL 직접 입력으로 좌석 선택 접근 |
-| 토큰 도용 방지 | JWT의 uid와 요청자 userId 비교 | 다른 사람의 토큰 복사해서 사용 |
-| 토큰 위조 방지 | HMAC-SHA 서명 검증 | 가짜 토큰 생성 |
-| 토큰 만료 | 10분 TTL (쿠키 + JWT 모두) | 오래된 토큰 재사용 |
-| CSRF 방지 | SameSite=Strict 쿠키 | 외부 사이트에서 요청 위조 |
-| CDN 레벨 검증 | Lambda@Edge (프로덕션) | 서버 도달 전 차단 |
-| 이중 검증 | 프론트엔드 큐 가드 + 게이트웨이 필터 | 클라이언트/서버 양쪽에서 확인 |
+| 보안 포인트 | 구현 방법 | 단계 | 방어 대상 |
+|---|---|---|---|
+| 최초 트래픽 흡수 | S3 + CloudFront (서버리스) | Tier 1 | 수백만 동시 접속으로 서버 다운 |
+| CDN 레벨 유량 제어 | serving_counter 기반 입장 제한 | Tier 1 | ASG 완료 전 과부하 |
+| CDN 토큰 검증 | Lambda@Edge JWT 검증 | Tier 1→2 | Tier 1 우회 시도 |
+| 대기열 우회 방지 | entryToken(JWT) 필수 검증 | Tier 2 | URL 직접 입력으로 좌석 접근 |
+| 토큰 도용 방지 | JWT의 uid와 요청자 비교 | Tier 2 | 다른 사람 토큰 복사 |
+| 토큰 위조 방지 | HMAC-SHA 서명 검증 | Tier 2 | 가짜 토큰 생성 |
+| 토큰 만료 | 10분 TTL | 공통 | 오래된 토큰 재사용 |
+| CSRF 방지 | SameSite=Strict 쿠키 | Tier 2 | 외부 사이트에서 요청 위조 |
+| 이중 검증 | 프론트엔드 큐 가드 + 게이트웨이 필터 | Tier 2 | 클라이언트/서버 양쪽 확인 |
 
 ---
 

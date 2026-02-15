@@ -1,0 +1,13 @@
+{
+  "name": "vwr-api",
+  "version": "1.0.0",
+  "description": "VWR Tier 1 API - Queue position assignment and checking",
+  "main": "index.js",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.500.0",
+    "@aws-sdk/lib-dynamodb": "^3.500.0"
+  }
+}

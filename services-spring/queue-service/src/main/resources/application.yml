@@ -55,6 +55,12 @@ aws:
     enabled: ${SQS_ENABLED:false}
   region: ${AWS_REGION:ap-northeast-2}
 
+vwr:
+  dynamodb:
+    enabled: ${VWR_DYNAMODB_ENABLED:false}
+    counters-table: ${VWR_DYNAMODB_COUNTERS_TABLE:}
+    endpoint: ${VWR_DYNAMODB_ENDPOINT:}
+
 resilience4j:
   circuitbreaker:
     instances:

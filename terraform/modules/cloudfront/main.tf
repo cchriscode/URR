@@ -3,10 +3,19 @@
 # (Must be deployed in us-east-1 for CloudFront)
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Generate config.json with the secret baked in (Lambda@Edge cannot use env vars)
+# Generate config.json with secrets baked in (Lambda@Edge cannot use env vars)
 resource "local_file" "edge_config" {
-  content  = jsonencode({ secret = var.queue_entry_token_secret })
+  content = jsonencode({
+    secret    = var.queue_entry_token_secret
+    vwrSecret = var.vwr_token_secret != "" ? var.vwr_token_secret : var.queue_entry_token_secret
+  })
   filename = "${var.lambda_source_dir}/config.json"
+}
+
+# Generate vwr-active.json with active VWR events (empty by default)
+resource "local_file" "vwr_active_config" {
+  content  = jsonencode({ activeEvents = var.vwr_active_events })
+  filename = "${var.lambda_source_dir}/vwr-active.json"
 }
 
 # Package Lambda function code
@@ -91,6 +100,23 @@ resource "aws_cloudfront_distribution" "main" {
     }
   }
 
+  # VWR API Gateway origin (if provided)
+  dynamic "origin" {
+    for_each = var.vwr_api_gateway_domain != "" ? [1] : []
+    content {
+      domain_name = var.vwr_api_gateway_domain
+      origin_id   = "vwr-api"
+      origin_path = "/${var.vwr_api_gateway_stage}"
+
+      custom_origin_config {
+        http_port              = 80
+        https_port             = 443
+        origin_protocol_policy = "https-only"
+        origin_ssl_protocols   = ["TLSv1.2"]
+      }
+    }
+  }
+
   # Default cache behavior (API traffic to ALB)
   default_cache_behavior {
     allowed_methods        = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
@@ -152,6 +178,50 @@ resource "aws_cloudfront_distribution" "main" {
       min_ttl     = 31536000  # 1 year for immutable files
       default_ttl = 31536000
       max_ttl     = 31536000
+    }
+  }
+
+  # Cache behavior for VWR static waiting page (S3, no Lambda@Edge)
+  dynamic "ordered_cache_behavior" {
+    for_each = var.s3_bucket_name != "" ? [1] : []
+    content {
+      path_pattern           = "/vwr/*"
+      allowed_methods        = ["GET", "HEAD", "OPTIONS"]
+      cached_methods         = ["GET", "HEAD", "OPTIONS"]
+      target_origin_id       = "s3"
+      viewer_protocol_policy = "redirect-to-https"
+      compress               = true
+
+      cache_policy_id            = data.aws_cloudfront_cache_policy.caching_optimized.id
+      origin_request_policy_id   = data.aws_cloudfront_origin_request_policy.cors_s3.id
+      response_headers_policy_id = aws_cloudfront_response_headers_policy.security.id
+
+      min_ttl     = 0
+      default_ttl = 300   # 5 minutes
+      max_ttl     = 3600
+    }
+  }
+
+  # Cache behavior for VWR API (API Gateway, no caching)
+  # CloudFront Function strips /vwr-api prefix before forwarding to API Gateway
+  dynamic "ordered_cache_behavior" {
+    for_each = var.vwr_api_gateway_domain != "" ? [1] : []
+    content {
+      path_pattern           = "/vwr-api/*"
+      allowed_methods        = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
+      cached_methods         = ["GET", "HEAD", "OPTIONS"]
+      target_origin_id       = "vwr-api"
+      viewer_protocol_policy = "redirect-to-https"
+      compress               = true
+
+      cache_policy_id            = aws_cloudfront_cache_policy.api.id
+      origin_request_policy_id   = aws_cloudfront_origin_request_policy.api.id
+      response_headers_policy_id = aws_cloudfront_response_headers_policy.security.id
+
+      function_association {
+        event_type   = "viewer-request"
+        function_arn = aws_cloudfront_function.vwr_api_rewrite[0].arn
+      }
     }
   }
 
@@ -306,6 +376,27 @@ resource "aws_cloudfront_response_headers_policy" "security" {
 # ─────────────────────────────────────────────────────────────────────────────
 # Managed Cache Policies (reference existing AWS managed policies)
 # ─────────────────────────────────────────────────────────────────────────────
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CloudFront Function to strip /vwr-api prefix for API Gateway origin
+# ─────────────────────────────────────────────────────────────────────────────
+
+resource "aws_cloudfront_function" "vwr_api_rewrite" {
+  count   = var.vwr_api_gateway_domain != "" ? 1 : 0
+  name    = "${var.name_prefix}-vwr-api-rewrite"
+  runtime = "cloudfront-js-2.0"
+  comment = "Strips /vwr-api prefix before forwarding to API Gateway"
+  publish = true
+
+  code = <<-EOF
+    function handler(event) {
+      var request = event.request;
+      request.uri = request.uri.replace(/^\/vwr-api/, '');
+      if (request.uri === '') request.uri = '/';
+      return request;
+    }
+  EOF
+}
 
 data "aws_cloudfront_cache_policy" "caching_optimized" {
   name = "Managed-CachingOptimized"
