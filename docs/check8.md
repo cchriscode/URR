@@ -220,17 +220,31 @@ Kafka는 at-least-once 전달을 보장한다. 즉, 네트워크 문제나 컨�
 두 컨슈머 모두 DB 기반 중복 체크를 구현한다:
 
 **1단계**: 메시지 수신 시 이벤트 키를 생성한다.
-- ticket-service: `sagaId` 우선 사용, 없으면 `type:referenceId` 조합
+- ticket-service: `sagaId` 우선 사용, 없으면 `type` + (`reservationId` 또는 `referenceId`) 조합
 - stats-service: `type:id:timestamp` 조합
 
-**2단계**: `processed_events` 테이블에서 이미 처리했는지 확인한다.
+**2단계**: 각 서비스의 DB에서 이미 처리했는지 확인한다. (조회 쿼리도 서비스별로 다르다)
+
+ticket-service — consumer_group 조건 포함:
+```sql
+SELECT COUNT(*) FROM processed_events WHERE event_key = ? AND consumer_group = ?
+```
+
+stats-service — event_key만으로 조회:
 ```sql
 SELECT COUNT(*) FROM processed_events WHERE event_key = ?
 ```
 
-**3단계**: 처리 성공 후 해당 키를 기록한다.
+**3단계**: 처리 성공 후 해당 키를 각 서비스의 DB에 기록한다. (서비스별 스키마가 다르다)
+
+ticket-service — consumer_group 컬럼으로 그룹 구분:
 ```sql
 INSERT INTO processed_events (event_key, consumer_group) VALUES (?, ?)
+```
+
+stats-service — processed_at 타임스탬프만 기록, ON CONFLICT 무시:
+```sql
+INSERT INTO processed_events (event_key, processed_at) VALUES (?, NOW()) ON CONFLICT (event_key) DO NOTHING
 ```
 
 **4단계**: 이미 처리된 메시지가 다시 오면 스킵한다.
@@ -275,23 +289,24 @@ sequenceDiagram
   participant P as payment-service
   participant K as Kafka
   participant T as ticket-service (ticket-service-group)
+  participant TDB as 티켓 DB (processed_events)
   participant ST as stats-service (stats-service-group)
-  participant DB as processed_events
+  participant SDB as 통계 DB (processed_events)
 
   U->>P: 결제 확정
   P->>K: payment-events (type=PAYMENT_CONFIRMED, paymentType=reservation)
 
-  par 팬아웃: 두 Consumer Group이 독립 소비
+  par 팬아웃: 두 Consumer Group이 각자의 DB에서 독립 소비
     K->>T: payment-events 소비
-    T->>DB: 중복 체크 (isAlreadyProcessed)
+    T->>TDB: 중복 체크 (isAlreadyProcessed)
     T->>T: handleReservationPayment → 예약 확정
     T->>K: reservation-events (type=RESERVATION_CONFIRMED) 발행
-    T->>DB: markProcessed
+    T->>TDB: markProcessed (event_key, consumer_group)
 
     K->>ST: payment-events 소비
-    ST->>DB: 중복 체크 (isDuplicate)
+    ST->>SDB: 중복 체크 (isDuplicate)
     ST->>ST: 양도 결제 시에만 통계 반영
-    ST->>DB: markProcessed
+    ST->>SDB: markProcessed (event_key, processed_at)
   end
 
   K->>ST: reservation-events 소비
@@ -331,7 +346,7 @@ sequenceDiagram
 
 | 원칙 | SQS (queue-service) | Kafka (payment/ticket/stats) |
 |---|---|---|
-| 전달 보장 | Fire-and-Forget (실패해도 Redis가 대체) | At-Least-Once (멱등성으로 중복 방어) |
+| 앱 레벨 발행 전략 | Fire-and-Forget (SQS 자체는 at-least-once이나, 앱에서 실패 무시 + Redis 폴백) | At-Least-Once (멱등성으로 중복 방어) |
 | 순서 보장 | FIFO MessageGroupId (이벤트 단위) | Partition Key (엔티티 ID 단위) |
 | 중복 방어 | FIFO MessageDeduplicationId (SQS 레벨) | processed_events 테이블 (애플리케이션 레벨) |
 | 장애 격리 | SQS 장애 → 대기열 기능 유지 (Redis 폴백) | Consumer 장애 → 미소비 메시지 쌓임 → 재시작 시 자동 재개 |
