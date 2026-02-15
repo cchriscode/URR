@@ -53,6 +53,8 @@
 
 ## 4. SQS 기초
 SQS는 AWS가 제공하는 관리형 큐 서비스다.
+우리 백엔드는 AWS SDK/API로 SQS에 메시지를 보내거나 읽음
+즉, 서비스는 AWS 것이고, 백엔드는 그 서비스를 연동해서 사용
 
 ### SQS 메시지 흐름
 1. Producer가 메시지를 큐에 넣는다.
@@ -75,7 +77,21 @@ SQS는 AWS가 제공하는 관리형 큐 서비스다.
 Kafka는 "분산 이벤트 로그"에 가깝다.
 
 ### Kafka 메시지 구조
-- `Topic` 아래에 여러 `Partition`이 있다.
+- `Topic` 아래에 여러 `Partition`이 있다. 여기서 토픽(Topic)은 Kafka에서 메시지를 모아두는 카테고리/채널 이름
+
+토픽 = 카톡 “방 이름”
+메시지 = 그 방에 올라오는 글
+컨슈머 = 그 방을 읽는 사람
+
+예:
+
+payment-events 토픽: 결제 관련 이벤트만 모음
+reservation-events 토픽: 예약 관련 이벤트만 모음
+
+이 프로젝트 기준:
+
+토픽 정의: payment-events, reservation-events, transfer-events, membership-events
+
 - 각 파티션 메시지는 `Offset`(순번)으로 저장된다.
 - Consumer는 Offset을 기준으로 어디까지 읽었는지 관리한다.
 
@@ -85,6 +101,15 @@ Kafka는 "분산 이벤트 로그"에 가깝다.
 
 ### Kafka가 강한 지점
 - 다중 소비자 팬아웃
+ex)다중 소비자 팬아웃
+하나의 이벤트를 여러 소비자가 “각자” 받는 구조.
+
+Kafka에서는 보통 이렇게->
+
+같은 토픽(payment-events)에 이벤트 1개 발행
+ticket-service-group이 1번 처리
+stats-service-group도 같은 이벤트를 1번 처리
+
 - 재처리(replay) 및 이벤트 히스토리 활용
 - 서비스 간 비동기 이벤트 체인
 
@@ -100,7 +125,18 @@ Kafka는 "분산 이벤트 로그"에 가깝다.
 | 다중 소비 | 가능하지만 큐 모델 중심 | consumer group 모델로 매우 자연스러움 |
 | 재처리 모델 | 재수신/재시도 중심 | offset 기반 replay 가능 |
 | 운영 난이도 | 상대적으로 단순 | 설계/운영 포인트 더 많음 |
+  
 
+  ### URR 서비스 기준 한눈에 비교
+
+| 항목 | SQS FIFO (URR) | Kafka (URR) |
+|---|---|---|
+| 발행 서비스(Producer) | `queue-service` (`SqsPublisher`) | `payment-service` (`PaymentEventProducer`), `ticket-service` (`TicketEventProducer`) |
+| 소비 서비스(Consumer) | `lambda/ticket-worker` (현재 `admitted`는 로그 처리) | `ticket-service-group`, `stats-service-group` |
+| 메시지 채널 | SQS FIFO 큐 (`*-ticket-events.fifo`) | `payment-events`, `reservation-events`, `transfer-events`, `membership-events` |
+| 실제 역할 | 대기열 입장 허용 이벤트(`admitted`) 외부 전달 보조 채널 | 결제 -> 예매/양도/멤버십 처리 -> 통계 집계 메인 이벤트 파이프라인 |
+| 순서/중복 제어 | `messageGroupId=eventId`, `messageDeduplicationId=userId:eventId` | 파티션 키 + 앱 멱등성(`processed_events`) |
+| 장애 시 동작 | 발행 실패 시 로그 후 계속 진행(대기열 핵심은 Redis로 유지) | at-least-once 전제, 소비 측에서 멱등성으로 중복 방어 |
 ---
 
 ## 7. URR 프로젝트에서 SQS가 하는 역할
@@ -209,6 +245,8 @@ Kafka는 "분산 이벤트 로그"에 가깝다.
 ---
 
 ## 8-1. Kafka 멱등성(Idempotency) 구현
+
+멱등성: 같은 요청/이벤트를 여러 번 처리해도 최종 결과가 1번 처리한 것과 같아야 하는 성질
 
 2장에서 언급한 Idempotency가 실제 코드에서 어떻게 구현되었는지 정리한다.
 
