@@ -117,13 +117,15 @@ Kafka는 "분산 이벤트 로그"에 가깝다.
   - `eventId`
   - `userId`
   - `entryToken`
+  - `timestamp` (System.currentTimeMillis())
 - FIFO 제어:
-  - `messageGroupId=eventId`
-  - `messageDeduplicationId=userId:eventId`
+  - `messageGroupId=eventId` — 같은 이벤트의 입장 메시지끼리 순서 보장
+  - `messageDeduplicationId=userId:eventId` — 같은 사용자가 같은 이벤트에 중복 입장 메시지 전송 방지 (5분 내)
 
-### 실패 시 동작
+### 실패 시 동작 (Fire-and-Forget)
 - SQS 전송 실패 시 예외를 올리지 않고 로그 후 계속 진행
-- 즉, 대기열 핵심 기능은 Redis 기반으로 계속 동작
+- 즉, 대기열 핵심 기능은 Redis 기반으로 계속 동작하며, SQS는 보조 채널
+- 이 패턴을 쓰는 이유: 사용자 응답 지연 없이 SQS가 죽어도 대기열이 정상 동작
 - 코드: `services-spring/queue-service/src/main/java/guru/urr/queueservice/service/SqsPublisher.java:65`
 
 ### 소비 측
@@ -150,24 +152,95 @@ Kafka는 "분산 이벤트 로그"에 가깝다.
   - `services-spring/payment-service/src/main/java/guru/urr/paymentservice/messaging/PaymentEventProducer.java:14`
 
 ### 2) 티켓 서비스가 결제 이벤트 소비
-- `payment-events`를 소비해서 예약 확정/양도 완료/멤버십 활성화 처리
-- 코드:
-  - `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/messaging/PaymentEventConsumer.java:49`
+- `payment-events`를 소비해서 `paymentType`에 따라 분기 처리
+- Consumer Group: `ticket-service-group`
+- 코드: `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/messaging/PaymentEventConsumer.java:49`
+
+**이벤트 라우팅 (paymentType 기반):**
+
+| paymentType | 처리 메서드 | 동작 |
+|---|---|---|
+| `reservation` (기본) | `handleReservationPayment()` | 예약 확정 + ReservationConfirmedEvent 발행 |
+| `transfer` | `handleTransferPayment()` | 양도 완료 + TransferCompletedEvent 발행 |
+| `membership` | `handleMembershipPayment()` | 멤버십 활성화 + MembershipActivatedEvent 발행 |
+| (환불) | `handleRefund()` | 예약 환불 처리 + ReservationCancelledEvent 발행 |
+
+> **이벤트 타입 판별**: 먼저 명시적 `type` 필드 확인 (`PAYMENT_CONFIRMED`/`PAYMENT_REFUNDED`), 없으면 duck-typing으로 폴백 (하위 호환성)
 
 ### 3) 티켓 서비스가 후속 이벤트 발행
-- `reservation-events`, `transfer-events`, `membership-events` 발행
-- 코드:
-  - `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/messaging/TicketEventProducer.java:25`
+- 결제 이벤트 처리 후 도메인별 후속 이벤트를 각각의 토픽으로 발행
+- 코드: `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/messaging/TicketEventProducer.java`
+
+| 메서드 | 토픽 | 메시지 키 |
+|---|---|---|
+| `publishReservationCreated()` (line 24) | `reservation-events` | reservationId |
+| `publishReservationConfirmed()` (line 35) | `reservation-events` | reservationId |
+| `publishReservationCancelled()` (line 46) | `reservation-events` | reservationId |
+| `publishTransferCompleted()` (line 57) | `transfer-events` | transferId |
+| `publishMembershipActivated()` (line 68) | `membership-events` | membershipId |
+
+> **비동기 콜백**: 모든 publish는 `whenComplete()`로 성공/실패를 비동기 로깅. 실패 시 예외를 던지지 않는다.
 
 ### 4) 통계 서비스가 여러 토픽 소비
-- `payment-events`, `reservation-events`, `membership-events` 소비 후 통계 반영
-- 코드:
-  - `services-spring/stats-service/src/main/java/guru/urr/statsservice/messaging/StatsEventConsumer.java:25`
+- Consumer Group: `stats-service-group` (ticket-service와 다른 그룹이므로 같은 메시지를 독립 소비)
+- 코드: `services-spring/stats-service/src/main/java/guru/urr/statsservice/messaging/StatsEventConsumer.java`
+
+| 리스너 | 토픽 | 처리 내용 |
+|---|---|---|
+| `handlePaymentEvent()` (line 25) | `payment-events` | 환불 금액, 양도 금액 집계 |
+| `handleReservationEvent()` (line 70) | `reservation-events` | 예약 생성/확정/취소 카운트 |
+| `handleMembershipEvent()` (line 116) | `membership-events` | 멤버십 활성화 카운트 |
+
+> **Consumer Group 분리 핵심**: `payment-events` 토픽을 `ticket-service-group`(예약 확정)과 `stats-service-group`(통계 집계)이 각각 독립적으로 소비한다. Kafka의 다중 소비자 팬아웃이 여기서 동작한다.
 
 ### 5) 토픽 정의
-- 토픽은 `ticket-service`의 Kafka 설정에서 생성
-- 코드:
-  - `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/shared/config/KafkaConfig.java:17`
+- 토픽은 `ticket-service`의 Kafka 설정에서 자동 생성
+- 코드: `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/shared/config/KafkaConfig.java`
+
+| 토픽 이름 | 파티션 수 | 복제 팩터 |
+|---|---|---|
+| `payment-events` (line 16) | 3 | 설정값 (기본 1) |
+| `reservation-events` (line 21) | 3 | 설정값 (기본 1) |
+| `transfer-events` (line 26) | 3 | 설정값 (기본 1) |
+| `membership-events` (line 31) | 3 | 설정값 (기본 1) |
+
+> **파티션 3개 설정 이유**: 같은 Consumer Group 내 최대 3개 인스턴스가 병렬 소비 가능. 파티션 키(reservationId, transferId 등)로 같은 엔티티의 이벤트는 같은 파티션에 들어가 순서가 보장된다.
+
+---
+
+## 8-1. Kafka 멱등성(Idempotency) 구현
+
+2장에서 언급한 Idempotency가 실제 코드에서 어떻게 구현되었는지 정리한다.
+
+### 문제
+Kafka는 at-least-once 전달을 보장한다. 즉, 네트워크 문제나 컨슈머 재시작 시 같은 메시지가 두 번 이상 올 수 있다. 결제 확정이 두 번 처리되면 예약이 이중 확정되는 심각한 문제가 발생한다.
+
+### 해결: processed_events 테이블
+
+두 컨슈머 모두 DB 기반 중복 체크를 구현한다:
+
+**1단계**: 메시지 수신 시 이벤트 키를 생성한다.
+- ticket-service: `sagaId` 우선 사용, 없으면 `type:referenceId` 조합
+- stats-service: `type:id:timestamp` 조합
+
+**2단계**: `processed_events` 테이블에서 이미 처리했는지 확인한다.
+```sql
+SELECT COUNT(*) FROM processed_events WHERE event_key = ?
+```
+
+**3단계**: 처리 성공 후 해당 키를 기록한다.
+```sql
+INSERT INTO processed_events (event_key, consumer_group) VALUES (?, ?)
+```
+
+**4단계**: 이미 처리된 메시지가 다시 오면 스킵한다.
+```
+"Skipping already-processed event: PAYMENT_CONFIRMED:abc-123"
+```
+
+### 관련 코드
+- ticket-service: `PaymentEventConsumer.java:193-231` (buildEventKey, isAlreadyProcessed, markProcessed)
+- stats-service: `StatsEventConsumer.java:138-170` (buildEventKey, isDuplicate, markProcessed)
 
 ---
 
@@ -194,7 +267,38 @@ sequenceDiagram
   L->>L: admitted 로그 처리
 ```
 
-### 9.2 결제 이후 Kafka 체인
+### 9.2 결제 이후 Kafka 체인 (예약 결제)
+```mermaid
+sequenceDiagram
+  autonumber
+  actor U as User
+  participant P as payment-service
+  participant K as Kafka
+  participant T as ticket-service (ticket-service-group)
+  participant ST as stats-service (stats-service-group)
+  participant DB as processed_events
+
+  U->>P: 결제 확정
+  P->>K: payment-events (type=PAYMENT_CONFIRMED, paymentType=reservation)
+
+  par 팬아웃: 두 Consumer Group이 독립 소비
+    K->>T: payment-events 소비
+    T->>DB: 중복 체크 (isAlreadyProcessed)
+    T->>T: handleReservationPayment → 예약 확정
+    T->>K: reservation-events (type=RESERVATION_CONFIRMED) 발행
+    T->>DB: markProcessed
+
+    K->>ST: payment-events 소비
+    ST->>DB: 중복 체크 (isDuplicate)
+    ST->>ST: 양도 결제 시에만 통계 반영
+    ST->>DB: markProcessed
+  end
+
+  K->>ST: reservation-events 소비
+  ST->>ST: 예약 확정 통계 집계
+```
+
+### 9.3 환불 Kafka 체인
 ```mermaid
 sequenceDiagram
   autonumber
@@ -204,12 +308,13 @@ sequenceDiagram
   participant T as ticket-service
   participant ST as stats-service
 
-  U->>P: 결제 확정/취소
-  P->>K: payment-events 발행
+  U->>P: 결제 취소 요청
+  P->>K: payment-events (type=PAYMENT_REFUNDED)
   K->>T: payment-events 소비
-  T->>K: reservation/transfer/membership-events 발행
-  K->>ST: payment/reservation/membership-events 소비
-  ST->>ST: 통계 집계 반영
+  T->>T: handleRefund → 예약 환불 처리
+  T->>K: reservation-events (type=RESERVATION_CANCELLED) 발행
+  K->>ST: payment-events → 환불 금액 집계
+  K->>ST: reservation-events → 예약 취소 카운트
 ```
 
 ---
@@ -221,3 +326,13 @@ sequenceDiagram
 2. `Kafka`는 결제-티켓-통계를 잇는 도메인 이벤트 메인 파이프라인
 
 즉, 둘 다 메시징이지만 "역할 레이어"가 다르다.
+
+### 핵심 설계 원칙 요약
+
+| 원칙 | SQS (queue-service) | Kafka (payment/ticket/stats) |
+|---|---|---|
+| 전달 보장 | Fire-and-Forget (실패해도 Redis가 대체) | At-Least-Once (멱등성으로 중복 방어) |
+| 순서 보장 | FIFO MessageGroupId (이벤트 단위) | Partition Key (엔티티 ID 단위) |
+| 중복 방어 | FIFO MessageDeduplicationId (SQS 레벨) | processed_events 테이블 (애플리케이션 레벨) |
+| 장애 격리 | SQS 장애 → 대기열 기능 유지 (Redis 폴백) | Consumer 장애 → 미소비 메시지 쌓임 → 재시작 시 자동 재개 |
+| 팬아웃 | 없음 (단일 Lambda 소비) | 있음 (ticket-service-group + stats-service-group 독립 소비) |
