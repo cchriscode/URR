@@ -347,6 +347,15 @@ sequenceDiagram
   S->>L: 메시지 전달
   L->>L: admitted 로그 처리
 ```
+#### 9.1 대기열 입장과 SQS
+1. 사용자가 `queue-service`에 대기열 확인 요청을 보낸다.
+2. `queue-service`는 Redis에서 현재 대기/활성 상태를 확인한다.
+3. 입장 가능하면 `entryToken`을 발급하고 사용자에게 바로 응답한다.
+4. 동시에 `SqsPublisher`가 `admitted` 메시지를 SQS FIFO에 발행한다.
+5. Lambda `ticket-worker`가 SQS 메시지를 소비한다. (현재 `admitted`는 로그 처리)
+
+- `SQS 역할`: 입장 허용 이벤트를 비동기로 외부 큐에 전달하는 보조 채널. FIFO 순서/중복 제어(`messageGroupId`, `messageDeduplicationId`)를 담당한다.
+- `Kafka 역할`: 이 흐름에는 직접 관여하지 않는다.
 
 ### 9.2 결제 이후 Kafka 체인 (예약 결제)
 ```mermaid
@@ -380,6 +389,17 @@ sequenceDiagram
   ST->>ST: 예약 확정 통계 집계
 ```
 
+#### 9.2 결제 이후 Kafka 체인 (예약 결제)
+1. 사용자가 결제를 확정하면 `payment-service`가 `payment-events`로 이벤트를 발행한다.
+2. Kafka가 같은 이벤트를 두 Consumer Group에 팬아웃한다.
+3. `ticket-service-group`은 결제 이벤트를 소비해 예약을 확정하고, 후속으로 `reservation-events`를 다시 발행한다.
+4. `stats-service-group`도 같은 `payment-events`를 독립 소비해 통계 처리를 수행한다.
+5. `stats-service`는 `reservation-events`도 소비해 예약 확정 통계를 반영한다.
+6. 각 컨슈머는 `processed_events`로 중복 처리 여부를 확인해 멱등성을 보장한다.
+
+- `Kafka 역할`: 결제 이벤트의 메인 전달 버스. 다중 소비자 팬아웃, 비동기 처리, 서비스 간 느슨한 결합, 재처리 가능한 소비 모델을 제공한다.
+- `SQS 역할`: 이 흐름에는 직접 관여하지 않는다.
+
 ### 9.3 환불 Kafka 체인
 ```mermaid
 sequenceDiagram
@@ -398,7 +418,19 @@ sequenceDiagram
   K->>ST: payment-events → 환불 금액 집계
   K->>ST: reservation-events → 예약 취소 카운트
 ```
+#### 9.3 환불 Kafka 체인
+1. 사용자가 결제 취소를 요청하면 `payment-service`가 `PAYMENT_REFUNDED` 이벤트를 `payment-events`에 발행한다.
+2. `ticket-service`가 이벤트를 소비해 예약 환불/취소 상태를 반영한다.
+3. `ticket-service`는 후속으로 `RESERVATION_CANCELLED`를 `reservation-events`에 발행한다.
+4. `stats-service`는 `payment-events`를 소비해 환불 금액 통계를 반영한다.
+5. `stats-service`는 `reservation-events`도 소비해 예약 취소 카운트를 반영한다.
 
+- `Kafka 역할`: 환불 이벤트를 여러 서비스가 독립적으로 처리하도록 중계하는 핵심 버스.
+- `SQS 역할`: 이 흐름에는 직접 관여하지 않는다.
+
+#### 한 줄 요약
+- `9.1`은 **SQS 보조 채널**이 붙은 대기열 입장 흐름이다.
+- `9.2`, `9.3`은 **Kafka 메인 이벤트 파이프라인**으로 결제/예약/통계를 연결하는 흐름이다.
 ---
 
 ## 10. 결론
