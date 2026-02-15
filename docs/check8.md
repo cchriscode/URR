@@ -6,7 +6,8 @@
 1. 메시징이 왜 필요한지
 2. URR에서 쓰는 3가지 기술(Redis ZSet, SQS, Kafka)이 각각 무엇인지
 3. 셋이 어떤 관계로 연결되어 있는지
-4. 실제 코드에서 어떻게 구현되어 있는지
+4. VWR(Virtual Waiting Room)이 프론트엔드부터 백엔드까지 어떻게 동작하는지
+5. 실제 코드에서 어떻게 구현되어 있는지
 
 ---
 
@@ -252,11 +253,292 @@ AdmissionWorkerService (매 1초)
 
 ---
 
-## 5. SQS FIFO — 입장 알림 보조 채널
+## 5. VWR — 사용자가 경험하는 대기열 (Virtual Waiting Room)
+
+VWR은 "가상 대기실"이다. 콘서트 티켓 예매할 때, 수만 명이 동시에 접속하면 서버가 터진다. VWR은 사용자를 줄 세워서 순서대로 입장시키는 시스템이다.
+
+쉽게 말하면:
+- 놀이공원 인기 놀이기구 앞에 줄을 선다.
+- 화면에 "현재 42번째, 예상 2분"이 보인다.
+- 내 차례가 오면 자동으로 좌석 선택 페이지로 넘어간다.
+
+앞에서 설명한 Redis ZSet이 이 VWR의 핵심 엔진이고, 여기서는 **사용자 화면부터 서버까지 전체 흐름**을 설명한다.
+
+### 5.1 전체 사용자 여정
+
+```
+① 이벤트 상세 페이지        ② 대기열 페이지           ③ 좌석 선택/예매          ④ 결제
+   /events/[id]             /queue/[eventId]          /events/[id]/seats        /payment/[id]
+                                                      /events/[id]/book
+   ┌──────────┐            ┌──────────────┐          ┌──────────────┐         ┌──────────┐
+   │ 예매하기  │──클릭──→   │ 42번째 대기중  │──차례──→  │ 좌석 선택     │──결제──→ │ 결제 완료 │
+   │  버튼    │            │ 예상 2분 대기  │          │ 또는 바로예매  │         │          │
+   └──────────┘            └──────────────┘          └──────────────┘         └──────────┘
+                                  │
+                           이 페이지를 닫지 마세요!
+```
+
+1. 사용자가 이벤트 상세에서 "예매하기" 클릭 → `/queue/[eventId]`로 이동
+2. 대기열 페이지에서 자동으로 queue-service에 입장 요청
+3. 자리가 있으면 바로 통과, 없으면 대기열에 줄 서기
+4. 내 차례가 오면 자동으로 좌석 선택(지정석) 또는 예매(비지정석) 페이지로 이동
+5. entryToken(입장권)이 쿠키에 저장되어, 이후 API 요청에 자동 첨부
+
+### 5.2 프론트엔드 — 대기열 페이지
+
+파일: `apps/web/src/app/queue/[eventId]/page.tsx`
+
+#### 처음 로딩 시 (initial check)
+
+```
+페이지 로드
+   ↓
+queueApi.check(eventId) 호출  →  POST /api/queue/check/{eventId}
+   ↓
+응답 확인
+   ├─ queued: false (바로 입장!)
+   │   → entryToken을 쿠키에 저장
+   │   → 좌석 선택 or 예매 페이지로 자동 이동
+   │
+   └─ queued: true (대기열 진입)
+       → 폴링 시작
+       → 순번, 예상 대기시간 표시
+```
+
+#### 화면에 표시되는 정보
+
+```
+┌─────────────────────────────────┐
+│      🎵 콘서트 제목              │
+│      아티스트 이름               │
+│                                 │
+│      현재 42번째                 │
+│                                 │
+│  ┌─────┐  ┌─────┐  ┌─────────┐ │
+│  │내 앞 │  │내 뒤 │  │예상 대기 │ │
+│  │ 41명 │  │958명 │  │ 2분 6초 │ │
+│  └─────┘  └─────┘  └─────────┘ │
+│                                 │
+│  현재 접속자: 987 / 1,000       │
+│                                 │
+│  ⚠️ 이 페이지를 닫지 마세요!     │
+│                                 │
+│       [ 대기열 나가기 ]          │
+└─────────────────────────────────┘
+```
+
+- `position`: 내 순번
+- `peopleAhead`: 내 앞에 있는 사람 수 (position - 1)
+- `peopleBehind`: 내 뒤에 있는 사람 수 (queueSize - position)
+- `estimatedWait`: 예상 대기 시간 (초)
+- `currentUsers / threshold`: 현재 입장자 / 최대 허용 인원
+
+### 5.3 프론트엔드 — 폴링 (자동 새로고침)
+
+WebSocket(실시간 연결)이 아니라 **HTTP 폴링**(주기적으로 서버에 물어보기)을 쓴다.
+
+파일: `apps/web/src/hooks/use-queue-polling.ts`
+
+```
+폴링 루프:
+   ↓
+queueApi.status(eventId) 호출  →  GET /api/queue/status/{eventId}
+   ↓
+응답에서 nextPoll(다음 폴링 간격) 추출
+   ↓
+setTimeout(nextPoll초 후 다시 호출)
+   ↓
+status가 "active"로 바뀌면 → 자동 리다이렉트
+```
+
+**폴링 간격은 서버가 정한다** (순번에 따라 다름):
+
+| 내 순번 | 폴링 간격 | 이유 |
+|---|---|---|
+| 0 이하 (이미 입장) | 3초 | 빠른 확인 |
+| 1~1,000 | 1초 | 곧 들어가니까 자주 확인 |
+| 1,001~5,000 | 5초 | 좀 기다려야 함 |
+| 5,001~10,000 | 10초 | |
+| 10,001~100,000 | 30초 | 서버 부하 줄이기 |
+| 100,001 이상 | 60초 | 한참 걸림 |
+
+> **왜 WebSocket 안 쓰고 폴링?**: 수만 명이 대기할 때 WebSocket 연결을 전부 유지하면 서버 리소스가 부족해진다. HTTP 폴링은 요청할 때만 연결하고 끊으므로 훨씬 가볍다. CDN/프록시도 쉽게 통과한다.
+
+### 5.4 Entry Token — 대기열 통과 증명서
+
+대기열을 통과한 사용자에게 발급하는 JWT(JSON Web Token)이다. "이 사람은 정상적으로 줄 서서 입장한 사람이다"를 증명한다.
+
+#### 왜 필요한가
+entryToken이 없으면, 누구나 대기열을 건너뛰고 `/events/[id]/seats` URL을 직접 입력해서 좌석 선택 페이지에 접근할 수 있다. entryToken은 이걸 막는다.
+
+#### 토큰 내용
+
+```json
+{
+  "sub": "abc-123",          // 이벤트 ID (어떤 공연에 입장했는지)
+  "uid": "user@example.com", // 사용자 ID (누가 입장했는지)
+  "iat": 1707948000,         // 발급 시각
+  "exp": 1707948600          // 만료 시각 (10분 후)
+}
+```
+
+- 생성: `QueueService.java:215` — HMAC-SHA로 서명
+- 서명 키: `QUEUE_ENTRY_TOKEN_SECRET` 환경변수
+
+#### 토큰 흐름
+
+```
+queue-service                    브라우저                      gateway-service
+──────────────                  ─────────                    ────────────────
+
+entryToken 생성
+   │
+   └──→ 응답에 포함 ──→ 쿠키에 저장
+                        이름: urr-entry-token
+                        유효기간: 10분
+                        SameSite: Strict
+                              │
+                              └──→ 이후 모든 API 요청에
+                                   x-queue-entry-token 헤더로 자동 첨부
+                                        │
+                                        └──→ VwrEntryTokenFilter가 검증
+                                             JWT 서명 확인
+                                             userId 일치 확인
+                                             만료 확인
+                                             ├─ 유효 → 통과
+                                             └─ 무효 → 403 Forbidden
+```
+
+- 쿠키 저장: `apps/web/src/app/queue/[eventId]/page.tsx:56`
+- 헤더 첨부: `apps/web/src/lib/api-client.ts:70` — Axios 인터셉터가 자동 처리
+- 서버 검증: `gateway-service/.../filter/VwrEntryTokenFilter.java`
+
+### 5.5 Gateway — 대기열 우회 방지
+
+게이트웨이에 `VwrEntryTokenFilter`가 있다. 좌석 선택(`/api/seats/**`)과 예약(`/api/reservations/**`) API를 호출할 때, entryToken이 유효한지 검사한다.
+
+파일: `services-spring/gateway-service/src/main/java/guru/urr/gatewayservice/filter/VwrEntryTokenFilter.java`
+
+```
+요청 들어옴
+   ↓
+보호 대상 경로인가? (/api/seats/**, /api/reservations/**)
+   ├─ NO → 그냥 통과
+   └─ YES → 계속
+   ↓
+x-queue-entry-token 헤더 있는가?
+   ├─ NO → 403 Forbidden ({"error":"Queue entry token required","redirectTo":"/queue"})
+   └─ YES → 계속
+   ↓
+JWT 서명 검증 (QUEUE_ENTRY_TOKEN_SECRET으로)
+   ↓
+토큰의 uid == 요청자의 userId 인가? (다른 사람 토큰 도용 방지)
+   ├─ NO → 403 Forbidden
+   └─ YES → 통과, 요청 처리 계속
+```
+
+> **CloudFront 바이패스**: 프로덕션에서 Lambda@Edge가 CDN 레벨에서 이미 토큰을 검증한 경우, `X-CloudFront-Verified` 헤더가 있으면 게이트웨이에서 재검증을 건너뛴다.
+
+### 5.6 좌석 선택 페이지의 이중 검증
+
+좌석 선택 페이지(`/events/[id]/seats`)에도 프론트엔드 레벨 큐 가드가 있다.
+
+파일: `apps/web/src/app/events/[id]/seats/page.tsx:81`
+
+```javascript
+// 페이지 로드 시 queue status 한 번 확인
+if (queueStatus.queued || queueStatus.status === "queued") {
+  // 아직 대기 중이면 → 대기열 페이지로 강제 이동
+  router.replace(`/queue/${eventId}`);
+} else {
+  // 입장 완료 → 폴링 중지, 좌석 선택 허용
+  setQueueChecked(true);
+}
+```
+
+즉, **서버(gateway)와 클라이언트(seats page) 양쪽에서 이중으로** 대기열 통과 여부를 검증한다.
+
+### 5.7 VWR 전체 시퀀스 다이어그램
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor U as 사용자 (브라우저)
+  participant FE as 프론트엔드 (Next.js)
+  participant GW as gateway-service
+  participant Q as queue-service
+  participant R as Redis ZSet
+  participant W as AdmissionWorker
+
+  Note over U,R: Phase 1: 대기열 진입
+  U->>FE: "예매하기" 클릭
+  FE->>GW: POST /api/queue/check/{eventId}
+  GW->>Q: 라우팅
+  Q->>R: ZCARD queue, ZCOUNT active
+  alt 자리 있음 (바로 입장)
+    Q->>R: ZADD active:{eventId}
+    Q->>Q: entryToken(JWT) 생성
+    Q-->>FE: {queued:false, entryToken}
+    FE->>FE: 쿠키 저장 (urr-entry-token)
+    FE->>U: 자동 리다이렉트 → 좌석 선택
+  else 자리 없음 (대기)
+    Q->>R: ZADD queue:{eventId} (score=현재시각)
+    Q-->>FE: {queued:true, position:42, estimatedWait:120}
+    FE->>U: 대기 화면 표시
+  end
+
+  Note over U,R: Phase 2: 폴링 (대기 중)
+  loop 매 1~60초 (nextPoll 간격)
+    FE->>GW: GET /api/queue/status/{eventId}
+    GW->>Q: 라우팅
+    Q->>R: ZRANK queue:{eventId}
+    Q-->>FE: {position, estimatedWait, nextPoll}
+    FE->>U: 순번/대기시간 갱신
+  end
+
+  Note over W,R: Phase 3: 백그라운드 입장 처리
+  W->>R: admission_control.lua (ZPOPMIN → ZADD active)
+
+  Note over U,R: Phase 4: 입장 허용
+  FE->>GW: GET /api/queue/status/{eventId}
+  GW->>Q: 라우팅
+  Q->>R: active에 있음, score > now
+  Q->>Q: entryToken 생성
+  Q-->>FE: {status:"active", entryToken}
+  FE->>FE: 쿠키 저장
+  FE->>U: 자동 리다이렉트 → 좌석 선택
+
+  Note over U,GW: Phase 5: 좌석 선택 (토큰 검증)
+  U->>FE: 좌석 클릭 → 예매 요청
+  FE->>GW: POST /api/seats/reserve (헤더: x-queue-entry-token)
+  GW->>GW: VwrEntryTokenFilter 검증
+  alt 토큰 유효
+    GW->>Q: 요청 통과 → ticket-service로 라우팅
+  else 토큰 무효/없음
+    GW-->>FE: 403 Forbidden
+    FE->>U: 대기열로 리다이렉트
+  end
+```
+
+### 5.8 VWR 보안 요약
+
+| 보안 포인트 | 구현 방법 | 방어 대상 |
+|---|---|---|
+| 대기열 우회 방지 | entryToken(JWT) 필수 검증 | URL 직접 입력으로 좌석 선택 접근 |
+| 토큰 도용 방지 | JWT의 uid와 요청자 userId 비교 | 다른 사람의 토큰 복사해서 사용 |
+| 토큰 위조 방지 | HMAC-SHA 서명 검증 | 가짜 토큰 생성 |
+| 토큰 만료 | 10분 TTL (쿠키 + JWT 모두) | 오래된 토큰 재사용 |
+| CSRF 방지 | SameSite=Strict 쿠키 | 외부 사이트에서 요청 위조 |
+| CDN 레벨 검증 | Lambda@Edge (프로덕션) | 서버 도달 전 차단 |
+| 이중 검증 | 프론트엔드 큐 가드 + 게이트웨이 필터 | 클라이언트/서버 양쪽에서 확인 |
+
+---
+
+## 6. SQS FIFO — 입장 알림 보조 채널
 
 SQS는 AWS가 제공하는 관리형 큐 서비스다. URR에서는 대기열의 핵심이 아니라, **입장 허용 사실을 외부에 알리는 보조 채널**로 사용한다.
 
-### 5.1 SQS 기본 개념
+### 6.1 SQS 기본 개념
 
 #### 메시지 흐름
 1. Producer가 메시지를 큐에 넣는다.
@@ -272,7 +554,7 @@ SQS는 AWS가 제공하는 관리형 큐 서비스다. URR에서는 대기열의
 - `MessageGroupId`: 같은 그룹 내 순서를 보장하는 키.
 - `MessageDeduplicationId`: 같은 메시지 중복 방지 키.
 
-### 5.2 URR에서 SQS가 하는 일
+### 6.2 URR에서 SQS가 하는 일
 
 queue-service가 사용자를 입장시킬 때, **"이 사용자가 입장했다"는 알림을 SQS FIFO에 발행**한다.
 
@@ -315,11 +597,11 @@ SQS 전송 실패 시 예외를 올리지 않고 로그 후 계속 진행한다.
 
 ---
 
-## 6. Kafka — 도메인 이벤트 메인 파이프라인
+## 7. Kafka — 도메인 이벤트 메인 파이프라인
 
 Kafka는 "분산 이벤트 로그"에 가깝다. URR에서는 **결제/예매/양도/멤버십/통계를 연결하는 핵심 이벤트 버스**로 사용한다.
 
-### 6.1 Kafka 기본 개념
+### 7.1 Kafka 기본 개념
 
 #### 메시지 구조
 - **Topic** 아래에 여러 **Partition**이 있다.
@@ -333,7 +615,7 @@ Kafka는 "분산 이벤트 로그"에 가깝다. URR에서는 **결제/예매/�
 - 같은 그룹 내부에서는 메시지를 나눠서 처리한다 (병렬).
 - 그룹이 다르면 같은 메시지를 각 그룹이 독립적으로 소비한다 (팬아웃).
 
-### 6.2 URR 토픽 정의
+### 7.2 URR 토픽 정의
 
 토픽은 `ticket-service`의 Kafka 설정에서 자동 생성된다.
 - 코드: `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/shared/config/KafkaConfig.java`
@@ -347,7 +629,7 @@ Kafka는 "분산 이벤트 로그"에 가깝다. URR에서는 **결제/예매/�
 
 > **파티션 3개 이유**: 같은 Consumer Group 내 최대 3개 인스턴스가 병렬 소비 가능. 파티션 키(reservationId 등)로 같은 엔티티의 이벤트는 같은 파티션에 들어가 순서가 보장된다.
 
-### 6.3 이벤트 체인 — 누가 보내고 누가 받는가
+### 7.3 이벤트 체인 — 누가 보내고 누가 받는가
 
 ```
 payment-service                        ticket-service                stats-service
@@ -370,13 +652,13 @@ PaymentEventProducer                  PaymentEventConsumer          StatsEventCo
    └─ payment-events ────────────────────────────────────────────────────►├─ 환불/양도 금액 통계
 ```
 
-### 6.4 결제 서비스가 이벤트 발행
+### 7.4 결제 서비스가 이벤트 발행
 
 결제 확정/환불 이벤트를 `payment-events`로 발행한다.
 - 코드: `services-spring/payment-service/src/main/java/guru/urr/paymentservice/messaging/PaymentEventProducer.java:14`
 - 파티션 키: `orderId`
 
-### 6.5 티켓 서비스가 결제 이벤트 소비
+### 7.5 티켓 서비스가 결제 이벤트 소비
 
 `payment-events`를 소비해서 `paymentType`에 따라 분기 처리한다.
 - Consumer Group: `ticket-service-group`
@@ -393,7 +675,7 @@ PaymentEventProducer                  PaymentEventConsumer          StatsEventCo
 
 > **이벤트 타입 판별**: 먼저 명시적 `type` 필드 확인 (`PAYMENT_CONFIRMED`/`PAYMENT_REFUNDED`), 없으면 duck-typing으로 폴백 (하위 호환성)
 
-### 6.6 티켓 서비스가 후속 이벤트 발행
+### 7.6 티켓 서비스가 후속 이벤트 발행
 
 결제 이벤트 처리 후 도메인별 후속 이벤트를 각각의 토픽으로 발행한다.
 - 코드: `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/messaging/TicketEventProducer.java`
@@ -408,7 +690,7 @@ PaymentEventProducer                  PaymentEventConsumer          StatsEventCo
 
 > 모든 publish는 `whenComplete()`로 성공/실패를 비동기 로깅. 실패 시 예외를 던지지 않는다.
 
-### 6.7 통계 서비스가 여러 토픽 소비
+### 7.7 통계 서비스가 여러 토픽 소비
 
 - Consumer Group: `stats-service-group` (ticket-service와 다른 그룹이므로 같은 메시지를 독립 소비)
 - 코드: `services-spring/stats-service/src/main/java/guru/urr/statsservice/messaging/StatsEventConsumer.java`
@@ -423,16 +705,16 @@ PaymentEventProducer                  PaymentEventConsumer          StatsEventCo
 
 ---
 
-## 7. 세 기술 비교 — 왜 이렇게 나눠 썼는가
+## 8. 세 기술 비교 — 왜 이렇게 나눠 썼는가
 
-### 7.1 기술별 강점
+### 8.1 기술별 강점
 
 | | Redis ZSet | SQS FIFO | Kafka |
 |---|---|---|---|
 | **핵심 강점** | 실시간 순위 조회, 원자적 연산 | 관리형 큐, 순서/중복 제어 | 다중 소비자 팬아웃, 이벤트 재처리 |
 | **약점** | 영속성 보장 약함 (메모리 기반) | 순위 조회 불가, 팬아웃 약함 | 순위 조회 불가, 운영 복잡 |
 
-### 7.2 왜 대기열에 Redis ZSet인가 (SQS/Kafka가 아닌 이유)
+### 8.2 왜 대기열에 Redis ZSet인가 (SQS/Kafka가 아닌 이유)
 
 대기열에 필요한 핵심 기능:
 
@@ -446,9 +728,10 @@ PaymentEventProducer                  PaymentEventConsumer          StatsEventCo
 
 > Redis ZSet은 "점수 기반 정렬 + 실시간 순위 조회"를 제공하는 유일한 선택지다.
 
-### 7.3 왜 이벤트에 Kafka인가 (SQS/Redis가 아닌 이유)
+### 8.3 왜 이벤트에 Kafka인가 (SQS/Redis가 아닌 이유)
 
 서비스 간 이벤트에 필요한 핵심 기능:
+
 
 | 기능 | Kafka | SQS | Redis Pub/Sub |
 |---|---|---|---|
@@ -459,7 +742,7 @@ PaymentEventProducer                  PaymentEventConsumer          StatsEventCo
 
 > Kafka는 "여러 서비스가 같은 이벤트를 각자 소비 + 재처리 가능"을 제공하는 최적 선택지다.
 
-### 7.4 URR 퍼블리셔 전체 정리
+### 8.4 URR 퍼블리셔 전체 정리
 
 | 기술 | 퍼블리셔 | 파일 | 발행 시점 | 비고 |
 |---|---|---|---|---|
@@ -468,7 +751,7 @@ PaymentEventProducer                  PaymentEventConsumer          StatsEventCo
 | Kafka | `PaymentEventProducer` | `payment-service/.../PaymentEventProducer.java` | 결제 확정/환불 시 | 결제 도메인 시작점 |
 | Kafka | `TicketEventProducer` | `ticket-service/.../TicketEventProducer.java` | 결제 이벤트 처리 후 후속 발행 | 예매/양도/멤버십 확장 |
 
-### 7.5 전체 퍼블리셔/컨슈머 매핑
+### 8.5 전체 퍼블리셔/컨슈머 매핑
 
 | 기술 | 퍼블리셔(보냄) | 컨슈머(받아 처리) | 오가는 메시지 |
 |---|---|---|---|
@@ -481,7 +764,7 @@ PaymentEventProducer                  PaymentEventConsumer          StatsEventCo
 
 ---
 
-## 8. Kafka 멱등성(Idempotency) 구현
+## 9. Kafka 멱등성(Idempotency) 구현
 
 멱등성: 같은 요청/이벤트를 여러 번 처리해도 최종 결과가 1번 처리한 것과 같아야 하는 성질.
 
@@ -531,9 +814,9 @@ INSERT INTO processed_events (event_key, processed_at) VALUES (?, NOW()) ON CONF
 
 ---
 
-## 9. 시퀀스 다이어그램
+## 10. 시퀀스 다이어그램
 
-### 9.1 대기열 입장 — Redis ZSet + SQS
+### 10.1 대기열 입장 — Redis ZSet + SQS
 
 ```mermaid
 sequenceDiagram
@@ -578,7 +861,7 @@ sequenceDiagram
 4. 백그라운드 워커가 매 1초마다 Lua 스크립트로 빈 자리만큼 대기열 앞에서 입장시킨다.
 5. 입장 시 SQS에 알림을 보내지만, 이는 보조 채널이다. Redis가 핵심이다.
 
-### 9.2 결제 이후 Kafka 체인 (예약 결제)
+### 10.2 결제 이후 Kafka 체인 (예약 결제)
 
 ```mermaid
 sequenceDiagram
@@ -618,7 +901,7 @@ sequenceDiagram
 4. `stats-service-group`도 같은 `payment-events`를 독립 소비해 통계 처리를 수행한다.
 5. 각 컨슈머는 각자의 DB의 `processed_events`로 멱등성을 보장한다.
 
-### 9.3 환불 Kafka 체인
+### 10.3 환불 Kafka 체인
 
 ```mermaid
 sequenceDiagram
@@ -638,7 +921,7 @@ sequenceDiagram
   K->>ST: reservation-events → 예약 취소 카운트
 ```
 
-### 9.4 전체 흐름 — 대기열부터 예매까지
+### 10.4 전체 흐름 — 대기열부터 예매까지
 
 ```mermaid
 sequenceDiagram
@@ -679,7 +962,7 @@ sequenceDiagram
 
 ---
 
-## 10. 결론
+## 11. 결론
 
 ### URR 메시징 아키텍처 요약
 
