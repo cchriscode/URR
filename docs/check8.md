@@ -1,12 +1,12 @@
-# Check8: SQS vs Kafka + URR 프로젝트 적용 정리
+# Check8: Redis ZSet + SQS + Kafka — URR 메시징 아키텍처
 
 ## 0. 이 문서 목표
 처음 접하는 사람도 이해할 수 있게 정리.
 
-1. `Queue`가 무엇인지
-2. `Topic`이 무엇인지
-3. `SQS`와 `Kafka`가 어떻게 다른지
-4. URR 프로젝트에서 각각 정확히 어디에 쓰이는지
+1. 메시징이 왜 필요한지
+2. URR에서 쓰는 3가지 기술(Redis ZSet, SQS, Kafka)이 각각 무엇인지
+3. 셋이 어떤 관계로 연결되어 있는지
+4. 실제 코드에서 어떻게 구현되어 있는지
 
 ---
 
@@ -25,7 +25,7 @@
 2. 소비자(Consumer)가 자기 속도로 처리한다.
 3. 서비스끼리 느슨하게 연결되어 장애 전파가 줄어든다.
 
-> **핵심**: "지금 바로 처리하지 않고, 일단 할 일 목록에 넣어두는 처리 방식이 있다." 그 할 일 목록이 바로 Queue / Topic으로 구현되는 것.
+> **핵심**: "지금 바로 처리하지 않고, 일단 할 일 목록에 넣어두는 처리 방식이 있다." 그 할 일 목록이 바로 Queue / Topic / Sorted Set으로 구현되는 것.
 
 ---
 
@@ -40,7 +40,7 @@
 **이벤트(event)** — "어떤 일이 일어났다"는 사실 자체.
 - 예: 결제가 완료됐다, 좌석이 예약됐다, 티켓이 양도됐다
 
-메시지/이벤트는 그냥 데이터 한 덩어리일 뿐이고, 이걸 잘 모아서 차례대로 또는 여러 곳에 뿌려주는 시스템이 SQS/Kafka 같은 메시징 시스템이다.
+메시지/이벤트는 그냥 데이터 한 덩어리일 뿐이고, 이걸 잘 모아서 차례대로 또는 여러 곳에 뿌려주는 시스템이 Redis, SQS, Kafka 같은 것들이다.
 
 ### 2.2 Producer / Consumer / Broker
 
@@ -48,17 +48,15 @@
 |---|---|---|---|
 | **Producer** | 메시지를 보내는 쪽 | 공지 올리는 사람 | 결제 서비스가 "결제 완료" 이벤트를 Kafka에 발행 |
 | **Consumer** | 메시지를 읽어서 처리하는 쪽 | 공지를 읽고 실제 일을 하는 사람 | 티켓 서비스가 "결제 완료" 이벤트를 보고 예매를 확정 |
-| **Broker** | 메시지를 보관/전달하는 시스템 | 우체국 | SQS, Kafka |
+| **Broker** | 메시지를 보관/전달하는 시스템 | 우체국 | Redis, SQS, Kafka |
 
-> A 서비스 ↔ B 서비스가 직접 통신하는 대신, A → Broker(SQS/Kafka) → B 구조로 느슨하게 이어진다.
+### 2.3 Queue vs Topic vs Sorted Set
 
-### 2.3 Queue vs Topic
-
-| | Queue | Topic |
-|---|---|---|
-| 목적 | "일감 분배" | "사건 공유" |
-| 성격 | 한 메시지를 누군가 처리하면 끝 | 같은 메시지를 여러 소비자 그룹이 각자 처리 가능 |
-| 비유 | 고객센터 대기열 — 한 상담원이 한 건 처리하면 끝 | 사내 공지 채널 — 각 팀이 같은 공지를 읽고 각자 행동 |
+| | Queue (SQS) | Topic (Kafka) | Sorted Set (Redis ZSet) |
+|---|---|---|---|
+| 목적 | "일감 분배" | "사건 공유" | "순서 있는 대기열" |
+| 성격 | 한 메시지를 누군가 처리하면 삭제 | 같은 메시지를 여러 소비자 그룹이 각자 처리 | 점수(score) 기준으로 정렬된 집합 |
+| 비유 | 고객센터 대기열 — 한 상담원이 한 건 처리하면 끝 | 사내 공지 채널 — 각 팀이 같은 공지를 읽고 각자 행동 | 번호표 기계 — 번호 순서대로 호출 |
 
 ### 2.4 오류/장애 관련 용어
 
@@ -73,180 +71,334 @@
 
 ---
 
-## 3. SQS 기초
+## 3. URR 메시징 전체 구조 — 세 기술의 관계
 
-SQS는 AWS가 제공하는 관리형 큐 서비스다.
-우리 백엔드는 AWS SDK/API로 SQS에 메시지를 보내거나 읽는다. 즉, 서비스는 AWS 것이고, 백엔드는 그 서비스를 연동해서 사용한다.
+URR 프로젝트는 메시징에 3가지 기술을 쓴다. 각각 역할이 다르다.
 
-### SQS 메시지 흐름
+```
+┌───────────────────────────────────────────────────────────────────────┐
+│                        URR 메시징 아키텍처                              │
+│                                                                       │
+│  ┌─────────────────────────────────────────┐                         │
+│  │  ① Redis ZSet — 대기열 핵심 엔진         │                         │
+│  │  queue-service가 직접 Redis에 읽고 쓴다   │                         │
+│  │  "누가 몇 번째인지, 입장 가능한지" 관리     │                         │
+│  └──────────────┬──────────────────────────┘                         │
+│                 │ 입장 허용 시                                         │
+│                 ▼                                                      │
+│  ┌─────────────────────────────────────────┐                         │
+│  │  ② SQS FIFO — 입장 알림 보조 채널        │                         │
+│  │  "이 사용자가 입장했다"는 알림을             │                         │
+│  │  외부(Lambda)에 전달. 선택적, 없어도 동작   │                         │
+│  └─────────────────────────────────────────┘                         │
+│                                                                       │
+│  ┌─────────────────────────────────────────┐                         │
+│  │  ③ Kafka — 도메인 이벤트 메인 파이프라인   │                         │
+│  │  결제 → 예매/양도/멤버십 → 통계            │                         │
+│  │  서비스 간 이벤트를 비동기로 연결            │                         │
+│  └─────────────────────────────────────────┘                         │
+└───────────────────────────────────────────────────────────────────────┘
+```
+
+### 한눈에 비교
+
+| 구분 | Redis ZSet | SQS FIFO | Kafka |
+|---|---|---|---|
+| **역할** | 대기열 순번/입장 관리 | 입장 알림 외부 전달 | 서비스 간 이벤트 전달 |
+| **핵심도** | 대기열의 심장 | 보조 (없어도 동작) | 이벤트 파이프라인의 심장 |
+| **사용 서비스** | queue-service | queue-service → Lambda | payment/ticket/stats |
+| **데이터 모델** | ZSet (score=타임스탬프) | FIFO Queue (삭제 기반) | Topic + Partition (로그 기반) |
+| **기본 활성화** | 항상 ON | `SQS_ENABLED=false` (기본 OFF) | 항상 ON |
+
+### 관계 요약
+- **Redis ZSet과 SQS**: Redis가 대기열을 관리하고, 입장 허용이 일어나면 SQS에 알림을 "추가로" 보낸다. SQS가 죽어도 Redis 대기열은 정상 동작한다.
+- **Redis ZSet과 Kafka**: 직접적 연결 없음. Redis는 "입장 전" 단계, Kafka는 "입장 후 결제/예매" 단계를 담당한다.
+- **SQS와 Kafka**: 직접적 연결 없음. 각자 다른 도메인의 메시징을 담당한다.
+
+---
+
+## 4. Redis ZSet — 대기열 핵심 엔진
+
+### 4.1 Redis ZSet이란
+Redis의 Sorted Set(정렬 집합). 각 멤버에 **score**(점수)가 붙어서 항상 점수 순서로 정렬된 상태를 유지한다.
+
+쉽게 말하면:
+- 일반 Set은 그냥 "누가 있는지"만 알 수 있다.
+- ZSet은 "누가 있는지 + 각자의 순번(점수)"까지 알 수 있다.
+- 그래서 "내가 몇 번째인지" 즉시 조회 가능하다 → 대기열에 딱 맞는 구조.
+
+### 4.2 URR이 Redis ZSet을 쓰는 이유
+
+티켓 예매 대기열에 필요한 것들:
+1. "내가 몇 번째인지" 실시간 조회 → `ZRANK` (O(log N), 즉시 응답)
+2. "가장 오래 기다린 사람부터 입장" → `ZPOPMIN` (가장 낮은 점수 = 가장 먼저 온 사람)
+3. "동시에 수천 명이 접속해도 순서 꼬이지 않기" → Lua 스크립트로 원자적 처리
+4. "입장한 사람의 유효 시간 관리" → score에 만료 시각 저장, `ZCOUNT`로 유효한 사람만 세기
+
+SQS나 Kafka로는 "내가 몇 번째인지"를 실시간으로 알 수 없다. 이게 Redis ZSet을 쓰는 핵심 이유.
+
+### 4.3 Redis 키 구조
+
+queue-service는 이벤트(공연)마다 아래 키들을 만든다:
+
+| 키 패턴 | Redis 타입 | score 의미 | 용도 |
+|---|---|---|---|
+| `queue:{eventId}` | ZSet | 대기열 진입 시각 (ms) | 대기 순번 관리. score가 작을수록 먼저 온 사람 |
+| `active:{eventId}` | ZSet | 만료 시각 (ms) | 입장 허용된 사용자. score > 현재시각이면 유효 |
+| `queue:seen:{eventId}` | ZSet | 마지막 하트비트 시각 (ms) | 대기 중인 사용자의 생존 확인 |
+| `active:seen:{eventId}` | ZSet | 마지막 하트비트 시각 (ms) | 입장한 사용자의 생존 확인 |
+| `queue:active-events` | Set | — | 현재 대기열이 활성화된 이벤트 목록 |
+| `admission:lock:{eventId}` | String | — | 분산 락 (TTL 4초). 여러 서버가 동시에 입장 처리하는 것 방지 |
+
+예시: 공연 ID가 `abc-123`이면
+- `queue:abc-123` — 이 공연의 대기열 (ZSet)
+- `active:abc-123` — 이 공연에 입장한 사용자들 (ZSet)
+
+### 4.4 대기열 흐름 상세
+
+#### 사용자가 대기열 확인 요청 (`POST /api/queue/check/{eventId}`)
+
+```
+사용자 요청
+   ↓
+1. 이미 대기 중인가? (queue:{eventId}에 있는지)
+   ├─ YES → 하트비트 갱신, 현재 순번 반환
+   └─ NO → 계속
+   ↓
+2. 이미 입장한 상태인가? (active:{eventId}에 있고 score > 현재시각)
+   ├─ YES → 하트비트 갱신, entryToken 반환
+   └─ NO → 계속
+   ↓
+3. 바로 입장 가능한가?
+   조건: 대기열이 비었고(queue 크기=0) AND 현재 입장자 수 < threshold(기본 1000명)
+   ├─ YES → active:{eventId}에 추가 (score=현재+600초)
+   │         entryToken(JWT) 발급
+   │         SQS에 admitted 알림 (선택적)
+   │         "active" 응답
+   └─ NO  → queue:{eventId}에 추가 (score=현재시각)
+             "queued" 응답 (순번, 예상 대기시간 포함)
+```
+
+- 코드: `services-spring/queue-service/src/main/java/guru/urr/queueservice/service/QueueService.java:60`
+
+#### 백그라운드 입장 처리 (매 1초마다)
+
+대기열에 사람이 쌓여 있으면, 백그라운드 워커가 1초마다 빈 자리만큼 입장시킨다.
+
+```
+AdmissionWorkerService (매 1초)
+   ↓
+1. queue:active-events에서 활성 이벤트 목록 조회
+   ↓
+2. 각 이벤트마다:
+   a. 분산 락 획득 시도 (admission:lock:{eventId}, 4초 TTL)
+      ├─ 실패 → 다른 서버가 처리 중, 스킵
+      └─ 성공 → 계속
+   ↓
+   b. admission_control.lua 실행 (원자적)
+      - 만료된 active 사용자 제거 (score ≤ now)
+      - 빈 자리 계산 = threshold - 현재 active 수
+      - ZPOPMIN으로 대기열 앞에서 빈 자리만큼 꺼냄
+      - active:{eventId}에 추가 (score = now + 600초)
+      - 결과: {입장시킨 수, 현재 active 수}
+   ↓
+   c. 대기열과 active 모두 비었으면 이벤트를 active-events에서 제거
+```
+
+- 코드: `services-spring/queue-service/src/main/java/guru/urr/queueservice/service/AdmissionWorkerService.java:48`
+- Lua: `services-spring/queue-service/src/main/resources/redis/admission_control.lua`
+
+#### 하트비트와 좀비 정리
+
+사용자가 브라우저를 닫거나 네트워크가 끊기면 하트비트가 멈춘다. 30초마다 돌아가는 정리 워커가 이런 "좀비"를 제거한다.
+
+- 하트비트: 사용자가 `/heartbeat`, `/check`, `/status` 호출할 때마다 `seen` ZSet의 score를 현재 시각으로 갱신
+- 좀비 판정: `seen` ZSet에서 score가 (현재 - 600초)보다 작은 사용자
+- 정리: `stale_cleanup.lua`가 대기열과 seen에서 동시에 원자적으로 제거
+
+- 코드: `services-spring/queue-service/src/main/java/guru/urr/queueservice/service/AdmissionWorkerService.java:121`
+- Lua: `services-spring/queue-service/src/main/resources/redis/stale_cleanup.lua`
+
+### 4.5 주요 설정값
+
+| 설정 | 기본값 | 의미 |
+|---|---|---|
+| `QUEUE_THRESHOLD` | 1000 | 이벤트당 최대 동시 입장자 수 |
+| `QUEUE_ACTIVE_TTL_SECONDS` | 600 | 입장 후 유효 시간 (10분) |
+| `QUEUE_SEEN_TTL_SECONDS` | 600 | 하트비트 없으면 좀비로 판정하는 시간 |
+| `QUEUE_ADMISSION_INTERVAL_MS` | 1000 | 백그라운드 입장 처리 주기 (1초) |
+| `QUEUE_ADMISSION_BATCH_SIZE` | 100 | 한 번에 입장시키는 최대 인원 |
+| `QUEUE_STALE_CLEANUP_INTERVAL_MS` | 30000 | 좀비 정리 주기 (30초) |
+
+### 4.6 프로덕션 Redis 구성
+
+- 로컬(kind): 단일 Redis (`localhost:6379`)
+- 프로덕션: Redis Cluster 3노드
+  - `redis-cluster-0.redis-cluster:6379`
+  - `redis-cluster-1.redis-cluster:6379`
+  - `redis-cluster-2.redis-cluster:6379`
+
+- 설정: `services-spring/queue-service/src/main/resources/application.yml`
+
+### 4.7 대기 시간 예측
+
+사용자가 "나 언제 들어가?"를 물으면, 최근 1분간 실제 입장 속도를 기반으로 계산한다.
+
+- 데이터가 부족하면(시작 직후): 1명당 30초로 추정
+- 데이터가 있으면: `내 순번 / (최근 1분 입장 수 / 60)` = 예상 초
+- 폴링 간격도 순번에 따라 조절: 1000번 이내면 1초, 10000번 이후면 30초
+
+- 코드: `QueueService.java:242` (estimateWait), `QueueService.java:231` (calculateNextPoll)
+
+---
+
+## 5. SQS FIFO — 입장 알림 보조 채널
+
+SQS는 AWS가 제공하는 관리형 큐 서비스다. URR에서는 대기열의 핵심이 아니라, **입장 허용 사실을 외부에 알리는 보조 채널**로 사용한다.
+
+### 5.1 SQS 기본 개념
+
+#### 메시지 흐름
 1. Producer가 메시지를 큐에 넣는다.
 2. Consumer가 메시지를 가져가 처리한다.
 3. 성공하면 삭제한다.
 4. 실패하면 일정 시간 뒤 다시 보이게 되어 재시도된다.
-5. 계속 실패하면 DLQ로 보낼 수 있다.
 
-### Standard vs FIFO
-- `Standard`: 빨리빨리, 순서/중복 조금은 틀어져도 OK. 매우 높은 처리량.
-- `FIFO`: 순서와 중복 제어에 신경쓰는 모드. 순서 보장 + 중복 억제.
+#### Standard vs FIFO
+- `Standard`: 빨리빨리, 순서/중복 조금은 틀어져도 OK.
+- `FIFO`: 순서 보장 + 중복 억제. URR은 이 모드 사용.
 
-### FIFO에서 중요한 필드
-- `MessageGroupId`: 같은 그룹 내 순서를 보장하는 키. "같은 그룹끼리 순서"를 보장한다.
-- `MessageDeduplicationId`: 중복 메시지 억제 키. "같은 메시지 중복 방지"를 한다.
+#### FIFO에서 중요한 필드
+- `MessageGroupId`: 같은 그룹 내 순서를 보장하는 키.
+- `MessageDeduplicationId`: 같은 메시지 중복 방지 키.
+
+### 5.2 URR에서 SQS가 하는 일
+
+queue-service가 사용자를 입장시킬 때, **"이 사용자가 입장했다"는 알림을 SQS FIFO에 발행**한다.
+
+#### 발행 지점
+- `QueueService.java:210` — active 응답을 만들 때 `sqsPublisher.publishAdmission()` 호출
+
+#### 메시지 내용
+```json
+{
+  "action": "admitted",
+  "eventId": "abc-123",
+  "userId": "user@example.com",
+  "entryToken": "eyJhbG...",
+  "timestamp": 1707948000000
+}
+```
+
+#### FIFO 제어
+- `messageGroupId = eventId` — 같은 공연의 입장 메시지끼리 순서 보장
+- `messageDeduplicationId = userId:eventId` — 같은 사용자의 중복 입장 알림 방지 (5분 이내)
+
+- 코드: `services-spring/queue-service/src/main/java/guru/urr/queueservice/service/SqsPublisher.java:38`
+
+#### 실패 시 동작 (Fire-and-Forget)
+SQS 전송 실패 시 예외를 올리지 않고 로그 후 계속 진행한다.
+대기열 핵심 기능은 Redis 기반이므로, SQS가 죽어도 대기열은 정상 동작한다.
+이 패턴을 쓰는 이유: 사용자 응답 지연 없이, SQS 장애가 대기열에 영향을 주지 않도록.
+
+> **Fire-and-Forget은 앱 레벨 발행 전략**이다. SQS 자체는 at-least-once 전달을 지원하지만, 우리 앱에서 실패를 무시하고 Redis로 폴백하는 것.
+
+- 코드: `SqsPublisher.java:65`
+
+#### 소비 측
+- Lambda 워커(`lambda/ticket-worker/index.js:85`)가 SQS를 소비
+- `admitted` 액션은 현재 로그 처리만 수행
+
+#### 환경 설정
+- 로컬(kind): `SQS_ENABLED=false` — 기본 꺼져 있음
+- 프로덕션: `SQS_ENABLED=true`
 
 ---
 
-## 4. Kafka 기초
+## 6. Kafka — 도메인 이벤트 메인 파이프라인
 
-Kafka는 "분산 이벤트 로그"에 가깝다. 보통 직접 운영하는 오픈소스 시스템이다. (Managed Kafka도 있지만, 기본 마인드는 "우리가 클러스터 띄운다"에 가깝다)
+Kafka는 "분산 이벤트 로그"에 가깝다. URR에서는 **결제/예매/양도/멤버십/통계를 연결하는 핵심 이벤트 버스**로 사용한다.
 
-### Kafka 메시지 구조
+### 6.1 Kafka 기본 개념
+
+#### 메시지 구조
 - **Topic** 아래에 여러 **Partition**이 있다.
+- 비유: 토픽 = 카톡 "방 이름", 메시지 = 그 방에 올라오는 글, 컨슈머 = 그 방을 읽는 사람
 
-비유하면:
-- 토픽 = 카톡 "방 이름"
-- 메시지 = 그 방에 올라오는 글
-- 컨슈머 = 그 방을 읽는 사람
-
-이 프로젝트에서 사용하는 토픽: `payment-events`, `reservation-events`, `transfer-events`, `membership-events`
-
+#### Partition과 Offset
 - 각 파티션의 메시지는 `Offset`(순번)으로 저장된다.
 - Consumer는 Offset을 기준으로 어디까지 읽었는지 관리한다.
 
-### Consumer Group
+#### Consumer Group
 - 같은 그룹 내부에서는 메시지를 나눠서 처리한다 (병렬).
 - 그룹이 다르면 같은 메시지를 각 그룹이 독립적으로 소비한다 (팬아웃).
 
-### 다중 소비자 팬아웃
-하나의 이벤트를 여러 소비자가 "각자" 받는 구조. URR에서는 이렇게 동작한다:
+### 6.2 URR 토픽 정의
 
-1. 같은 토픽(`payment-events`)에 이벤트 1개 발행
-2. `ticket-service-group`이 1번 처리 (예약 확정)
-3. `stats-service-group`도 같은 이벤트를 1번 처리 (통계 집계)
+토픽은 `ticket-service`의 Kafka 설정에서 자동 생성된다.
+- 코드: `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/shared/config/KafkaConfig.java`
 
-### Kafka가 강한 지점
-- 다중 소비자 팬아웃
-- 재처리(replay) 및 이벤트 히스토리 활용
-- 서비스 간 비동기 이벤트 체인
-
----
-
-## 5. SQS와 Kafka 비교
-
-### 일반 비교
-
-| 구분 | SQS | Kafka |
-|---|---|---|
-| 기본 철학 | 작업 큐 | 이벤트 스트림 |
-| 주 사용처 | 워커 처리, 비동기 작업 | 서비스 간 이벤트 파이프라인 |
-| 순서 | FIFO 사용 시 group 단위 보장 | partition 단위 보장 |
-| 다중 소비 | 가능하지만 큐 모델 중심 | consumer group 모델로 매우 자연스러움 |
-| 재처리 모델 | 재수신/재시도 중심 | offset 기반 replay 가능 |
-| 운영 난이도 | 상대적으로 단순 | 설계/운영 포인트 더 많음 |
-
-### URR 서비스 기준 한눈에 비교
-
-| 항목 | SQS FIFO (URR) | Kafka (URR) |
-|---|---|---|
-| 발행 서비스(Producer) | `queue-service` (`SqsPublisher`) | `payment-service` (`PaymentEventProducer`), `ticket-service` (`TicketEventProducer`) |
-| 소비 서비스(Consumer) | `lambda/ticket-worker` (현재 `admitted`는 로그 처리) | `ticket-service-group`, `stats-service-group` |
-| 메시지 채널 | SQS FIFO 큐 (`*-ticket-events.fifo`) | `payment-events`, `reservation-events`, `transfer-events`, `membership-events` |
-| 실제 역할 | 대기열 입장 허용 이벤트(`admitted`) 외부 전달 보조 채널 | 결제 → 예매/양도/멤버십 처리 → 통계 집계 메인 이벤트 파이프라인 |
-| 순서/중복 제어 | `messageGroupId=eventId`, `messageDeduplicationId=userId:eventId` | 파티션 키 + 앱 멱등성(`processed_events`) |
-| 장애 시 동작 | 발행 실패 시 로그 후 계속 진행(대기열 핵심은 Redis로 유지) | at-least-once 전제, 소비 측에서 멱등성으로 중복 방어 |
-
-### URR 퍼블리셔 정리 (파일 기준)
-
-우리 프로젝트는 `SQS 퍼블리셔 1개 + Kafka 퍼블리셔 2개`를 사용한다.
-
-| 메시징 | 퍼블리셔 | 파일 | 발행 시점 | 비고 |
-|---|---|---|---|---|
-| SQS FIFO | `SqsPublisher` | `services-spring/queue-service/.../SqsPublisher.java` | 대기열 사용자가 active로 전환되어 `entryToken` 발급 시 | 로컬(kind) 기본 `SQS_ENABLED=false` |
-| Kafka | `PaymentEventProducer` | `services-spring/payment-service/.../PaymentEventProducer.java` | 결제 확정/환불 처리 시 `payment-events` 발행 | 결제 도메인 이벤트 시작점 |
-| Kafka | `TicketEventProducer` | `services-spring/ticket-service/.../TicketEventProducer.java` | 결제 이벤트 처리 후 `reservation/transfer/membership` 후속 이벤트 발행 | 예매/양도/멤버십 도메인 이벤트 확장 |
-
-### URR 퍼블리셔/컨슈머 매핑
-
-| 메시징 | 퍼블리셔(보냄) | 컨슈머(받아 처리) | 실제로 오가는 메시지 |
+| 토픽 이름 | 파티션 수 | 복제 팩터 | 용도 |
 |---|---|---|---|
-| SQS FIFO | `SqsPublisher` | `lambda/ticket-worker/index.js` | `admitted` |
-| Kafka (`payment-events`) | `PaymentEventProducer` | `PaymentEventConsumer`(ticket-service), `StatsEventConsumer`(stats-service) | `PAYMENT_CONFIRMED`, `PAYMENT_REFUNDED` |
-| Kafka (`reservation-events`) | `TicketEventProducer` | `StatsEventConsumer` | `RESERVATION_CREATED`, `RESERVATION_CONFIRMED`, `RESERVATION_CANCELLED` |
-| Kafka (`membership-events`) | `TicketEventProducer` | `StatsEventConsumer` | 멤버십 활성화 이벤트 |
-| Kafka (`transfer-events`) | `TicketEventProducer` | 현재 코드 기준 명시적 컨슈머 없음 | 양도 완료 이벤트 |
+| `payment-events` (line 17) | 3 | 설정값 (기본 1) | 결제 확정/환불 이벤트 |
+| `reservation-events` (line 22) | 3 | 설정값 (기본 1) | 예약 생성/확정/취소 이벤트 |
+| `transfer-events` (line 27) | 3 | 설정값 (기본 1) | 양도 완료 이벤트 |
+| `membership-events` (line 32) | 3 | 설정값 (기본 1) | 멤버십 활성화 이벤트 |
 
----
+> **파티션 3개 이유**: 같은 Consumer Group 내 최대 3개 인스턴스가 병렬 소비 가능. 파티션 키(reservationId 등)로 같은 엔티티의 이벤트는 같은 파티션에 들어가 순서가 보장된다.
 
-## 6. URR 프로젝트에서 SQS가 하는 역할
+### 6.3 이벤트 체인 — 누가 보내고 누가 받는가
 
-핵심: `queue-service`가 "입장 허용(admitted)" 이벤트를 SQS FIFO로 발행한다.
+```
+payment-service                        ticket-service                stats-service
+─────────────                         ──────────────               ──────────────
+PaymentEventProducer                  PaymentEventConsumer          StatsEventConsumer
+   │                                  (ticket-service-group)        (stats-service-group)
+   │                                       │                             │
+   ├─ payment-events ─────────────────────►├─ 예약결제 → 예약확정          │
+   │   (PAYMENT_CONFIRMED)                 │   → reservation-events ─────►├─ 예약확정 통계
+   │   (PAYMENT_REFUNDED)                  │                              │
+   │                                       ├─ 양도결제 → 양도완료          │
+   │                                       │   → transfer-events          │
+   │                                       │                              │
+   │                                       ├─ 멤버십결제 → 활성화          │
+   │                                       │   → membership-events ──────►├─ 멤버십 통계
+   │                                       │                              │
+   │                                       └─ 환불 → 예약취소              │
+   │                                           → reservation-events ─────►├─ 예약취소 통계
+   │                                                                      │
+   └─ payment-events ────────────────────────────────────────────────────►├─ 환불/양도 금액 통계
+```
 
-### 발행 지점
-- `queue-service`에서 active 응답을 만들 때 발행
-- 코드: `services-spring/queue-service/src/main/java/guru/urr/queueservice/service/QueueService.java:210`
+### 6.4 결제 서비스가 이벤트 발행
 
-### 발행 구현
-- 코드: `services-spring/queue-service/src/main/java/guru/urr/queueservice/service/SqsPublisher.java:38`
-- 메시지 핵심 필드:
-  - `action=admitted`
-  - `eventId`
-  - `userId`
-  - `entryToken`
-  - `timestamp` (System.currentTimeMillis())
-- FIFO 제어:
-  - `messageGroupId=eventId` — 같은 이벤트의 입장 메시지끼리 순서 보장
-  - `messageDeduplicationId=userId:eventId` — 같은 사용자가 같은 이벤트에 중복 입장 메시지 전송 방지 (5분 내)
+결제 확정/환불 이벤트를 `payment-events`로 발행한다.
+- 코드: `services-spring/payment-service/src/main/java/guru/urr/paymentservice/messaging/PaymentEventProducer.java:14`
+- 파티션 키: `orderId`
 
-### 실패 시 동작 (Fire-and-Forget)
-- SQS 전송 실패 시 예외를 올리지 않고 로그 후 계속 진행
-- 즉, 대기열 핵심 기능은 Redis 기반으로 계속 동작하며, SQS는 보조 채널
-- 이 패턴을 쓰는 이유: 사용자 응답 지연 없이 SQS가 죽어도 대기열이 정상 동작
-- 코드: `services-spring/queue-service/src/main/java/guru/urr/queueservice/service/SqsPublisher.java:65`
+### 6.5 티켓 서비스가 결제 이벤트 소비
 
-### 소비 측
-- Lambda 워커가 SQS를 소비
-- `admitted` 액션은 현재 로그 처리만 수행
-- 코드: `lambda/ticket-worker/index.js:85`
-
-### 환경 설정
-- 로컬(kind): `SQS_ENABLED=false`
-  - `k8s/spring/overlays/kind/config.env:16`
-- 프로덕션: `SQS_ENABLED=true`
-  - `k8s/spring/overlays/prod/config.env:18`
-
----
-
-## 7. URR 프로젝트에서 Kafka가 하는 역할
-
-핵심: 결제/예매/통계를 연결하는 메인 이벤트 버스다.
-
-### 7.1 결제 서비스가 이벤트 발행
-- 결제 확정/환불 이벤트를 `payment-events`로 발행
-- 코드:
-  - `services-spring/payment-service/src/main/java/guru/urr/paymentservice/service/PaymentService.java:373`
-  - `services-spring/payment-service/src/main/java/guru/urr/paymentservice/service/PaymentService.java:223`
-  - `services-spring/payment-service/src/main/java/guru/urr/paymentservice/messaging/PaymentEventProducer.java:14`
-
-### 7.2 티켓 서비스가 결제 이벤트 소비
-- `payment-events`를 소비해서 `paymentType`에 따라 분기 처리
+`payment-events`를 소비해서 `paymentType`에 따라 분기 처리한다.
 - Consumer Group: `ticket-service-group`
 - 코드: `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/messaging/PaymentEventConsumer.java:49`
 
 **이벤트 라우팅 (paymentType 기반):**
 
-| paymentType | 처리 메서드 | 동작 |
+| paymentType | 처리 | 후속 이벤트 발행 |
 |---|---|---|
-| `reservation` (기본) | `handleReservationPayment()` | 예약 확정 + ReservationConfirmedEvent 발행 |
-| `transfer` | `handleTransferPayment()` | 양도 완료 + TransferCompletedEvent 발행 |
-| `membership` | `handleMembershipPayment()` | 멤버십 활성화 + MembershipActivatedEvent 발행 |
-| (환불) | `handleRefund()` | 예약 환불 처리 + ReservationCancelledEvent 발행 |
+| `reservation` (기본) | 예약 확정 | `reservation-events` (RESERVATION_CONFIRMED) |
+| `transfer` | 양도 완료 | `transfer-events` (TRANSFER_COMPLETED) |
+| `membership` | 멤버십 활성화 | `membership-events` (MEMBERSHIP_ACTIVATED) |
+| (환불) | 예약 환불 처리 | `reservation-events` (RESERVATION_CANCELLED) |
 
 > **이벤트 타입 판별**: 먼저 명시적 `type` 필드 확인 (`PAYMENT_CONFIRMED`/`PAYMENT_REFUNDED`), 없으면 duck-typing으로 폴백 (하위 호환성)
 
-### 7.3 티켓 서비스가 후속 이벤트 발행
-- 결제 이벤트 처리 후 도메인별 후속 이벤트를 각각의 토픽으로 발행
+### 6.6 티켓 서비스가 후속 이벤트 발행
+
+결제 이벤트 처리 후 도메인별 후속 이벤트를 각각의 토픽으로 발행한다.
 - 코드: `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/messaging/TicketEventProducer.java`
 
-| 메서드 | 토픽 | 메시지 키 |
+| 메서드 | 토픽 | 파티션 키 |
 |---|---|---|
 | `publishReservationCreated()` (line 24) | `reservation-events` | reservationId |
 | `publishReservationConfirmed()` (line 35) | `reservation-events` | reservationId |
@@ -254,9 +406,10 @@ Kafka는 "분산 이벤트 로그"에 가깝다. 보통 직접 운영하는 오�
 | `publishTransferCompleted()` (line 57) | `transfer-events` | transferId |
 | `publishMembershipActivated()` (line 68) | `membership-events` | membershipId |
 
-> **비동기 콜백**: 모든 publish는 `whenComplete()`로 성공/실패를 비동기 로깅. 실패 시 예외를 던지지 않는다.
+> 모든 publish는 `whenComplete()`로 성공/실패를 비동기 로깅. 실패 시 예외를 던지지 않는다.
 
-### 7.4 통계 서비스가 여러 토픽 소비
+### 6.7 통계 서비스가 여러 토픽 소비
+
 - Consumer Group: `stats-service-group` (ticket-service와 다른 그룹이므로 같은 메시지를 독립 소비)
 - 코드: `services-spring/stats-service/src/main/java/guru/urr/statsservice/messaging/StatsEventConsumer.java`
 
@@ -268,26 +421,69 @@ Kafka는 "분산 이벤트 로그"에 가깝다. 보통 직접 운영하는 오�
 
 > **Consumer Group 분리 핵심**: `payment-events` 토픽을 `ticket-service-group`(예약 확정)과 `stats-service-group`(통계 집계)이 각각 독립적으로 소비한다. Kafka의 다중 소비자 팬아웃이 여기서 동작한다.
 
-### 7.5 토픽 정의
-- 토픽은 `ticket-service`의 Kafka 설정에서 자동 생성
-- 코드: `services-spring/ticket-service/src/main/java/guru/urr/ticketservice/shared/config/KafkaConfig.java`
+---
 
-| 토픽 이름 | 파티션 수 | 복제 팩터 |
-|---|---|---|
-| `payment-events` (line 16) | 3 | 설정값 (기본 1) |
-| `reservation-events` (line 21) | 3 | 설정값 (기본 1) |
-| `transfer-events` (line 26) | 3 | 설정값 (기본 1) |
-| `membership-events` (line 31) | 3 | 설정값 (기본 1) |
+## 7. 세 기술 비교 — 왜 이렇게 나눠 썼는가
 
-> **파티션 3개 설정 이유**: 같은 Consumer Group 내 최대 3개 인스턴스가 병렬 소비 가능. 파티션 키(reservationId, transferId 등)로 같은 엔티티의 이벤트는 같은 파티션에 들어가 순서가 보장된다.
+### 7.1 기술별 강점
+
+| | Redis ZSet | SQS FIFO | Kafka |
+|---|---|---|---|
+| **핵심 강점** | 실시간 순위 조회, 원자적 연산 | 관리형 큐, 순서/중복 제어 | 다중 소비자 팬아웃, 이벤트 재처리 |
+| **약점** | 영속성 보장 약함 (메모리 기반) | 순위 조회 불가, 팬아웃 약함 | 순위 조회 불가, 운영 복잡 |
+
+### 7.2 왜 대기열에 Redis ZSet인가 (SQS/Kafka가 아닌 이유)
+
+대기열에 필요한 핵심 기능:
+
+| 기능 | Redis ZSet | SQS | Kafka |
+|---|---|---|---|
+| "내가 몇 번째?" 실시간 조회 | `ZRANK` O(log N) | 불가능 | 불가능 |
+| 앞에서부터 N명 꺼내기 | `ZPOPMIN` | 1건씩만 | offset 관리 직접 필요 |
+| 현재 인원 세기 (만료 제외) | `ZCOUNT` (범위 조건) | 불가능 | 불가능 |
+| 원자적 입장 처리 | Lua 스크립트 | 불가능 | 불가능 |
+| 만료 시간 기반 자동 정리 | score에 만료시각 저장 | visibility timeout | 별도 구현 필요 |
+
+> Redis ZSet은 "점수 기반 정렬 + 실시간 순위 조회"를 제공하는 유일한 선택지다.
+
+### 7.3 왜 이벤트에 Kafka인가 (SQS/Redis가 아닌 이유)
+
+서비스 간 이벤트에 필요한 핵심 기능:
+
+| 기능 | Kafka | SQS | Redis Pub/Sub |
+|---|---|---|---|
+| 같은 이벤트를 여러 서비스가 독립 소비 | Consumer Group으로 자연스러움 | SNS+SQS 조합 필요 | 구독자가 놓치면 유실 |
+| 소비자 추가 시 | Group만 추가 | 큐 + SNS 구독 추가 | 채널 추가 |
+| 장애 후 재처리 | offset 되돌려서 replay | 불가능 (삭제됨) | 불가능 (메모리에서 사라짐) |
+| 이벤트 히스토리 | retention 기간만큼 보관 | 소비 즉시 삭제 | 보관 안 됨 |
+
+> Kafka는 "여러 서비스가 같은 이벤트를 각자 소비 + 재처리 가능"을 제공하는 최적 선택지다.
+
+### 7.4 URR 퍼블리셔 전체 정리
+
+| 기술 | 퍼블리셔 | 파일 | 발행 시점 | 비고 |
+|---|---|---|---|---|
+| Redis ZSet | `QueueService` | `queue-service/.../QueueService.java` | 사용자가 대기열 진입/입장 시 | 항상 활성 |
+| SQS FIFO | `SqsPublisher` | `queue-service/.../SqsPublisher.java` | active 전환 시 admitted 알림 | 기본 OFF |
+| Kafka | `PaymentEventProducer` | `payment-service/.../PaymentEventProducer.java` | 결제 확정/환불 시 | 결제 도메인 시작점 |
+| Kafka | `TicketEventProducer` | `ticket-service/.../TicketEventProducer.java` | 결제 이벤트 처리 후 후속 발행 | 예매/양도/멤버십 확장 |
+
+### 7.5 전체 퍼블리셔/컨슈머 매핑
+
+| 기술 | 퍼블리셔(보냄) | 컨슈머(받아 처리) | 오가는 메시지 |
+|---|---|---|---|
+| Redis ZSet | `QueueService` | `AdmissionWorkerService` | 대기열 순번, 입장 처리 |
+| SQS FIFO | `SqsPublisher` | `lambda/ticket-worker/index.js` | `admitted` |
+| Kafka (`payment-events`) | `PaymentEventProducer` | `PaymentEventConsumer`(ticket), `StatsEventConsumer`(stats) | `PAYMENT_CONFIRMED`, `PAYMENT_REFUNDED` |
+| Kafka (`reservation-events`) | `TicketEventProducer` | `StatsEventConsumer` | `RESERVATION_CREATED`, `RESERVATION_CONFIRMED`, `RESERVATION_CANCELLED` |
+| Kafka (`membership-events`) | `TicketEventProducer` | `StatsEventConsumer` | 멤버십 활성화 이벤트 |
+| Kafka (`transfer-events`) | `TicketEventProducer` | 현재 명시적 컨슈머 없음 | 양도 완료 이벤트 |
 
 ---
 
 ## 8. Kafka 멱등성(Idempotency) 구현
 
 멱등성: 같은 요청/이벤트를 여러 번 처리해도 최종 결과가 1번 처리한 것과 같아야 하는 성질.
-
-2장에서 언급한 Idempotency가 실제 코드에서 어떻게 구현되었는지 정리한다.
 
 ### 문제
 Kafka는 at-least-once 전달을 보장한다. 즉, 네트워크 문제나 컨슈머 재시작 시 같은 메시지가 두 번 이상 올 수 있다. 결제 확정이 두 번 처리되면 예약이 이중 확정되는 심각한 문제가 발생한다.
@@ -337,42 +533,57 @@ INSERT INTO processed_events (event_key, processed_at) VALUES (?, NOW()) ON CONF
 
 ## 9. 시퀀스 다이어그램
 
-### 9.1 대기열 입장과 SQS
+### 9.1 대기열 입장 — Redis ZSet + SQS
+
 ```mermaid
 sequenceDiagram
   autonumber
-  actor U as User
+  actor U as 사용자
   participant Q as queue-service
-  participant R as Redis
+  participant R as Redis (ZSet)
+  participant W as AdmissionWorker
   participant SP as SqsPublisher
   participant S as AWS SQS FIFO
   participant L as Lambda ticket-worker
 
-  U->>Q: queue check
-  Q->>R: queue/active 확인
-  Q->>Q: entryToken 생성
-  Q->>SP: publishAdmission(eventId,userId,entryToken)
+  Note over U,R: 케이스 A: 자리가 있을 때 (바로 입장)
+  U->>Q: POST /check/{eventId}
+  Q->>R: ZCARD queue:{eventId}, ZCOUNT active:{eventId}
+  Q->>R: ZADD active:{eventId} (score=만료시각)
+  Q->>Q: entryToken(JWT) 생성
+  Q->>SP: publishAdmission (fire-and-forget)
   SP->>S: sendMessage(admitted)
-  Q-->>U: active + entryToken 응답
+  Q-->>U: status=active, entryToken
+
+  Note over U,R: 케이스 B: 자리가 없을 때 (대기열 진입)
+  U->>Q: POST /check/{eventId}
+  Q->>R: ZCARD queue:{eventId}, ZCOUNT active:{eventId}
+  Q->>R: ZADD queue:{eventId} (score=현재시각)
+  Q-->>U: status=queued, position=42, estimatedWait=120s
+
+  Note over W,R: 백그라운드: 매 1초마다 입장 처리
+  W->>R: SETNX admission:lock:{eventId} (4초 TTL)
+  W->>R: admission_control.lua 실행
+  Note over R: ZREMRANGEBYSCORE active (만료자 제거)<br/>빈자리 = threshold - active수<br/>ZPOPMIN queue (빈자리만큼)<br/>ZADD active (score=만료시각)
+  R-->>W: {입장시킨수, 현재active수}
+
   S->>L: 메시지 전달
   L->>L: admitted 로그 처리
 ```
 
 **흐름 설명:**
-1. 사용자가 `queue-service`에 대기열 확인 요청을 보낸다.
-2. `queue-service`는 Redis에서 현재 대기/활성 상태를 확인한다.
-3. 입장 가능하면 `entryToken`을 발급하고 사용자에게 바로 응답한다.
-4. 동시에 `SqsPublisher`가 `admitted` 메시지를 SQS FIFO에 발행한다.
-5. Lambda `ticket-worker`가 SQS 메시지를 소비한다. (현재 `admitted`는 로그 처리)
-
-- **SQS 역할**: 입장 허용 이벤트를 비동기로 외부 큐에 전달하는 보조 채널. FIFO 순서/중복 제어를 담당한다.
-- **Kafka 역할**: 이 흐름에는 직접 관여하지 않는다.
+1. 사용자가 대기열 확인을 요청하면, queue-service는 **Redis ZSet**에서 현재 상태를 확인한다.
+2. 자리가 있으면 `active:{eventId}` ZSet에 바로 추가하고 entryToken을 발급한다.
+3. 자리가 없으면 `queue:{eventId}` ZSet에 추가하고 순번과 예상 대기시간을 반환한다.
+4. 백그라운드 워커가 매 1초마다 Lua 스크립트로 빈 자리만큼 대기열 앞에서 입장시킨다.
+5. 입장 시 SQS에 알림을 보내지만, 이는 보조 채널이다. Redis가 핵심이다.
 
 ### 9.2 결제 이후 Kafka 체인 (예약 결제)
+
 ```mermaid
 sequenceDiagram
   autonumber
-  actor U as User
+  actor U as 사용자
   participant P as payment-service
   participant K as Kafka
   participant T as ticket-service (ticket-service-group)
@@ -405,17 +616,14 @@ sequenceDiagram
 2. Kafka가 같은 이벤트를 두 Consumer Group에 팬아웃한다.
 3. `ticket-service-group`은 결제 이벤트를 소비해 예약을 확정하고, 후속으로 `reservation-events`를 다시 발행한다.
 4. `stats-service-group`도 같은 `payment-events`를 독립 소비해 통계 처리를 수행한다.
-5. `stats-service`는 `reservation-events`도 소비해 예약 확정 통계를 반영한다.
-6. 각 컨슈머는 각자의 DB의 `processed_events`로 중복 처리 여부를 확인해 멱등성을 보장한다.
-
-- **Kafka 역할**: 결제 이벤트의 메인 전달 버스. 다중 소비자 팬아웃, 비동기 처리, 서비스 간 느슨한 결합, 재처리 가능한 소비 모델을 제공한다.
-- **SQS 역할**: 이 흐름에는 직접 관여하지 않는다.
+5. 각 컨슈머는 각자의 DB의 `processed_events`로 멱등성을 보장한다.
 
 ### 9.3 환불 Kafka 체인
+
 ```mermaid
 sequenceDiagram
   autonumber
-  actor U as User
+  actor U as 사용자
   participant P as payment-service
   participant K as Kafka
   participant T as ticket-service
@@ -430,37 +638,63 @@ sequenceDiagram
   K->>ST: reservation-events → 예약 취소 카운트
 ```
 
-**흐름 설명:**
-1. 사용자가 결제 취소를 요청하면 `payment-service`가 `PAYMENT_REFUNDED` 이벤트를 `payment-events`에 발행한다.
-2. `ticket-service`가 이벤트를 소비해 예약 환불/취소 상태를 반영한다.
-3. `ticket-service`는 후속으로 `RESERVATION_CANCELLED`를 `reservation-events`에 발행한다.
-4. `stats-service`는 `payment-events`를 소비해 환불 금액 통계를 반영한다.
-5. `stats-service`는 `reservation-events`도 소비해 예약 취소 카운트를 반영한다.
+### 9.4 전체 흐름 — 대기열부터 예매까지
 
-- **Kafka 역할**: 환불 이벤트를 여러 서비스가 독립적으로 처리하도록 중계하는 핵심 버스.
-- **SQS 역할**: 이 흐름에는 직접 관여하지 않는다.
+```mermaid
+sequenceDiagram
+  autonumber
+  actor U as 사용자
+  participant Q as queue-service
+  participant R as Redis ZSet
+  participant FE as 프론트엔드
+  participant P as payment-service
+  participant K as Kafka
+  participant T as ticket-service
+  participant ST as stats-service
+
+  Note over U,R: Phase 1: 대기열 (Redis ZSet)
+  U->>Q: 대기열 진입
+  Q->>R: ZADD queue:{eventId}
+  Q-->>U: 순번 42, 예상 120초
+  Note over R: 백그라운드: ZPOPMIN → ZADD active
+  R-->>Q: 입장 허용
+  Q-->>U: entryToken 발급
+
+  Note over U,P: Phase 2: 결제
+  U->>FE: entryToken으로 좌석 선택 → 결제
+  FE->>P: 결제 요청
+
+  Note over P,ST: Phase 3: 이벤트 체인 (Kafka)
+  P->>K: payment-events (PAYMENT_CONFIRMED)
+  K->>T: 예약 확정
+  T->>K: reservation-events (RESERVATION_CONFIRMED)
+  K->>ST: 통계 집계
+```
 
 **한 줄 요약:**
-- `9.1`은 **SQS 보조 채널**이 붙은 대기열 입장 흐름이다.
-- `9.2`, `9.3`은 **Kafka 메인 이벤트 파이프라인**으로 결제/예약/통계를 연결하는 흐름이다.
+- `Phase 1`은 **Redis ZSet**이 관리하는 대기열 단계다.
+- `Phase 2`는 입장 후 결제 단계다.
+- `Phase 3`은 **Kafka**가 연결하는 서비스 간 이벤트 처리 단계다.
+- **SQS**는 Phase 1에서 입장 알림을 외부에 전달하는 보조 역할이다.
 
 ---
 
 ## 10. 결론
 
-이 프로젝트 기준으로 보면:
+### URR 메시징 아키텍처 요약
 
-1. `SQS FIFO`는 대기열 입장 이벤트의 외부 전달 채널(보조)
-2. `Kafka`는 결제-티켓-통계를 잇는 도메인 이벤트 메인 파이프라인
-
-즉, 둘 다 메시징이지만 "역할 레이어"가 다르다.
+| 기술 | 역할 | 핵심 한 줄 |
+|---|---|---|
+| **Redis ZSet** | 대기열 엔진 | 누가 몇 번째인지 관리하고, 빈 자리가 나면 앞에서부터 입장시킨다 |
+| **SQS FIFO** | 입장 알림 보조 | 입장 사실을 외부에 알린다. 없어도 대기열은 동작한다 |
+| **Kafka** | 이벤트 파이프라인 | 결제-예매-통계를 비동기 이벤트로 연결한다 |
 
 ### 핵심 설계 원칙 요약
 
-| 원칙 | SQS (queue-service) | Kafka (payment/ticket/stats) |
-|---|---|---|
-| 앱 레벨 발행 전략 | Fire-and-Forget (SQS 자체는 at-least-once이나, 앱에서 실패 무시 + Redis 폴백) | At-Least-Once (멱등성으로 중복 방어) |
-| 순서 보장 | FIFO MessageGroupId (이벤트 단위) | Partition Key (엔티티 ID 단위) |
-| 중복 방어 | FIFO MessageDeduplicationId (SQS 레벨) | processed_events 테이블 (애플리케이션 레벨) |
-| 장애 격리 | SQS 장애 → 대기열 기능 유지 (Redis 폴백) | Consumer 장애 → 미소비 메시지 쌓임 → 재시작 시 자동 재개 |
-| 팬아웃 | 없음 (단일 Lambda 소비) | 있음 (ticket-service-group + stats-service-group 독립 소비) |
+| 원칙 | Redis ZSet (queue-service) | SQS (queue-service) | Kafka (payment/ticket/stats) |
+|---|---|---|---|
+| 전달 보장 | Lua 스크립트 원자성 | Fire-and-Forget (앱 레벨에서 실패 무시, Redis 폴백) | At-Least-Once (멱등성으로 중복 방어) |
+| 순서 보장 | ZSet score (타임스탬프 순) | FIFO MessageGroupId (이벤트 단위) | Partition Key (엔티티 ID 단위) |
+| 중복 방어 | ZADD는 같은 멤버면 score만 갱신 | FIFO MessageDeduplicationId (SQS 레벨) | processed_events 테이블 (애플리케이션 레벨) |
+| 장애 격리 | Redis 장애 → 대기열 불가 (핵심 의존) | SQS 장애 → 대기열 정상 (보조 채널) | Consumer 장애 → 미소비 메시지 쌓임 → 재시작 시 재개 |
+| 팬아웃 | 없음 (단일 서비스 사용) | 없음 (단일 Lambda 소비) | 있음 (ticket-service-group + stats-service-group 독립 소비) |
