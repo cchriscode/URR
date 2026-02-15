@@ -1,0 +1,28 @@
+name: Catalog Service CI/CD
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'services-spring/catalog-service/**'
+      - '.github/workflows/catalog-service-ci-cd.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - prod
+
+jobs:
+  ci-cd:
+    uses: ./.github/workflows/reusable-spring-ci-cd.yml
+    with:
+      service-name: catalog-service
+      ecr-repository: urr/catalog
+      service-path: services-spring/catalog-service
+      environment: ${{ github.event.inputs.environment || 'staging' }}
+    secrets: inherit

@@ -1,14 +1,18 @@
 FROM eclipse-temurin:21-jdk AS build
 WORKDIR /workspace
 
-COPY gradlew gradlew
-COPY gradlew.bat gradlew.bat
+# Layer 1: Gradle wrapper (rarely changes)
+COPY gradlew gradlew.bat ./
 COPY gradle gradle
-COPY settings.gradle settings.gradle
-COPY build.gradle build.gradle
-COPY src src
+RUN sed -i 's/\r$//' gradlew && chmod +x gradlew
 
-RUN chmod +x gradlew && ./gradlew --no-daemon clean bootJar
+# Layer 2: Build config + dependency download (changes only when deps change)
+COPY settings.gradle build.gradle ./
+RUN ./gradlew --no-daemon dependencies || true
+
+# Layer 3: Source compile (changes on every code edit)
+COPY src src
+RUN ./gradlew --no-daemon bootJar -x test
 
 FROM eclipse-temurin:21-jre
 WORKDIR /app

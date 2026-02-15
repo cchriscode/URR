@@ -1,0 +1,28 @@
+name: Gateway Service CI/CD
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'services-spring/gateway-service/**'
+      - '.github/workflows/gateway-service-ci-cd.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - prod
+
+jobs:
+  ci-cd:
+    uses: ./.github/workflows/reusable-spring-ci-cd.yml
+    with:
+      service-name: gateway-service
+      ecr-repository: urr/gateway
+      service-path: services-spring/gateway-service
+      environment: ${{ github.event.inputs.environment || 'staging' }}
+    secrets: inherit

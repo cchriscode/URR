@@ -1,0 +1,172 @@
+name: Manual Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      service:
+        description: 'Service to rollback'
+        required: true
+        type: choice
+        options:
+          - gateway-service
+          - auth-service
+          - ticket-service
+          - payment-service
+          - stats-service
+          - queue-service
+          - catalog-service
+          - community-service
+          - frontend
+      image-tag:
+        description: 'Image tag to rollback to'
+        required: true
+        type: string
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - prod
+
+env:
+  AWS_REGION: ap-northeast-2
+
+jobs:
+  rollback:
+    name: Rollback ${{ inputs.service }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment == 'prod' && 'production' || 'staging' }}
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Determine ECR repository
+        id: ecr-repo
+        run: |
+          SERVICE="${{ inputs.service }}"
+          case "$SERVICE" in
+            auth-service)     ECR_REPO="urr/auth" ;;
+            ticket-service)   ECR_REPO="urr/ticket" ;;
+            payment-service)  ECR_REPO="urr/payment" ;;
+            stats-service)    ECR_REPO="urr/stats" ;;
+            gateway-service)  ECR_REPO="urr/gateway" ;;
+            queue-service)    ECR_REPO="urr/queue" ;;
+            catalog-service)  ECR_REPO="urr/catalog" ;;
+            community-service) ECR_REPO="urr/community" ;;
+            frontend)         ECR_REPO="urr/frontend" ;;
+          esac
+          echo "repo=$ECR_REPO" >> $GITHUB_OUTPUT
+          echo "Rolling back $SERVICE to ${{ inputs.image-tag }} using ECR repo $ECR_REPO"
+
+      - name: Get ECR registry
+        id: ecr-registry
+        run: |
+          ACCOUNT_ID=${{ secrets.AWS_ACCOUNT_ID }}
+          REGISTRY="$ACCOUNT_ID.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
+          echo "registry=$REGISTRY" >> $GITHUB_OUTPUT
+
+      - name: Update kustomization manifest
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          IMAGE_TAG: ${{ inputs.image-tag }}
+          ECR_REGISTRY: ${{ steps.ecr-registry.outputs.registry }}
+          ECR_REPO: ${{ steps.ecr-repo.outputs.repo }}
+          SERVICE: ${{ inputs.service }}
+        run: |
+          KUSTOMIZE_FILE="k8s/spring/overlays/$ENVIRONMENT/kustomization.yaml"
+
+          if [ ! -f "$KUSTOMIZE_FILE" ]; then
+            echo "Kustomization file not found: $KUSTOMIZE_FILE"
+            exit 1
+          fi
+
+          # Match on the Kustomize image name field (e.g., "name: YOUR_ECR_URI/auth-service" or "name: YOUR_ECR_URI/frontend")
+          # then update newName and newTag in that block
+          sed -i "/name: .*\/${SERVICE}/,/newTag:/{
+            s|newName: .*|newName: $ECR_REGISTRY/$ECR_REPO|
+            s|newTag: .*|newTag: $IMAGE_TAG|
+          }" "$KUSTOMIZE_FILE"
+
+          echo "Updated $KUSTOMIZE_FILE"
+          git diff "$KUSTOMIZE_FILE"
+
+      - name: Commit and push
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          IMAGE_TAG: ${{ inputs.image-tag }}
+          SERVICE: ${{ inputs.service }}
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            git add k8s/spring/overlays/$ENVIRONMENT/kustomization.yaml
+            git commit -m "[skip ci] chore(k8s): rollback $SERVICE to $IMAGE_TAG [$ENVIRONMENT]"
+
+            for i in {1..5}; do
+              git pull --rebase origin main
+              if git push; then
+                echo "Rollback manifest pushed successfully"
+                break
+              else
+                if [ $i -eq 5 ]; then
+                  echo "Failed to push after 5 attempts"
+                  exit 1
+                fi
+                echo "Push failed, retrying ($i/5)..."
+                sleep $((RANDOM % 3 + 2))
+              fi
+            done
+          else
+            echo "No changes to commit"
+          fi
+
+      - name: Notify Discord
+        if: always()
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        run: |
+          if [ -z "$DISCORD_WEBHOOK" ]; then
+            echo "DISCORD_WEBHOOK is not set; skipping notification."
+            exit 0
+          fi
+
+          TIMESTAMP=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+
+          cat <<EOF | curl -H "Content-Type: application/json" -X POST -d @- "$DISCORD_WEBHOOK"
+          {
+            "username": "CI/CD Bot",
+            "embeds": [
+              {
+                "title": "ROLLBACK: ${{ inputs.service }}",
+                "description": "Manual rollback executed",
+                "color": 16776960,
+                "fields": [
+                  { "name": "Service", "value": "${{ inputs.service }}", "inline": true },
+                  { "name": "Environment", "value": "${{ inputs.environment }}", "inline": true },
+                  { "name": "Target Tag", "value": "${{ inputs.image-tag }}", "inline": false },
+                  { "name": "Triggered By", "value": "${{ github.actor }}", "inline": true },
+                  { "name": "Logs", "value": "[GitHub Actions](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})", "inline": false }
+                ],
+                "timestamp": "${TIMESTAMP}"
+              }
+            ]
+          }
+          EOF
+
+      - name: Rollback summary
+        run: |
+          echo "### Rollback Executed" >> $GITHUB_STEP_SUMMARY
+          echo "- **Service:** ${{ inputs.service }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment:** ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Target Tag:** ${{ inputs.image-tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Triggered By:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY

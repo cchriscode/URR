@@ -1,4 +1,4 @@
-# URR Spring - Quick Start
+# TIKETI Spring - Quick Start
 
 `C:\Users\USER\project-ticketing-copy` 기준.
 
@@ -168,10 +168,10 @@ netstat -ano | findstr :3001
 ### Kind Pod 상태
 
 ```powershell
-kubectl get pods -n urr-spring
-kubectl logs -n urr-spring deployment/gateway-service --tail=50
-kubectl logs -n urr-spring deployment/frontend --tail=50
-kubectl rollout restart deployment/auth-service -n urr-spring
+kubectl get pods -n tiketi-spring
+kubectl logs -n tiketi-spring deployment/gateway-service --tail=50
+kubectl logs -n tiketi-spring deployment/frontend --tail=50
+kubectl rollout restart deployment/auth-service -n tiketi-spring
 ```
 
 ### Docker 컨테이너 상태 (로컬 개발)

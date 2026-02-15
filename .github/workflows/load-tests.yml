@@ -1,0 +1,64 @@
+name: Load Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: 'Test scenario to run'
+        required: true
+        default: 'service-failure'
+        type: choice
+        options:
+          # Chaos scenarios (tests/chaos/scenarios/)
+          - service-failure
+          - network-latency
+          - redis-failure
+          # Baseline load scenarios (tests/load/scenarios/)
+          - browse-events
+          - booking-flow
+          - queue-rush
+          - mixed-traffic
+  schedule:
+    - cron: '0 2 * * 1'
+
+jobs:
+  load-test:
+    name: Run Load Test
+    runs-on: ubuntu-latest
+    env:
+      BASE_URL: ${{ vars.STAGING_URL || 'https://staging.urr.guru' }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up k6
+        uses: grafana/setup-k6-action@v1
+
+      - name: Determine test path
+        id: test-path
+        run: |
+          SCENARIO="${{ inputs.scenario || 'service-failure' }}"
+          case "$SCENARIO" in
+            service-failure|network-latency|redis-failure)
+              echo "path=tests/chaos/scenarios/${SCENARIO}.js" >> $GITHUB_OUTPUT
+              echo "category=chaos" >> $GITHUB_OUTPUT
+              ;;
+            browse-events|booking-flow|queue-rush|mixed-traffic)
+              echo "path=tests/load/scenarios/${SCENARIO}.js" >> $GITHUB_OUTPUT
+              echo "category=load" >> $GITHUB_OUTPUT
+              ;;
+          esac
+
+      - name: Run k6 load test
+        run: k6 run ${{ steps.test-path.outputs.path }} --env BASE_URL=${{ env.BASE_URL }}
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.test-path.outputs.category }}-test-results-${{ inputs.scenario || 'service-failure' }}
+          path: |
+            results/
+            summary.json
+          retention-days: 30

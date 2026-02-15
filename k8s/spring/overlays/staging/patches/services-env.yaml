@@ -1,0 +1,273 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway-service
+spec:
+  template:
+    spec:
+      containers:
+        - name: gateway-service
+          envFrom:
+            - configMapRef:
+                name: spring-staging-config
+            - secretRef:
+                name: spring-staging-secret
+          env:
+            - name: PORT
+              value: "3001"
+            - name: SPRING_PROFILES_ACTIVE
+              value: "staging"
+            - name: AUTH_SERVICE_URL
+              value: "http://auth-service:3005"
+            - name: PAYMENT_SERVICE_URL
+              value: "http://payment-service:3003"
+            - name: STATS_SERVICE_URL
+              value: "http://stats-service:3004"
+            - name: TICKET_SERVICE_URL
+              value: "http://ticket-service:3002"
+            - name: QUEUE_SERVICE_URL
+              value: "http://queue-service:3007"
+            - name: CATALOG_SERVICE_URL
+              value: "http://catalog-service:3009"
+            - name: COMMUNITY_SERVICE_URL
+              value: "http://community-service:3008"
+            - name: REDIS_HOST
+              value: "dragonfly-spring"
+            - name: REDIS_PORT
+              value: "6379"
+            - name: ZIPKIN_ENDPOINT
+              value: "http://zipkin-spring:9411/api/v2/spans"
+            - name: CLOUDFRONT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: spring-staging-secret
+                  key: CLOUDFRONT_SECRET
+            - name: CORS_ALLOWED_ORIGINS
+              valueFrom:
+                configMapKeyRef:
+                  name: spring-staging-config
+                  key: CORS_ALLOWED_ORIGINS
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-service
+spec:
+  template:
+    spec:
+      containers:
+        - name: auth-service
+          envFrom:
+            - configMapRef:
+                name: spring-staging-config
+            - secretRef:
+                name: spring-staging-secret
+          env:
+            - name: PORT
+              value: "3005"
+            - name: SPRING_PROFILES_ACTIVE
+              value: "staging"
+            - name: AUTH_DB_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: spring-staging-config
+                  key: AUTH_DB_URL
+            - name: ZIPKIN_ENDPOINT
+              value: "http://zipkin-spring:9411/api/v2/spans"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ticket-service
+spec:
+  template:
+    spec:
+      containers:
+        - name: ticket-service
+          envFrom:
+            - configMapRef:
+                name: spring-staging-config
+            - secretRef:
+                name: spring-staging-secret
+          env:
+            - name: PORT
+              value: "3002"
+            - name: SPRING_PROFILES_ACTIVE
+              value: "staging"
+            - name: TICKET_DB_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: spring-staging-config
+                  key: TICKET_DB_URL
+            - name: AUTH_SERVICE_URL
+              value: "http://auth-service:3005"
+            - name: REDIS_HOST
+              value: "dragonfly-spring"
+            - name: REDIS_PORT
+              value: "6379"
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: "kafka-spring:9092"
+            - name: ZIPKIN_ENDPOINT
+              value: "http://zipkin-spring:9411/api/v2/spans"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-service
+spec:
+  template:
+    spec:
+      containers:
+        - name: payment-service
+          envFrom:
+            - configMapRef:
+                name: spring-staging-config
+            - secretRef:
+                name: spring-staging-secret
+          env:
+            - name: PORT
+              value: "3003"
+            - name: SPRING_PROFILES_ACTIVE
+              value: "staging"
+            - name: PAYMENT_DB_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: spring-staging-config
+                  key: PAYMENT_DB_URL
+            - name: TICKET_SERVICE_URL
+              value: "http://ticket-service:3002"
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: "kafka-spring:9092"
+            - name: ZIPKIN_ENDPOINT
+              value: "http://zipkin-spring:9411/api/v2/spans"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stats-service
+spec:
+  template:
+    spec:
+      containers:
+        - name: stats-service
+          envFrom:
+            - configMapRef:
+                name: spring-staging-config
+            - secretRef:
+                name: spring-staging-secret
+          env:
+            - name: PORT
+              value: "3004"
+            - name: SPRING_PROFILES_ACTIVE
+              value: "staging"
+            - name: STATS_DB_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: spring-staging-config
+                  key: STATS_DB_URL
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: "kafka-spring:9092"
+            - name: ZIPKIN_ENDPOINT
+              value: "http://zipkin-spring:9411/api/v2/spans"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: queue-service
+spec:
+  template:
+    spec:
+      containers:
+        - name: queue-service
+          envFrom:
+            - configMapRef:
+                name: spring-staging-config
+            - secretRef:
+                name: spring-staging-secret
+          env:
+            - name: PORT
+              value: "3007"
+            - name: SPRING_PROFILES_ACTIVE
+              value: "staging"
+            - name: TICKET_SERVICE_URL
+              value: "http://ticket-service:3002"
+            - name: REDIS_HOST
+              value: "dragonfly-spring"
+            - name: REDIS_PORT
+              value: "6379"
+            - name: ZIPKIN_ENDPOINT
+              value: "http://zipkin-spring:9411/api/v2/spans"
+            - name: SQS_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: spring-staging-config
+                  key: SQS_ENABLED
+            - name: SQS_QUEUE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: spring-staging-config
+                  key: SQS_QUEUE_URL
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: community-service
+spec:
+  template:
+    spec:
+      containers:
+        - name: community-service
+          envFrom:
+            - configMapRef:
+                name: spring-staging-config
+            - secretRef:
+                name: spring-staging-secret
+          env:
+            - name: PORT
+              value: "3008"
+            - name: SPRING_PROFILES_ACTIVE
+              value: "staging"
+            - name: COMMUNITY_DB_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: spring-staging-config
+                  key: COMMUNITY_DB_URL
+            - name: TICKET_SERVICE_URL
+              value: "http://ticket-service:3002"
+            - name: ZIPKIN_ENDPOINT
+              value: "http://zipkin-spring:9411/api/v2/spans"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalog-service
+spec:
+  template:
+    spec:
+      containers:
+        - name: catalog-service
+          envFrom:
+            - configMapRef:
+                name: spring-staging-config
+            - secretRef:
+                name: spring-staging-secret
+          env:
+            - name: PORT
+              value: "3009"
+            - name: SPRING_PROFILES_ACTIVE
+              value: "staging"
+            - name: TICKET_DB_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: spring-staging-config
+                  key: TICKET_DB_URL
+            - name: AUTH_SERVICE_URL
+              value: "http://auth-service:3005"
+            - name: REDIS_HOST
+              value: "dragonfly-spring"
+            - name: REDIS_PORT
+              value: "6379"
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: "kafka-spring:9092"
+            - name: ZIPKIN_ENDPOINT
+              value: "http://zipkin-spring:9411/api/v2/spans"

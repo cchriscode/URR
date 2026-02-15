@@ -1,0 +1,28 @@
+name: Community Service CI/CD
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'services-spring/community-service/**'
+      - '.github/workflows/community-service-ci-cd.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - prod
+
+jobs:
+  ci-cd:
+    uses: ./.github/workflows/reusable-spring-ci-cd.yml
+    with:
+      service-name: community-service
+      ecr-repository: urr/community
+      service-path: services-spring/community-service
+      environment: ${{ github.event.inputs.environment || 'staging' }}
+    secrets: inherit

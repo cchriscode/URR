@@ -1,0 +1,28 @@
+name: Queue Service CI/CD
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'services-spring/queue-service/**'
+      - '.github/workflows/queue-service-ci-cd.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - prod
+
+jobs:
+  ci-cd:
+    uses: ./.github/workflows/reusable-spring-ci-cd.yml
+    with:
+      service-name: queue-service
+      ecr-repository: urr/queue
+      service-path: services-spring/queue-service
+      environment: ${{ github.event.inputs.environment || 'staging' }}
+    secrets: inherit

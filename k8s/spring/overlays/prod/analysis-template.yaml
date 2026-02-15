@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: health-check
+  namespace: urr-spring
+spec:
+  args:
+    - name: service-name
+    - name: port
+  metrics:
+    - name: health-endpoint
+      interval: 10s
+      count: 5
+      failureLimit: 1
+      successCondition: result == 200
+      provider:
+        web:
+          url: "http://{{args.service-name}}.urr-spring.svc.cluster.local:{{args.port}}/health"
+          method: GET
+          timeoutSeconds: 5

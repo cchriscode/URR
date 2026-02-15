@@ -1,0 +1,52 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: urr-staging
+
+resources:
+  - ../../base
+
+configMapGenerator:
+  - name: spring-staging-config
+    envs:
+      - config.env
+
+secretGenerator:
+  - name: spring-staging-secret
+    envs:
+      - secrets.env
+
+generatorOptions:
+  disableNameSuffixHash: true
+
+patches:
+  - path: patches/replicas.yaml
+  - path: patches/services-env.yaml
+
+images:
+  - name: YOUR_ECR_URI/gateway-service
+    newName: CHANGE_ME.dkr.ecr.ap-northeast-2.amazonaws.com/urr/gateway
+    newTag: latest
+  - name: YOUR_ECR_URI/auth-service
+    newName: CHANGE_ME.dkr.ecr.ap-northeast-2.amazonaws.com/urr/auth
+    newTag: latest
+  - name: YOUR_ECR_URI/ticket-service
+    newName: CHANGE_ME.dkr.ecr.ap-northeast-2.amazonaws.com/urr/ticket
+    newTag: latest
+  - name: YOUR_ECR_URI/payment-service
+    newName: CHANGE_ME.dkr.ecr.ap-northeast-2.amazonaws.com/urr/payment
+    newTag: latest
+  - name: YOUR_ECR_URI/stats-service
+    newName: CHANGE_ME.dkr.ecr.ap-northeast-2.amazonaws.com/urr/stats
+    newTag: latest
+  - name: YOUR_ECR_URI/queue-service
+    newName: CHANGE_ME.dkr.ecr.ap-northeast-2.amazonaws.com/urr/queue
+    newTag: latest
+  - name: YOUR_ECR_URI/catalog-service
+    newName: CHANGE_ME.dkr.ecr.ap-northeast-2.amazonaws.com/urr/catalog
+    newTag: latest
+  - name: YOUR_ECR_URI/community-service
+    newName: CHANGE_ME.dkr.ecr.ap-northeast-2.amazonaws.com/urr/community
+    newTag: latest
+  - name: YOUR_ECR_URI/frontend
+    newName: CHANGE_ME.dkr.ecr.ap-northeast-2.amazonaws.com/urr/frontend
+    newTag: latest
