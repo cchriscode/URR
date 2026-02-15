@@ -1,6 +1,18 @@
 name: Load Tests
 
 on:
+  workflow_call:
+    inputs:
+      scenario:
+        description: 'Test scenario to run'
+        required: false
+        default: 'browse-events'
+        type: string
+      base-url:
+        description: 'Base URL to test against'
+        required: false
+        default: 'https://staging.urr.guru'
+        type: string
   workflow_dispatch:
     inputs:
       scenario:
@@ -26,7 +38,7 @@ jobs:
     name: Run Load Test
     runs-on: ubuntu-latest
     env:
-      BASE_URL: ${{ vars.STAGING_URL || 'https://staging.urr.guru' }}
+      BASE_URL: ${{ inputs.base-url || vars.STAGING_URL || 'https://staging.urr.guru' }}
 
     steps:
       - name: Checkout code

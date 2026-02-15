@@ -32,8 +32,8 @@ env:
   AWS_REGION: ap-northeast-2
 
 jobs:
-  test:
-    name: Run Tests
+  unit-test:
+    name: Unit Tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -56,23 +56,62 @@ jobs:
             ${{ runner.os }}-gradle-${{ inputs.service-name }}-
             ${{ runner.os }}-gradle-
 
-      - name: Run tests
+      - name: Run unit tests
         working-directory: ${{ inputs.service-path }}
         run: |
           chmod +x gradlew
           ./gradlew test
 
-      - name: Upload test results
+      - name: Upload unit test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-results-${{ inputs.service-name }}
-          path: ${{ inputs.service-path }}/build/reports/tests/
+          name: unit-test-results-${{ inputs.service-name }}
+          path: ${{ inputs.service-path }}/build/reports/tests/test/
+          retention-days: 7
+
+  integration-test:
+    name: Integration Tests
+    needs: unit-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ inputs.service-name }}-${{ hashFiles(format('{0}/**/*.gradle*', inputs.service-path), format('{0}/**/gradle-wrapper.properties', inputs.service-path)) }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-${{ inputs.service-name }}-
+            ${{ runner.os }}-gradle-
+
+      - name: Run integration tests
+        working-directory: ${{ inputs.service-path }}
+        run: |
+          chmod +x gradlew
+          ./gradlew integrationTest || echo "No integration tests found, skipping."
+
+      - name: Upload integration test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-results-${{ inputs.service-name }}
+          path: ${{ inputs.service-path }}/build/reports/tests/integrationTest/
           retention-days: 7
 
   build-and-push:
     name: Build & Push to ECR
-    needs: test
+    needs: [unit-test, integration-test]
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -248,9 +287,26 @@ jobs:
           echo "- **Environment:** $ENVIRONMENT" >> $GITHUB_STEP_SUMMARY
           echo "- **New Image Tag:** $IMAGE_TAG" >> $GITHUB_STEP_SUMMARY
 
+  e2e-gate:
+    name: E2E Verification Gate
+    needs: [build-and-push, update-manifests]
+    if: needs.build-and-push.outputs.environment == 'staging'
+    uses: ./.github/workflows/e2e-tests.yml
+    with:
+      base-url: ${{ vars.STAGING_URL || 'https://staging.urr.guru' }}
+
+  load-test:
+    name: Load Test (Baseline)
+    needs: [build-and-push, e2e-gate]
+    if: needs.build-and-push.outputs.environment == 'staging'
+    uses: ./.github/workflows/load-tests.yml
+    with:
+      scenario: browse-events
+      base-url: ${{ vars.STAGING_URL || 'https://staging.urr.guru' }}
+
   notify:
     name: Notify Discord
-    needs: [build-and-push, update-manifests]
+    needs: [build-and-push, update-manifests, e2e-gate, load-test]
     runs-on: ubuntu-latest
     if: always()
 

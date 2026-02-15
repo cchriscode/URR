@@ -1,6 +1,13 @@
 name: E2E Tests
 
 on:
+  workflow_call:
+    inputs:
+      base-url:
+        description: 'Base URL to test against'
+        required: false
+        default: 'https://staging.urr.guru'
+        type: string
   workflow_run:
     workflows:
       - "Auth Service CI/CD"
@@ -13,10 +20,10 @@ on:
 jobs:
   e2e:
     name: Run E2E Tests
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     env:
-      BASE_URL: ${{ vars.STAGING_URL || 'https://staging.urr.guru' }}
+      BASE_URL: ${{ inputs.base-url || vars.STAGING_URL || 'https://staging.urr.guru' }}
 
     steps:
       - name: Checkout code
