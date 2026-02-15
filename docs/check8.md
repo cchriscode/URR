@@ -1,4 +1,4 @@
-# Check8: SQS vs Kafka 완전 기초 + URR 프로젝트 적용 정리
+# Check8: SQS vs Kafka + URR 프로젝트 적용 정리
 
 ## 0. 이 문서 목표
 이 문서는 다음을 처음 접하는 사람도 이해할 수 있게 정리한다.
