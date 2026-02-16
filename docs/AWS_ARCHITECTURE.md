@@ -4,113 +4,163 @@
 
 ## 전체 구성도
 
+```mermaid
+graph TB
+    subgraph INTERNET["인터넷"]
+        USER["사용자"]
+    end
+
+    subgraph EDGE["Edge Layer"]
+        R53["Route 53<br/>(DNS)"]
+        CF["CloudFront<br/>CDN + Lambda@Edge<br/>토큰 검증"]
+        APIGW["API Gateway<br/>VWR API<br/>5000 req/s"]
+    end
+
+    subgraph VWR_SERVERLESS["VWR Serverless"]
+        LAMBDA_VWR["Lambda VWR API<br/>Node.js 20 | 256MB"]
+        LAMBDA_ADV["Lambda Counter<br/>Advancer (1분)"]
+        DYNAMO["DynamoDB<br/>counters + positions"]
+    end
+
+    USER --> R53 --> CF
+    USER --> APIGW
+    CF -->|"/static, /_next"| S3
+    CF -->|"/* API"| ALB
+    CF -->|"/vwr-api/*"| APIGW
+    APIGW --> LAMBDA_VWR --> DYNAMO
+    LAMBDA_ADV -->|"batch 500"| DYNAMO
+
+    subgraph VPC["VPC: 10.0.0.0/16 (ap-northeast-2)"]
+
+        subgraph PUBLIC["Public Subnets (10.0.0.0/24, 10.0.1.0/24)"]
+            ALB["ALB<br/>HTTPS :443<br/>CloudFront Only"]
+            NAT_A["NAT GW<br/>AZ-a"]
+            NAT_C["NAT GW<br/>AZ-c"]
+            S3["S3<br/>정적 파일"]
+        end
+
+        subgraph APP["App Subnets (10.0.10.0/24, 10.0.11.0/24) - NAT 경유"]
+            EKS_CP["EKS Control Plane<br/>K8s 1.28 | Private Only<br/>5 Log Types"]
+
+            subgraph WORKERS["EKS Worker Nodes (t3.medium x 2~5)"]
+                GW["gateway x3<br/>:3001"]
+                TK["ticket x3<br/>:3002"]
+                QU["queue x3<br/>:3007"]
+                PM["payment x2<br/>:3003"]
+                AU["auth x2<br/>:3005"]
+                ST["stats x2<br/>:3004"]
+                CM["community x2<br/>:3008"]
+                CA["catalog x1<br/>:3009"]
+                FE["frontend x2<br/>:3000"]
+            end
+
+            subgraph MON["Monitoring Stack"]
+                PROM["Prometheus"]
+                GRAF["Grafana"]
+                LOKI["Loki + Promtail"]
+                AM["AlertManager"]
+            end
+
+            VPCE["VPC Endpoints x11<br/>ECR, EKS, STS, CW, SM..."]
+        end
+
+        subgraph DB["DB Subnets (10.0.20.0/24, 10.0.21.0/24) - 인터넷 차단"]
+            RDS["RDS PostgreSQL<br/>Multi-AZ | db.t4g.micro | 50GB<br/>ticket_db, auth_db, payment_db<br/>stats_db, community_db"]
+            RDSP["RDS Proxy<br/>커넥션 풀링 + TLS"]
+        end
+
+        subgraph CACHE["Cache Subnets (10.0.30.0/24, 10.0.31.0/24) - 인터넷 차단"]
+            REDIS["ElastiCache Redis 7.1<br/>cache.t4g.micro<br/>Primary + Replica<br/>TLS + AUTH + Failover"]
+        end
+
+        subgraph STREAM["Streaming Subnets (10.0.40.0/24, 10.0.41.0/24) - NAT 경유"]
+            MSK["Amazon MSK<br/>Kafka 3.6.0<br/>t3.small x 2 broker<br/>TLS + IAM Auth"]
+            SQS["SQS FIFO<br/>ticket-events.fifo<br/>+ DLQ"]
+            LAMBDA_W["Lambda Worker<br/>SQS consumer<br/>X-Ray | 30s"]
+        end
+    end
+
+    ALB -->|":3001"| GW
+    ALB -->|":3000"| FE
+    GW --> AU & TK & PM & ST & QU & CA & CM
+    TK -->|"Kafka"| MSK
+    PM -->|"Kafka"| MSK
+    MSK --> ST
+
+    WORKERS -->|"5432"| RDSP --> RDS
+    WORKERS -->|"6379"| REDIS
+    WORKERS -->|"9094"| MSK
+    QU --> SQS
+    SQS --> LAMBDA_W
+    LAMBDA_W --> RDSP
+
+    style INTERNET fill:#e8f4fd,stroke:#1a73e8
+    style VPC fill:#f0f0f0,stroke:#333,stroke-width:2px
+    style PUBLIC fill:#e8f5e9,stroke:#2e7d32
+    style APP fill:#fff3e0,stroke:#e65100
+    style DB fill:#fce4ec,stroke:#c62828
+    style CACHE fill:#f3e5f5,stroke:#6a1b9a
+    style STREAM fill:#e0f2f1,stroke:#00695c
+    style WORKERS fill:#fff8e1,stroke:#f57f17
+    style MON fill:#e3f2fd,stroke:#0d47a1
 ```
-                         ┌─────────────────────────────────────────────────────────────────────┐
-                         │                         인터넷                                       │
-                         └────────┬───────────────────┬───────────────────────┬────────────────┘
-                                  │                   │                       │
-                                  ▼                   ▼                       ▼
-                         ┌────────────────┐  ┌────────────────┐     ┌─────────────────┐
-                         │   CloudFront   │  │  API Gateway   │     │  Route 53 (DNS) │
-                         │   (CDN/WAF)    │  │   (VWR API)    │     └─────────────────┘
-                         │                │  │   5000 req/s   │
-                         │ Lambda@Edge    │  │  10000 burst   │
-                         │ (토큰 검증)    │  └───────┬────────┘
-                         └──┬─────┬───┬──┘          │
-                            │     │   │              ▼
-                      ┌─────┘     │   └────┐  ┌───────────┐
-                      ▼           ▼        ▼  │Lambda VWR │──▶ DynamoDB
-                ┌──────────┐ ┌────────┐ ┌──┐  │  API      │   (counters
-                │ S3       │ │  ALB   │ │CF│  └───────────┘    + positions)
-                │ (정적)   │ │(HTTPS) │ │fn│
-                └──────────┘ └───┬────┘ └──┘
-                                 │
-════════════════════════════════════════════════════════════════════════════════
-                         VPC: 10.0.0.0/16 (ap-northeast-2)
-════════════════════════════════════════════════════════════════════════════════
 
-  ┌─ Public Subnets (10.0.0.0/24, 10.0.1.0/24) ──────────────────────────┐
-  │                                                                        │
-  │   [ALB]          [NAT GW - AZ a]         [NAT GW - AZ c]             │
-  │                                                                        │
-  └────────────────────────┬──────────────────────┬───────────────────────┘
-                           │                      │
-  ┌─ App Subnets (10.0.10.0/24, 10.0.11.0/24) ───┼──────────────────────┐
-  │                        │                      │                       │
-  │   ┌── EKS Control Plane (AWS Managed) ──────────────────────┐        │
-  │   │  K8s 1.28 │ Private Endpoint │ 5 Log Types             │        │
-  │   └─────────────────────────────────────────────────────────┘        │
-  │                                                                       │
-  │   ┌── EKS Worker Nodes (t3.medium, 2~10대) ────────────────────────┐ │
-  │   │                                                                 │ │
-  │   │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐              │ │
-  │   │  │ gateway (x3)│ │ ticket (x3) │ │ queue  (x3) │              │ │
-  │   │  │ :3001       │ │ :3002       │ │ :3007       │              │ │
-  │   │  └─────────────┘ └─────────────┘ └─────────────┘              │ │
-  │   │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐              │ │
-  │   │  │ payment(x2) │ │ auth   (x2) │ │ stats  (x2) │              │ │
-  │   │  │ :3003       │ │ :3005       │ │ :3004       │              │ │
-  │   │  └─────────────┘ └─────────────┘ └─────────────┘              │ │
-  │   │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐              │ │
-  │   │  │community(x2)│ │catalog (x1) │ │frontend(x2) │              │ │
-  │   │  │ :3008       │ │ :3009       │ │ :3000       │              │ │
-  │   │  └─────────────┘ └─────────────┘ └─────────────┘              │ │
-  │   │                                                                 │ │
-  │   │  ┌── Monitoring Stack ──────────────────────────────────────┐  │ │
-  │   │  │ Prometheus + Grafana + AlertManager + Loki + Promtail   │  │ │
-  │   │  │ (kube-prometheus-stack Helm)                             │  │ │
-  │   │  └─────────────────────────────────────────────────────────┘  │ │
-  │   └─────────────────────────────────────────────────────────────┘  │
-  │                                                                       │
-  │   [VPC Endpoints: ECR, EKS, STS, CloudWatch, SecretsManager 등 9개] │
-  └───────────────────────────────────────────────────────────────────────┘
-                    │              │                │
-  ┌─ DB Subnets ───┼──────────────┼────────────────┼──── (인터넷 차단) ─┐
-  │  (10.0.20.0/24, 10.0.21.0/24)│                │                    │
-  │                               │                │                    │
-  │   ┌──────────────────────────────────┐                              │
-  │   │  RDS PostgreSQL (Multi-AZ)       │                              │
-  │   │  db.t4g.micro │ 50GB gp3        │                              │
-  │   │  ├─ ticket_db                    │                              │
-  │   │  ├─ auth_db                      │                              │
-  │   │  ├─ payment_db                   │                              │
-  │   │  ├─ stats_db                     │                              │
-  │   │  └─ community_db                │                              │
-  │   │                                  │                              │
-  │   │  RDS Proxy (App 서브넷에 위치)   │                              │
-  │   │  커넥션 풀링 + Secrets Manager   │                              │
-  │   └──────────────────────────────────┘                              │
-  └─────────────────────────────────────────────────────────────────────┘
+### VPC 서브넷 배치도
 
-  ┌─ Cache Subnets (10.0.30.0/24, 10.0.31.0/24) ── (인터넷 차단) ─────┐
-  │                                                                      │
-  │   ┌──────────────────────────────────┐                               │
-  │   │  ElastiCache Redis 7.1           │                               │
-  │   │  cache.t4g.micro                 │                               │
-  │   │  Primary + Replica (2노드)       │                               │
-  │   │  TLS + AUTH Token                │                               │
-  │   │  Auto-Failover 활성화            │                               │
-  │   └──────────────────────────────────┘                               │
-  └──────────────────────────────────────────────────────────────────────┘
+```mermaid
+block-beta
+    columns 5
 
-  ┌─ Streaming Subnets (10.0.40.0/24, 10.0.41.0/24) ──────────────────┐
-  │                                                                      │
-  │   ┌──────────────────────────────────┐  ┌───────────────────────┐   │
-  │   │  Amazon MSK (Kafka 3.6.0)        │  │  Lambda Worker        │   │
-  │   │  kafka.t3.small × 2 브로커       │  │  SQS → ticket 처리   │   │
-  │   │  50GB/broker │ TLS + IAM Auth    │  │  X-Ray 추적 활성화   │   │
-  │   │                                  │  │  timeout: 30s         │   │
-  │   │  토픽:                           │  │  concurrency: 10     │   │
-  │   │  ├─ payment-events               │  └───────────────────────┘   │
-  │   │  ├─ reservation-events           │                               │
-  │   │  ├─ transfer-events              │  ┌───────────────────────┐   │
-  │   │  └─ membership-events            │  │  SQS FIFO Queue       │   │
-  │   │                                  │  │  ticket-events.fifo   │   │
-  │   │  파티션: 3 │ ISR: 2             │  │  + DLQ (14일 보관)   │   │
-  │   └──────────────────────────────────┘  └───────────────────────┘   │
-  └──────────────────────────────────────────────────────────────────────┘
+    block:PUB["Public Subnets"]:2
+        ALB_B["ALB"] NAT_B["NAT x2"]
+    end
+    space
+    block:PUB2[" "]:2
+        IGW_B["Internet Gateway"]
+    end
 
-════════════════════════════════════════════════════════════════════════════════
+    block:APPZ["App Subnets (EKS)"]:5
+        EKS_B["EKS Control Plane"]
+        GW_B["gateway x3"]
+        TK_B["ticket x3"]
+        QU_B["queue x3"]
+        PM_B["payment x2"]
+    end
+
+    block:APP2[" "]:5
+        AU_B["auth x2"]
+        ST_B["stats x2"]
+        CM_B["community x2"]
+        CA_B["catalog x1"]
+        FE_B["frontend x2"]
+    end
+
+    block:APP3[" "]:5
+        MON_B["Prometheus + Grafana + Loki + AlertManager"]
+        VPCE_B["VPC Endpoints x11"]
+    end
+
+    block:DBZ["DB Subnets (격리)"]:2
+        RDS_B["RDS PostgreSQL<br/>Multi-AZ<br/>5 databases"]
+    end
+    space
+    block:CACHEZ["Cache Subnets (격리)"]:2
+        REDIS_B["ElastiCache Redis<br/>Primary + Replica"]
+    end
+
+    block:STREAMZ["Streaming Subnets"]:5
+        MSK_B["MSK Kafka<br/>2 brokers"]
+        SQS_B["SQS FIFO<br/>+ DLQ"]
+        LW_B["Lambda Worker"]
+    end
+
+    style PUB fill:#e8f5e9
+    style APPZ fill:#fff3e0
+    style APP2 fill:#fff3e0
+    style APP3 fill:#fff3e0
+    style DBZ fill:#fce4ec
+    style CACHEZ fill:#f3e5f5
+    style STREAMZ fill:#e0f2f1
 ```
 
 ---
@@ -140,13 +190,29 @@
 
 ### 1.3 라우팅 정책
 
-```
-Public 서브넷     → 0.0.0.0/0 → Internet Gateway (직접 인터넷)
-App 서브넷 AZ-a   → 0.0.0.0/0 → NAT Gateway AZ-a (아웃바운드만)
-App 서브넷 AZ-c   → 0.0.0.0/0 → NAT Gateway AZ-c
-DB/Cache 서브넷   → 라우트 없음 (완전 격리, 인바운드만 허용)
-Streaming AZ-a    → 0.0.0.0/0 → NAT Gateway AZ-a
-Streaming AZ-c    → 0.0.0.0/0 → NAT Gateway AZ-c
+```mermaid
+graph LR
+    IGW["Internet Gateway"]
+    NAT_A["NAT GW AZ-a"]
+    NAT_C["NAT GW AZ-c"]
+    NONE["라우트 없음"]
+    INET["0.0.0.0/0"]
+
+    subgraph Routes
+        PUB["Public 서브넷"] -->|직접| IGW
+        APP_A["App 서브넷 AZ-a"] -->|아웃바운드만| NAT_A
+        APP_C["App 서브넷 AZ-c"] -->|아웃바운드만| NAT_C
+        DB["DB/Cache 서브넷"] -->|완전 격리| NONE
+        STR_A["Streaming AZ-a"] -->|아웃바운드만| NAT_A
+        STR_C["Streaming AZ-c"] -->|아웃바운드만| NAT_C
+    end
+
+    IGW --> INET
+    NAT_A --> INET
+    NAT_C --> INET
+
+    style DB fill:#fce4ec,stroke:#c62828
+    style NONE fill:#fce4ec,stroke:#c62828
 ```
 
 **핵심**: DB와 Cache 서브넷은 NAT도 없는 완전 격리. VPC 엔드포인트로만 AWS 서비스 접근.
@@ -235,29 +301,36 @@ NAT Gateway 비용 절감 + 보안 강화를 위해 PrivateLink 사용.
 
 ### 3.2 서비스 간 호출 관계
 
-```
-                         ┌─ ALB ─┐
-                         │       │
-                         ▼       ▼
-                    gateway-service ──────── frontend
-                    (API 라우터)              (Next.js SSR)
-                         │
-          ┌──────┬───────┼───────┬──────┬──────┬──────┐
-          ▼      ▼       ▼       ▼      ▼      ▼      ▼
-        auth   ticket  payment  stats  queue  catalog community
-                 │        │                     │
-                 │◀───────┘                     │
-                 │ (Kafka: payment-events)       ▼
-                 │                            catalog
-                 ▼                          (auth 호출)
-              payment
-         (Kafka: reservation-events)
+```mermaid
+graph TD
+    ALB["ALB :443"]
 
-Kafka 토픽 흐름:
-  ticket → payment-events → payment
-  payment → reservation-events → ticket
-  ticket → transfer-events → stats
-  ticket → membership-events → stats
+    ALB --> GW["gateway-service<br/>(API 라우터)"]
+    ALB --> FE["frontend<br/>(Next.js SSR)"]
+
+    GW --> AUTH["auth"]
+    GW --> TK["ticket"]
+    GW --> PM["payment"]
+    GW --> ST["stats"]
+    GW --> QU["queue"]
+    GW --> CA["catalog"]
+    GW --> CM["community"]
+
+    CA -->|"REST"| AUTH
+
+    TK -->|"payment-events"| KAFKA["Kafka"]
+    PM -->|"reservation-events"| KAFKA
+    TK -->|"transfer-events"| KAFKA
+    TK -->|"membership-events"| KAFKA
+
+    KAFKA -->|"payment-events"| PM
+    KAFKA -->|"reservation-events"| TK
+    KAFKA -->|"transfer-events"| ST
+    KAFKA -->|"membership-events"| ST
+
+    style KAFKA fill:#e0f2f1,stroke:#00695c,stroke-width:2px
+    style ALB fill:#e8f5e9,stroke:#2e7d32
+    style GW fill:#fff3e0,stroke:#e65100,stroke-width:2px
 ```
 
 ### 3.3 서비스별 역할
@@ -585,13 +658,23 @@ tier:backend Pod → AWS Managed Service 접근:
 
 ## 6. 보안 계층 (6단계)
 
-```
-Layer 1: CloudFront        TLS 1.2+, 보안 헤더, 지역 제한
-Layer 2: Lambda@Edge       VWR Token 검증 (Tier 1 + Tier 2)
-Layer 3: ALB               CloudFront만 허용 (Prefix List), HTTPS
-Layer 4: Gateway Filters   JWT 인증, Rate Limiting, Entry Token 검증
-Layer 5: NetworkPolicy     서비스별 Ingress/Egress 화이트리스트
-Layer 6: VPC               서브넷 격리, 보안 그룹, VPC Endpoints
+```mermaid
+graph TD
+    L1["Layer 1: CloudFront<br/>TLS 1.2+ | 보안 헤더 | 지역 제한"]
+    L2["Layer 2: Lambda@Edge<br/>VWR Token 검증 (Tier 1 + Tier 2)"]
+    L3["Layer 3: ALB<br/>CloudFront만 허용 (Prefix List) | HTTPS"]
+    L4["Layer 4: Gateway Filters<br/>JWT 인증 | Rate Limiting | Entry Token 검증"]
+    L5["Layer 5: NetworkPolicy<br/>서비스별 Ingress/Egress 화이트리스트"]
+    L6["Layer 6: VPC<br/>서브넷 격리 | 보안 그룹 | VPC Endpoints"]
+
+    L1 --> L2 --> L3 --> L4 --> L5 --> L6
+
+    style L1 fill:#e8f4fd,stroke:#1a73e8
+    style L2 fill:#e3f2fd,stroke:#0d47a1
+    style L3 fill:#e8f5e9,stroke:#2e7d32
+    style L4 fill:#fff3e0,stroke:#e65100
+    style L5 fill:#f3e5f5,stroke:#6a1b9a
+    style L6 fill:#fce4ec,stroke:#c62828
 ```
 
 ### 6.1 Gateway 필터 체인 (실행 순서)
@@ -613,31 +696,31 @@ Layer 6: VPC               서브넷 격리, 보안 그룹, VPC Endpoints
 
 ### 6.2 2-Tier 대기열 토큰
 
-```
-사용자 → CloudFront
-         │
-         ├─ VWR 활성 이벤트? → /vwr/{eventId} 리다이렉트
-         │                      │
-         │                      ▼
-         │               Tier 1 VWR 페이지 (S3)
-         │               DynamoDB 기반 CDN 레벨 대기열
-         │               입장 시 urr-vwr-token 쿠키 발급
-         │                      │
-         ▼                      ▼
-    Lambda@Edge 검증 ←── urr-vwr-token 쿠키
-         │
-         ├─ 좌석/예매 API? → urr-entry-token 필요
-         │                      │
-         │                      ▼
-         │               Tier 2 Queue 페이지 (Next.js)
-         │               Redis 기반 서비스 레벨 대기열
-         │               입장 시 x-queue-entry-token 발급
-         │                      │
-         ▼                      ▼
-    Gateway Filter 검증 ←── x-queue-entry-token 헤더
-         │
-         ▼
-    ticket-service (좌석 선택, 예매)
+```mermaid
+graph TD
+    USER["사용자"] --> CF["CloudFront"]
+
+    CF -->|"VWR 활성 이벤트?"| VWR_REDIRECT["/vwr/{eventId}<br/>리다이렉트"]
+    VWR_REDIRECT --> T1["Tier 1 VWR 페이지 (S3)<br/>DynamoDB 기반 CDN 레벨 대기열"]
+    T1 -->|"입장 시"| COOKIE["urr-vwr-token 쿠키 발급"]
+
+    CF --> EDGE["Lambda@Edge 검증"]
+    COOKIE -.->|"쿠키 전달"| EDGE
+
+    EDGE -->|"좌석/예매 API?"| ENTRY["urr-entry-token 필요"]
+    ENTRY --> T2["Tier 2 Queue 페이지 (Next.js)<br/>Redis 기반 서비스 레벨 대기열"]
+    T2 -->|"입장 시"| TOKEN["x-queue-entry-token 발급"]
+
+    EDGE --> GW_FILTER["Gateway Filter 검증"]
+    TOKEN -.->|"헤더 전달"| GW_FILTER
+
+    GW_FILTER --> TICKET["ticket-service<br/>(좌석 선택, 예매)"]
+
+    style T1 fill:#e8f4fd,stroke:#1a73e8
+    style T2 fill:#fff3e0,stroke:#e65100
+    style EDGE fill:#e3f2fd,stroke:#0d47a1
+    style GW_FILTER fill:#f3e5f5,stroke:#6a1b9a
+    style TICKET fill:#e8f5e9,stroke:#2e7d32
 ```
 
 ### 6.3 보안 그룹 매트릭스
@@ -677,44 +760,52 @@ Layer 6: VPC               서브넷 격리, 보안 그룹, VPC Endpoints
 
 ### 8.1 CI/CD 파이프라인
 
-```
-Code Push (main)
-    │
-    ▼
-PR Validation ── 변경된 서비스만 테스트
-    │
-    ▼ (merge)
-Service CI/CD (8개 병렬)
-    ├─ Unit Test (JDK 21 + Gradle)
-    ├─ Integration Test
-    ├─ Docker Build (arm64) + ECR Push (3 태그)
-    ├─ Trivy 보안 스캔 (CRITICAL/HIGH)
-    └─ Kustomize 매니페스트 업데이트 + Git Push
-    │
-    ▼
-Staging 배포 (ArgoCD 자동 감지)
-    ├─ E2E 테스트 (Playwright)
-    └─ 부하 테스트 (k6)
-    │
-    ▼ (수동 승인: workflow_dispatch + environment protection)
-Production 배포 (ArgoCD 자동 감지)
-    ├─ Blue-Green Rollout (4개 핵심 서비스)
-    ├─ Health Analysis (5회 × 10초)
-    └─ 수동 Promotion (autoPromotionEnabled: false)
+```mermaid
+graph TD
+    PUSH["Code Push (main)"] --> PR["PR Validation<br/>변경된 서비스만 테스트"]
+    PR -->|"merge"| CI["Service CI/CD<br/>(8개 병렬)"]
+
+    CI --> UT["Unit Test<br/>JDK 21 + Gradle"]
+    CI --> IT["Integration Test"]
+    CI --> DOCKER["Docker Build (arm64)<br/>+ ECR Push (3 태그)"]
+    CI --> TRIVY["Trivy 보안 스캔<br/>CRITICAL/HIGH"]
+    CI --> KUSTOMIZE["Kustomize 매니페스트<br/>업데이트 + Git Push"]
+
+    KUSTOMIZE --> STAGING["Staging 배포<br/>(ArgoCD 자동 감지)"]
+    STAGING --> E2E["E2E 테스트<br/>(Playwright)"]
+    STAGING --> LOAD["부하 테스트<br/>(k6)"]
+
+    E2E & LOAD -->|"수동 승인<br/>workflow_dispatch<br/>+ environment protection"| PROD["Production 배포<br/>(ArgoCD 자동 감지)"]
+
+    PROD --> BG["Blue-Green Rollout<br/>(4개 핵심 서비스)"]
+    PROD --> HEALTH["Health Analysis<br/>(5회 × 10초)"]
+    PROD --> PROMOTE["수동 Promotion<br/>(autoPromotionEnabled: false)"]
+
+    style PUSH fill:#e8f4fd,stroke:#1a73e8
+    style CI fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    style STAGING fill:#e3f2fd,stroke:#0d47a1
+    style PROD fill:#fce4ec,stroke:#c62828,stroke-width:2px
 ```
 
 ### 8.2 Argo Rollouts (Blue-Green)
 
 적용 서비스: gateway, ticket, payment, queue
 
-```
-1. 새 이미지 Push → ArgoCD 감지
-2. Preview (Green) Pod 생성
-3. Health Analysis 실행 (GET /health × 5회)
-4. 분석 통과 → 수동 승인 대기
-5. 승인 → 트래픽 Green으로 전환
-6. 30초 후 Blue (이전 버전) 축소
-7. 실패 시 자동 롤백
+```mermaid
+graph LR
+    A["1. 새 이미지 Push"] --> B["2. ArgoCD 감지<br/>Preview (Green) Pod 생성"]
+    B --> C["3. Health Analysis<br/>GET /health × 5회"]
+    C -->|"통과"| D["4. 수동 승인 대기"]
+    D -->|"승인"| E["5. 트래픽<br/>Green 전환"]
+    E --> F["6. 30초 후<br/>Blue 축소"]
+    C -->|"실패"| G["자동 롤백"]
+
+    style A fill:#e8f4fd,stroke:#1a73e8
+    style B fill:#e8f5e9,stroke:#2e7d32
+    style C fill:#fff3e0,stroke:#e65100
+    style D fill:#f3e5f5,stroke:#6a1b9a
+    style E fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style G fill:#fce4ec,stroke:#c62828
 ```
 
 **Preview Service (Green 테스트용)**:
