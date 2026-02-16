@@ -13,8 +13,38 @@ spec:
     metadata:
       labels:
         app: dragonfly-spring
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9121"
+        prometheus.io/path: "/metrics"
     spec:
       containers:
+        - name: redis-exporter
+          image: oliver006/redis_exporter:v1.62.0-alpine
+          args:
+            - --redis.addr=redis://localhost:6379
+          ports:
+            - containerPort: 9121
+              name: metrics
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "100m"
+              memory: "128Mi"
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: 9121
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /metrics
+              port: 9121
+            initialDelaySeconds: 10
+            periodSeconds: 10
         - name: dragonfly
           image: docker.dragonflydb.io/dragonflydb/dragonfly:latest
           args:
