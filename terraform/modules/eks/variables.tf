@@ -97,27 +97,27 @@ variable "node_disk_size" {
 # EKS Addon Versions
 
 variable "vpc_cni_version" {
-  description = "Version of vpc-cni addon"
+  description = "Version of vpc-cni addon (null = use most recent compatible version)"
   type        = string
-  default     = "v1.15.1-eksbuild.1"
+  default     = null
 }
 
 variable "kube_proxy_version" {
-  description = "Version of kube-proxy addon"
+  description = "Version of kube-proxy addon (null = use most recent compatible version)"
   type        = string
-  default     = "v1.28.2-eksbuild.2"
+  default     = null
 }
 
 variable "coredns_version" {
-  description = "Version of coredns addon"
+  description = "Version of coredns addon (null = use most recent compatible version)"
   type        = string
-  default     = "v1.10.1-eksbuild.6"
+  default     = null
 }
 
 variable "ebs_csi_driver_version" {
-  description = "Version of aws-ebs-csi-driver addon"
+  description = "Version of aws-ebs-csi-driver addon (null = use most recent compatible version)"
   type        = string
-  default     = "v1.25.0-eksbuild.1"
+  default     = null
 }
 
 # Logging

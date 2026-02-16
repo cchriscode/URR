@@ -1,0 +1,33 @@
+# Production external service egress rules
+# Applied via kustomize patch - these CIDRs match AWS VPC subnets
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: prod-external-egress
+spec:
+  podSelector:
+    matchLabels:
+      tier: backend
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 10.0.20.0/23  # DB subnets
+      ports:
+        - port: 5432
+          protocol: TCP
+    - to:
+        - ipBlock:
+            cidr: 10.0.30.0/23  # Cache subnets
+      ports:
+        - port: 6379
+          protocol: TCP
+    - to:
+        - ipBlock:
+            cidr: 10.0.40.0/23  # Streaming subnets
+      ports:
+        - port: 9092
+          protocol: TCP
+        - port: 9094
+          protocol: TCP

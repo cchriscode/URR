@@ -44,10 +44,16 @@ management:
     health:
       show-details: always
       show-components: always
+      probes:
+        enabled: true
   health:
     db:
       enabled: true
     redis:
+      enabled: true
+    livenessstate:
+      enabled: true
+    readinessstate:
       enabled: true
   endpoints:
     web:
@@ -103,3 +109,16 @@ resilience4j:
         retry-exceptions:
           - org.springframework.web.client.ResourceAccessException
           - java.net.ConnectException
+
+---
+spring:
+  config:
+    activate:
+      on-profile: prod
+  data:
+    redis:
+      cluster:
+        nodes: ${REDIS_CLUSTER_NODES:}
+      password: ${REDIS_PASSWORD:}
+      ssl:
+        enabled: true

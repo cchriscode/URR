@@ -84,8 +84,14 @@ management:
     health:
       show-details: always
       show-components: always
+      probes:
+        enabled: true
   health:
     redis:
+      enabled: true
+    livenessstate:
+      enabled: true
+    readinessstate:
       enabled: true
   endpoints:
     web:

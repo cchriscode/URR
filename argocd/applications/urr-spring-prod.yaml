@@ -13,5 +13,8 @@ spec:
     server: https://kubernetes.default.svc
     namespace: urr-spring
   syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
     syncOptions:
       - CreateNamespace=true

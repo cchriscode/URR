@@ -144,16 +144,20 @@ queue-service는 이벤트(공연)마다 아래 키들을 만든다:
 
 | 키 패턴 | Redis 타입 | score 의미 | 용도 |
 |---|---|---|---|
-| `queue:{eventId}` | ZSet | 대기열 진입 시각 (ms) | 대기 순번 관리. score가 작을수록 먼저 온 사람 |
-| `active:{eventId}` | ZSet | 만료 시각 (ms) | 입장 허용된 사용자. score > 현재시각이면 유효 |
-| `queue:seen:{eventId}` | ZSet | 마지막 하트비트 시각 (ms) | 대기 중인 사용자의 생존 확인 |
-| `active:seen:{eventId}` | ZSet | 마지막 하트비트 시각 (ms) | 입장한 사용자의 생존 확인 |
+| `{eventId}:queue` | ZSet | 대기열 진입 시각 (ms) 또는 VWR 순번 | 대기 순번 관리. score가 작을수록 먼저 온 사람 |
+| `{eventId}:active` | ZSet | 만료 시각 (ms) | 입장 허용된 사용자. score > 현재시각이면 유효 |
+| `{eventId}:seen` | ZSet | 마지막 하트비트 시각 (ms) | 대기 중인 사용자의 생존 확인 |
+| `{eventId}:active-seen` | ZSet | 마지막 하트비트 시각 (ms) | 입장한 사용자의 생존 확인 |
+| `{eventId}:threshold` | String | — | 이벤트별 동시 입장 한도 (미설정 시 기본값 사용) |
 | `queue:active-events` | Set | — | 현재 대기열이 활성화된 이벤트 목록 |
 | `admission:lock:{eventId}` | String | — | 분산 락 (TTL 4초). 여러 서버가 동시에 입장 처리하는 것 방지 |
 
+> **해시 태그 `{eventId}`**: Redis Cluster에서 같은 이벤트의 키들이 동일 슬롯에 배치되도록 `{eventId}` 해시 태그를 사용한다. Lua 스크립트가 여러 키를 원자적으로 처리하려면 모든 키가 같은 슬롯에 있어야 하기 때문이다.
+
 예시: 공연 ID가 `abc-123`이면
-- `queue:abc-123` — 이 공연의 대기열 (ZSet)
-- `active:abc-123` — 이 공연에 입장한 사용자들 (ZSet)
+- `{abc-123}:queue` — 이 공연의 대기열 (ZSet)
+- `{abc-123}:active` — 이 공연에 입장한 사용자들 (ZSet)
+- `{abc-123}:threshold` — 이 공연의 동시 입장 한도 (선택적)
 
 ### 4.4 대기열 흐름 상세
 
@@ -162,21 +166,23 @@ queue-service는 이벤트(공연)마다 아래 키들을 만든다:
 ```
 사용자 요청
    ↓
-1. 이미 대기 중인가? (queue:{eventId}에 있는지)
+1. 이미 대기 중인가? ({eventId}:queue에 있는지)
    ├─ YES → 하트비트 갱신, 현재 순번 반환
    └─ NO → 계속
    ↓
-2. 이미 입장한 상태인가? (active:{eventId}에 있고 score > 현재시각)
+2. 이미 입장한 상태인가? ({eventId}:active에 있고 score > 현재시각)
    ├─ YES → 하트비트 갱신, entryToken 반환
    └─ NO → 계속
    ↓
 3. 바로 입장 가능한가?
-   조건: 대기열이 비었고(queue 크기=0) AND 현재 입장자 수 < threshold(기본 1000명)
-   ├─ YES → active:{eventId}에 추가 (score=현재+600초)
+   조건: 대기열이 비었고(queue 크기=0) AND 현재 입장자 수 < threshold
+   (이벤트별 {eventId}:threshold 키가 있으면 해당 값, 없으면 기본 1000명)
+   ├─ YES → {eventId}:active에 추가 (score=현재+600초)
    │         entryToken(JWT) 발급
    │         SQS에 admitted 알림 (선택적)
    │         "active" 응답
-   └─ NO  → queue:{eventId}에 추가 (score=현재시각)
+   └─ NO  → {eventId}:queue에 추가
+             score = vwrPosition(Tier 1 순번)이 있으면 해당 값, 없으면 현재시각(ms)
              "queued" 응답 (순번, 예상 대기시간 포함)
 ```
 
@@ -200,7 +206,7 @@ AdmissionWorkerService (매 1초)
       - 만료된 active 사용자 제거 (score ≤ now)
       - 빈 자리 계산 = threshold - 현재 active 수
       - ZPOPMIN으로 대기열 앞에서 빈 자리만큼 꺼냄
-      - active:{eventId}에 추가 (score = now + 600초)
+      - {eventId}:active에 추가 (score = now + 600초)
       - 결과: {입장시킨 수, 현재 active 수}
    ↓
    c. 대기열과 active 모두 비었으면 이벤트를 active-events에서 제거
@@ -224,7 +230,7 @@ AdmissionWorkerService (매 1초)
 
 | 설정 | 기본값 | 의미 |
 |---|---|---|
-| `QUEUE_THRESHOLD` | 1000 | 이벤트당 최대 동시 입장자 수 |
+| `QUEUE_THRESHOLD` | 1000 | 이벤트당 최대 동시 입장자 수 (이벤트별 Redis 키 `{eventId}:threshold`로 개별 설정 가능, 관리자 API: `PUT /api/queue/admin/threshold/{eventId}`) |
 | `QUEUE_ACTIVE_TTL_SECONDS` | 600 | 입장 후 유효 시간 (10분) |
 | `QUEUE_SEEN_TTL_SECONDS` | 600 | 하트비트 없으면 좀비로 판정하는 시간 |
 | `QUEUE_ADMISSION_INTERVAL_MS` | 1000 | 백그라운드 입장 처리 주기 (1초) |
@@ -245,7 +251,7 @@ AdmissionWorkerService (매 1초)
 
 사용자가 "나 언제 들어가?"를 물으면, 최근 1분간 실제 입장 속도를 기반으로 계산한다.
 
-- 데이터가 부족하면(시작 직후): 1명당 30초로 추정
+- 데이터가 부족하면(시작 직후): `Math.max(position / 50, 5)` — 약 50명/초 처리 가정, 최소 5초
 - 데이터가 있으면: `내 순번 / (최근 1분 입장 수 / 60)` = 예상 초
 - 폴링 간격도 순번에 따라 조절: 1000번 이내면 1초, 10000번 이후면 30초
 
@@ -678,28 +684,38 @@ sequenceDiagram
   end
 
   Note over U,R: Tier 2: 뒷단 대기열 (이벤트별 입장 관리)
-  GW->>Q: POST /api/queue/check/{eventId}
-  Q->>R: ZCARD queue, ZCOUNT active
+  GW->>Q: POST /api/queue/check/{eventId} (vwrPosition 포함)
+  Q->>R: ZCARD {eventId}:queue, ZCOUNT {eventId}:active
   alt 자리 있음 (바로 입장)
-    Q->>R: ZADD active:{eventId}
+    Q->>R: ZADD {eventId}:active
     Q->>Q: entryToken(JWT) 생성
     Q-->>U: {queued:false, entryToken}
     Note over U: 좌석 선택 페이지로 이동
   else 자리 없음 (이벤트별 대기)
-    Q->>R: ZADD queue:{eventId}
+    Q->>R: ZADD {eventId}:queue (score=vwrPosition 또는 현재시각)
     Q-->>U: {queued:true, position:42}
     Note over U: Tier 2 대기열 페이지에서 폴링
   end
 
   Note over U,GW: 좌석 선택 (entryToken 검증)
   U->>GW: POST /api/seats/reserve (x-queue-entry-token)
-  GW->>GW: VwrEntryTokenFilter 검증
+  GW->>GW: VwrEntryTokenFilter 검증 (GET/POST/PUT/PATCH 모두 보호)
   alt 토큰 유효
     GW->>Q: ticket-service로 라우팅
   else 토큰 무효
     GW-->>U: 403 Forbidden
   end
 ```
+
+**흐름 설명:**
+
+1. **Tier 1 진입**: 사용자가 "예매하기"를 클릭하면 CloudFront가 S3 정적 대기 페이지를 보여준다. 이 페이지의 JS가 API Gateway를 통해 Lambda에 순번(position)을 요청한다.
+2. **Tier 1 폴링**: 정적 페이지에서 2~15초 간격으로 "내 순번이 됐는지" 폴링한다. DynamoDB의 `servingCounter`가 내 position 이상이 되면 Tier 1 JWT를 발급받고 쿠키(`urr-vwr-token`)에 저장한다.
+3. **Lambda@Edge 검증**: 실제 사이트에 접속할 때 Lambda@Edge가 Tier 1 JWT를 검증한다. 토큰이 유효하면 ALB로 통과, 무효하면 S3 대기 페이지로 리다이렉트한다. 여기가 **Tier 1 → Tier 2 전환점**이다.
+4. **Tier 2 대기열 확인**: gateway-service가 queue-service에 `POST /check/{eventId}`를 호출한다. 이때 Tier 1에서 받은 `vwrPosition`(순번)을 함께 전달한다.
+5. **바로 입장**: 대기열이 비었고 현재 입장자 수가 threshold(이벤트별 설정 가능, 기본 1000명) 미만이면, `{eventId}:active` ZSet에 바로 추가하고 entryToken(JWT)을 발급한다.
+6. **대기열 진입**: 자리가 없으면 `{eventId}:queue` ZSet에 추가한다. score는 vwrPosition이 있으면 해당 값(Tier 1에서 일찍 온 사람이 우선), 없으면 현재 시각(ms)이다.
+7. **좌석 선택**: entryToken을 받은 사용자가 좌석 선택/예매 API를 호출하면, VwrEntryTokenFilter가 `x-queue-entry-token` 헤더를 검증한다. GET/POST/PUT/PATCH 모든 메서드가 보호 대상이다.
 
 ### 5.11 VWR 보안 요약
 
@@ -856,7 +872,7 @@ PaymentEventProducer                  PaymentEventConsumer          StatsEventCo
 | `membership` | 멤버십 활성화 | `membership-events` (MEMBERSHIP_ACTIVATED) |
 | (환불) | 예약 환불 처리 | `reservation-events` (RESERVATION_CANCELLED) |
 
-> **이벤트 타입 판별**: 먼저 명시적 `type` 필드 확인 (`PAYMENT_CONFIRMED`/`PAYMENT_REFUNDED`), 없으면 duck-typing으로 폴백 (하위 호환성)
+> **이벤트 타입 판별**: `PaymentEvent` record 클래스로 타입 안전하게 역직렬화한다. `objectMapper.convertValue()`로 Map → `PaymentEvent` 변환 후 `type()`, `paymentType()` 등 접근자로 분기 처리한다.
 
 ### 7.6 티켓 서비스가 후속 이벤트 발행
 
@@ -883,6 +899,7 @@ PaymentEventProducer                  PaymentEventConsumer          StatsEventCo
 | `handlePaymentEvent()` (line 25) | `payment-events` | 환불 금액, 양도 금액 집계 |
 | `handleReservationEvent()` (line 70) | `reservation-events` | 예약 생성/확정/취소 카운트 |
 | `handleMembershipEvent()` (line 116) | `membership-events` | 멤버십 활성화 카운트 |
+| `handleTransferEvent()` | `transfer-events` | 양도 완료/취소 카운트 |
 
 > **Consumer Group 분리 핵심**: `payment-events` 토픽을 `ticket-service-group`(예약 확정)과 `stats-service-group`(통계 집계)이 각각 독립적으로 소비한다. Kafka의 다중 소비자 팬아웃이 여기서 동작한다.
 
@@ -943,7 +960,7 @@ PaymentEventProducer                  PaymentEventConsumer          StatsEventCo
 | Kafka (`payment-events`) | `PaymentEventProducer` | `PaymentEventConsumer`(ticket), `StatsEventConsumer`(stats) | `PAYMENT_CONFIRMED`, `PAYMENT_REFUNDED` |
 | Kafka (`reservation-events`) | `TicketEventProducer` | `StatsEventConsumer` | `RESERVATION_CREATED`, `RESERVATION_CONFIRMED`, `RESERVATION_CANCELLED` |
 | Kafka (`membership-events`) | `TicketEventProducer` | `StatsEventConsumer` | 멤버십 활성화 이벤트 |
-| Kafka (`transfer-events`) | `TicketEventProducer` | 현재 명시적 컨슈머 없음 | 양도 완료 이벤트 |
+| Kafka (`transfer-events`) | `TicketEventProducer` | `StatsEventConsumer`(stats) | 양도 완료/취소 카운트 |
 
 ---
 
@@ -1014,8 +1031,8 @@ sequenceDiagram
 
   Note over U,R: 케이스 A: 자리가 있을 때 (바로 입장)
   U->>Q: POST /check/{eventId}
-  Q->>R: ZCARD queue:{eventId}, ZCOUNT active:{eventId}
-  Q->>R: ZADD active:{eventId} (score=만료시각)
+  Q->>R: ZCARD {eventId}:queue, ZCOUNT {eventId}:active
+  Q->>R: ZADD {eventId}:active (score=만료시각)
   Q->>Q: entryToken(JWT) 생성
   Q->>SP: publishAdmission (fire-and-forget)
   SP->>S: sendMessage(admitted)
@@ -1023,8 +1040,8 @@ sequenceDiagram
 
   Note over U,R: 케이스 B: 자리가 없을 때 (대기열 진입)
   U->>Q: POST /check/{eventId}
-  Q->>R: ZCARD queue:{eventId}, ZCOUNT active:{eventId}
-  Q->>R: ZADD queue:{eventId} (score=현재시각)
+  Q->>R: ZCARD {eventId}:queue, ZCOUNT {eventId}:active
+  Q->>R: ZADD {eventId}:queue (score=vwrPosition 또는 현재시각)
   Q-->>U: status=queued, position=42, estimatedWait=120s
 
   Note over W,R: 백그라운드: 매 1초마다 입장 처리
@@ -1039,8 +1056,8 @@ sequenceDiagram
 
 **흐름 설명:**
 1. 사용자가 대기열 확인을 요청하면, queue-service는 **Redis ZSet**에서 현재 상태를 확인한다.
-2. 자리가 있으면 `active:{eventId}` ZSet에 바로 추가하고 entryToken을 발급한다.
-3. 자리가 없으면 `queue:{eventId}` ZSet에 추가하고 순번과 예상 대기시간을 반환한다.
+2. 자리가 있으면 `{eventId}:active` ZSet에 바로 추가하고 entryToken을 발급한다.
+3. 자리가 없으면 `{eventId}:queue` ZSet에 추가하고 순번과 예상 대기시간을 반환한다. score는 vwrPosition(Tier 1 순번)이 있으면 해당 값, 없으면 현재 시각이다.
 4. 백그라운드 워커가 매 1초마다 Lua 스크립트로 빈 자리만큼 대기열 앞에서 입장시킨다.
 5. 입장 시 SQS에 알림을 보내지만, 이는 보조 채널이다. Redis가 핵심이다.
 
@@ -1120,7 +1137,7 @@ sequenceDiagram
 
   Note over U,R: Phase 1: 대기열 (Redis ZSet)
   U->>Q: 대기열 진입
-  Q->>R: ZADD queue:{eventId}
+  Q->>R: ZADD {eventId}:queue
   Q-->>U: 순번 42, 예상 120초
   Note over R: 백그라운드: ZPOPMIN → ZADD active
   R-->>Q: 입장 허용

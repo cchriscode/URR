@@ -1,6 +1,8 @@
 package guru.urr.ticketservice.messaging;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import guru.urr.ticketservice.messaging.event.MembershipActivatedEvent;
+import guru.urr.ticketservice.messaging.event.PaymentEvent;
 import guru.urr.ticketservice.messaging.event.ReservationCancelledEvent;
 import guru.urr.ticketservice.messaging.event.ReservationConfirmedEvent;
 import guru.urr.ticketservice.messaging.event.TransferCompletedEvent;
@@ -31,24 +33,30 @@ public class PaymentEventConsumer {
     private final TicketEventProducer ticketEventProducer;
     private final JdbcTemplate jdbcTemplate;
     private final BusinessMetrics metrics;
+    private final ObjectMapper objectMapper;
 
     public PaymentEventConsumer(ReservationService reservationService,
                                 TransferService transferService,
                                 MembershipService membershipService,
                                 TicketEventProducer ticketEventProducer,
                                 JdbcTemplate jdbcTemplate,
-                                BusinessMetrics metrics) {
+                                BusinessMetrics metrics,
+                                ObjectMapper objectMapper) {
         this.reservationService = reservationService;
         this.transferService = transferService;
         this.membershipService = membershipService;
         this.ticketEventProducer = ticketEventProducer;
         this.jdbcTemplate = jdbcTemplate;
         this.metrics = metrics;
+        this.objectMapper = objectMapper;
     }
 
     @KafkaListener(topics = "payment-events", groupId = "ticket-service-group")
-    public void handlePaymentEvent(Map<String, Object> event) {
+    public void handlePaymentEvent(Map<String, Object> rawEvent) {
         try {
+            // Convert Map to typed PaymentEvent for type safety
+            PaymentEvent event = objectMapper.convertValue(rawEvent, PaymentEvent.class);
+
             // Build a deduplication key from the event
             String eventKey = buildEventKey(event);
             if (eventKey != null && isAlreadyProcessed(eventKey)) {
@@ -57,11 +65,11 @@ public class PaymentEventConsumer {
             }
 
             // C3: Check explicit type field first, fallback to duck-typing for backward compatibility
-            String type = str(event.get("type"));
+            String type = event.type();
             if ("PAYMENT_REFUNDED".equals(type)) {
                 handleRefund(event);
             } else if ("PAYMENT_CONFIRMED".equals(type)) {
-                String paymentType = str(event.get("paymentType"));
+                String paymentType = event.paymentType();
                 switch (paymentType != null ? paymentType : "reservation") {
                     case "transfer" -> handleTransferPayment(event);
                     case "membership" -> handleMembershipPayment(event);
@@ -69,8 +77,8 @@ public class PaymentEventConsumer {
                 }
             } else {
                 // Fallback: duck-typing for backward compatibility with events missing type field
-                String paymentType = str(event.get("paymentType"));
-                boolean isRefund = event.containsKey("reason");
+                String paymentType = event.paymentType();
+                boolean isRefund = event.reason() != null;
 
                 if (isRefund) {
                     handleRefund(event);
@@ -92,11 +100,11 @@ public class PaymentEventConsumer {
         }
     }
 
-    private void handleReservationPayment(Map<String, Object> event) {
-        UUID reservationId = uuid(event.get("reservationId"));
-        String paymentMethod = str(event.get("paymentMethod"));
-        String userId = str(event.get("userId"));
-        int amount = integer(event.get("amount"));
+    private void handleReservationPayment(PaymentEvent event) {
+        UUID reservationId = uuid(event.reservationId());
+        String paymentMethod = event.paymentMethod();
+        String userId = event.userId();
+        int amount = event.amount() != null ? event.amount().intValue() : 0;
 
         if (reservationId == null) {
             log.warn("Skipping payment event with null reservationId");
@@ -115,11 +123,11 @@ public class PaymentEventConsumer {
             reservationId, userId, eventId, amount, paymentMethod, Instant.now()));
     }
 
-    private void handleTransferPayment(Map<String, Object> event) {
-        UUID referenceId = uuid(event.get("referenceId"));
-        String userId = str(event.get("userId"));
-        String paymentMethod = str(event.get("paymentMethod"));
-        int amount = integer(event.get("amount"));
+    private void handleTransferPayment(PaymentEvent event) {
+        UUID referenceId = uuid(event.referenceId());
+        String userId = event.userId();
+        String paymentMethod = event.paymentMethod();
+        int amount = event.amount() != null ? event.amount().intValue() : 0;
 
         if (referenceId == null) {
             log.warn("Skipping transfer event with null referenceId");
@@ -150,9 +158,9 @@ public class PaymentEventConsumer {
             referenceId, reservationId, sellerId, userId, amount, Instant.now()));
     }
 
-    private void handleMembershipPayment(Map<String, Object> event) {
-        UUID referenceId = uuid(event.get("referenceId"));
-        String userId = str(event.get("userId"));
+    private void handleMembershipPayment(PaymentEvent event) {
+        UUID referenceId = uuid(event.referenceId());
+        String userId = event.userId();
 
         if (referenceId == null) {
             log.warn("Skipping membership event with null referenceId");
@@ -167,10 +175,10 @@ public class PaymentEventConsumer {
             referenceId, userId, null, Instant.now()));
     }
 
-    private void handleRefund(Map<String, Object> event) {
-        UUID reservationId = uuid(event.get("reservationId"));
-        String userId = str(event.get("userId"));
-        String reason = str(event.get("reason"));
+    private void handleRefund(PaymentEvent event) {
+        UUID reservationId = uuid(event.reservationId());
+        String userId = event.userId();
+        String reason = event.reason();
 
         if (reservationId == null) {
             log.warn("Skipping refund event with null reservationId");
@@ -190,16 +198,16 @@ public class PaymentEventConsumer {
 
     // -- Idempotency helpers --
 
-    private String buildEventKey(Map<String, Object> event) {
+    private String buildEventKey(PaymentEvent event) {
         // Use sagaId if present (preferred)
-        String sagaId = str(event.get("sagaId"));
+        String sagaId = event.sagaId();
         if (sagaId != null && !sagaId.isBlank()) {
             return sagaId;
         }
         // Fallback: derive key from type + reference ID
-        String type = str(event.get("type"));
-        String refId = str(event.get("reservationId"));
-        if (refId == null) refId = str(event.get("referenceId"));
+        String type = event.type();
+        String refId = event.reservationId();
+        if (refId == null) refId = event.referenceId();
         if (type != null && refId != null) {
             return type + ":" + refId;
         }
@@ -246,10 +254,6 @@ public class PaymentEventConsumer {
         return null;
     }
 
-    private String str(Object value) {
-        return value != null ? String.valueOf(value) : null;
-    }
-
     private UUID uuid(Object value) {
         if (value == null) return null;
         if (value instanceof String s && !s.isBlank()) {
@@ -258,11 +262,4 @@ public class PaymentEventConsumer {
         return null;
     }
 
-    private int integer(Object value) {
-        if (value instanceof Number n) return n.intValue();
-        if (value instanceof String s) {
-            try { return Integer.parseInt(s); } catch (Exception e) { return 0; }
-        }
-        return 0;
-    }
 }

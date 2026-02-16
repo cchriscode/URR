@@ -2,11 +2,13 @@ spring:
   application:
     name: catalog-service
   datasource:
-    url: ${TICKET_DB_URL:jdbc:postgresql://localhost:5434/ticket_db}
-    username: ${TICKET_DB_USERNAME:urr_user}
-    password: ${TICKET_DB_PASSWORD:urr_password}
+    url: ${CATALOG_DB_URL:jdbc:postgresql://localhost:5432/catalog_db}
+    username: ${CATALOG_DB_USERNAME:urr_user}
+    password: ${CATALOG_DB_PASSWORD:urr_password}
   flyway:
-    enabled: false
+    enabled: true
+    baseline-on-migrate: true
+    table: flyway_schema_history_catalog
 
 server:
   port: ${PORT:3009}
@@ -18,8 +20,14 @@ management:
     health:
       show-details: always
       show-components: always
+      probes:
+        enabled: true
   health:
     db:
+      enabled: true
+    livenessstate:
+      enabled: true
+    readinessstate:
       enabled: true
   endpoints:
     web:

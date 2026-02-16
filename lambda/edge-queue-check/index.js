@@ -89,7 +89,7 @@ exports.handler = async (event) => {
         return redirectToVwr(eventIdFromPath);
       }
       const vwrClaims = verifyJWT(vwrToken, VWR_SECRET);
-      if (!vwrClaims || vwrClaims.tier !== 1) {
+      if (!vwrClaims || vwrClaims.tier !== 1 || vwrClaims.sub !== eventIdFromPath) {
         return redirectToVwr(eventIdFromPath);
       }
       // Tier 1 token valid — continue to Tier 2 check if needed

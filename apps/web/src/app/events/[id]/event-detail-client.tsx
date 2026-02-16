@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useCountdown, formatCountdown } from "@/hooks/use-countdown";
 import { formatEventDate } from "@/lib/format";
 import type { EventDetail, TicketType } from "@/lib/types";
@@ -50,8 +51,8 @@ export default function EventDetailClient({ event }: { event: EventDetail }) {
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       {poster && (
-        <div className="rounded-2xl overflow-hidden border border-slate-200 bg-slate-100 h-64 flex items-center justify-center">
-          <img src={poster} alt={event.title} className="h-full w-full object-cover" />
+        <div className="relative rounded-2xl overflow-hidden border border-slate-200 bg-slate-100 h-64 flex items-center justify-center">
+          <Image src={poster} alt={event.title} className="object-cover" fill sizes="(max-width: 672px) 100vw, 672px" />
         </div>
       )}
 

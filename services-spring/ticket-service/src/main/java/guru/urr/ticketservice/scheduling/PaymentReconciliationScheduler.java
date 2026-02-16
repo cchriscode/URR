@@ -2,12 +2,15 @@ package guru.urr.ticketservice.scheduling;
 
 import guru.urr.ticketservice.domain.reservation.service.ReservationService;
 import guru.urr.ticketservice.shared.client.PaymentInternalClient;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -19,13 +22,21 @@ public class PaymentReconciliationScheduler {
     private final JdbcTemplate jdbcTemplate;
     private final PaymentInternalClient paymentInternalClient;
     private final ReservationService reservationService;
+    private final KafkaTemplate<String, Object> kafkaTemplate;
+    private final Counter reconciliationMismatchCounter;
 
     public PaymentReconciliationScheduler(JdbcTemplate jdbcTemplate,
                                            PaymentInternalClient paymentInternalClient,
-                                           ReservationService reservationService) {
+                                           ReservationService reservationService,
+                                           KafkaTemplate<String, Object> kafkaTemplate,
+                                           MeterRegistry meterRegistry) {
         this.jdbcTemplate = jdbcTemplate;
         this.paymentInternalClient = paymentInternalClient;
         this.reservationService = reservationService;
+        this.kafkaTemplate = kafkaTemplate;
+        this.reconciliationMismatchCounter = Counter.builder("reconciliation.mismatch")
+            .description("Payment-reservation mismatches detected during reconciliation")
+            .register(meterRegistry);
     }
 
     /**
@@ -67,6 +78,19 @@ public class PaymentReconciliationScheduler {
                     if (found && "confirmed".equals(status)) {
                         String method = paymentInfo.get("method") != null
                             ? String.valueOf(paymentInfo.get("method")) : "unknown";
+
+                        log.warn("Payment-Reservation mismatch detected: reservationId={}, paymentStatus={}, reservationStatus=pending",
+                            reservationId, status);
+                        reconciliationMismatchCounter.increment();
+
+                        // Re-publish Kafka event to trigger downstream processing
+                        kafkaTemplate.send("payment-events", reservationId.toString(), Map.of(
+                            "type", "PAYMENT_CONFIRMED",
+                            "reservationId", reservationId.toString(),
+                            "paymentMethod", method,
+                            "source", "reconciliation"
+                        ));
+
                         log.info("Reconciliation: confirming reservation {} (payment confirmed in payment-service)", reservationId);
                         reservationService.confirmReservationPayment(reservationId, method);
                     }

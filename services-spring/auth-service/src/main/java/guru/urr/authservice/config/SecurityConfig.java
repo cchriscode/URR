@@ -34,7 +34,7 @@ public class SecurityConfig {
             .csrf(csrf -> csrf.disable())
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/health", "/actuator/health", "/actuator/info").permitAll()
+                .requestMatchers("/health", "/actuator/health", "/actuator/health/**", "/actuator/info", "/actuator/prometheus").permitAll()
                 .requestMatchers("/api/auth/register", "/api/auth/login", "/api/auth/verify-token", "/api/auth/google", "/api/auth/refresh", "/api/auth/logout").permitAll()
                 .requestMatchers("/internal/**").permitAll()
                 .anyRequest().authenticated())

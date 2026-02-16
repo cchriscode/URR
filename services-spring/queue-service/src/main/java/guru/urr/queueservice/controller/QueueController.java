@@ -6,10 +6,12 @@ import guru.urr.queueservice.service.QueueService;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;
 import java.util.UUID;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -27,10 +29,11 @@ public class QueueController {
     @PostMapping("/check/{eventId}")
     public Map<String, Object> check(
         @PathVariable UUID eventId,
+        @RequestParam(required = false) Integer vwrPosition,
         HttpServletRequest request
     ) {
         AuthUser user = jwtTokenParser.requireUser(request);
-        return queueService.check(eventId, user.userId());
+        return queueService.check(eventId, user.userId(), vwrPosition);
     }
 
     @GetMapping("/status/{eventId}")
@@ -76,5 +79,16 @@ public class QueueController {
     ) {
         jwtTokenParser.requireAdmin(request);
         return queueService.clear(eventId);
+    }
+
+    @PostMapping("/admin/threshold/{eventId}")
+    public ResponseEntity<Map<String, Object>> setEventThreshold(
+        @PathVariable UUID eventId,
+        @RequestParam int threshold,
+        HttpServletRequest request
+    ) {
+        jwtTokenParser.requireAdmin(request);
+        queueService.setThreshold(eventId, threshold);
+        return ResponseEntity.ok(Map.of("eventId", eventId, "threshold", threshold));
     }
 }

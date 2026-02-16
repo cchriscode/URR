@@ -295,10 +295,27 @@
       }
 
       function getUserId() {
-        // Use a persistent anonymous ID
+        // Use a persistent anonymous ID with browser fingerprint
         var id = localStorage.getItem('urr-anon-id');
         if (!id) {
-          id = 'anon-' + Math.random().toString(36).slice(2, 10);
+          // Combine browser characteristics for semi-unique fingerprint
+          var fp = [
+            screen.width,
+            screen.height,
+            screen.colorDepth,
+            new Date().getTimezoneOffset(),
+            navigator.language,
+            navigator.hardwareConcurrency || 0
+          ].join('|');
+          // Simple hash of fingerprint
+          var hash = 0;
+          for (var i = 0; i < fp.length; i++) {
+            var char = fp.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash; // Convert to 32-bit integer
+          }
+          var fpHash = Math.abs(hash).toString(36);
+          id = 'anon-' + fpHash + '-' + crypto.randomUUID().slice(0, 8);
           localStorage.setItem('urr-anon-id', id);
         }
         return id;

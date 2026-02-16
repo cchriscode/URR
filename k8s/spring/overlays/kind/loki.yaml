@@ -17,7 +17,7 @@ data:
         filesystem:
           chunks_directory: /loki/chunks
           rules_directory: /loki/rules
-      replication_factor: 1
+      replication_factor: 1  # Kind only. Production: replication_factor >= 3
       ring:
         kvstore:
           store: inmemory
@@ -49,7 +49,7 @@ metadata:
   labels:
     app: loki
 spec:
-  replicas: 1
+  replicas: 1  # Kind only. Production: use loki-distributed Helm chart (3+ read/write replicas)
   selector:
     matchLabels:
       app: loki

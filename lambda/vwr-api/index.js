@@ -4,8 +4,11 @@ const { handler: assignHandler } = require('./handlers/assign');
 const { handler: checkHandler } = require('./handlers/check');
 const { handler: statusHandler } = require('./handlers/status');
 
+const CORS_ORIGIN = process.env.CORS_ORIGIN;
+if (!CORS_ORIGIN) throw new Error('CORS_ORIGIN environment variable is required');
+
 const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': process.env.CORS_ORIGIN || '*',
+  'Access-Control-Allow-Origin': CORS_ORIGIN,
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
   'Content-Type': 'application/json',
@@ -29,6 +32,10 @@ exports.handler = async (event) => {
     const query = event.queryStringParameters || {};
 
     let result;
+
+    // Rate limiting: Configure API Gateway throttling per IP
+    // Settings: 10 requests/second burst, 5 requests/second sustained per IP
+    // This prevents mass queue position acquisition from a single source
 
     if (resource === '/vwr/assign/{eventId}' && method === 'POST') {
       result = await assignHandler(path.eventId, body);

@@ -3,6 +3,12 @@
 # (Must be deployed in us-east-1 for CloudFront)
 # ─────────────────────────────────────────────────────────────────────────────
 
+# SECRET ROTATION PROCEDURE:
+# 1. Update secret in AWS Secrets Manager
+# 2. Run: terraform apply (triggers Lambda@Edge redeployment)
+# 3. Wait for CloudFront distribution propagation (~5-15 minutes)
+# Automation: CI/CD can detect secret version changes and trigger terraform apply
+
 # Generate config.json with secrets baked in (Lambda@Edge cannot use env vars)
 resource "local_file" "edge_config" {
   content = jsonencode({
@@ -25,7 +31,7 @@ data "archive_file" "edge_function" {
   source_dir  = var.lambda_source_dir
   output_path = "${path.module}/lambda-edge-queue-check.zip"
 
-  depends_on = [local_file.edge_config]
+  depends_on = [local_file.edge_config, local_file.vwr_active_config]
 }
 
 # Lambda function (in us-east-1)
@@ -182,6 +188,7 @@ resource "aws_cloudfront_distribution" "main" {
   }
 
   # Cache behavior for VWR static waiting page (S3, no Lambda@Edge)
+  # CloudFront Function rewrites /vwr/{eventId} → /vwr/index.html for S3
   dynamic "ordered_cache_behavior" {
     for_each = var.s3_bucket_name != "" ? [1] : []
     content {
@@ -195,6 +202,11 @@ resource "aws_cloudfront_distribution" "main" {
       cache_policy_id            = data.aws_cloudfront_cache_policy.caching_optimized.id
       origin_request_policy_id   = data.aws_cloudfront_origin_request_policy.cors_s3.id
       response_headers_policy_id = aws_cloudfront_response_headers_policy.security.id
+
+      function_association {
+        event_type   = "viewer-request"
+        function_arn = aws_cloudfront_function.vwr_page_rewrite[0].arn
+      }
 
       min_ttl     = 0
       default_ttl = 300   # 5 minutes
@@ -393,6 +405,23 @@ resource "aws_cloudfront_function" "vwr_api_rewrite" {
       var request = event.request;
       request.uri = request.uri.replace(/^\/vwr-api/, '');
       if (request.uri === '') request.uri = '/';
+      return request;
+    }
+  EOF
+}
+
+# Rewrites /vwr/{eventId} to /vwr/index.html so S3 serves the SPA
+resource "aws_cloudfront_function" "vwr_page_rewrite" {
+  count   = var.s3_bucket_name != "" ? 1 : 0
+  name    = "${var.name_prefix}-vwr-page-rewrite"
+  runtime = "cloudfront-js-2.0"
+  comment = "Rewrites /vwr/{eventId} to /vwr/index.html for S3 static page"
+  publish = true
+
+  code = <<-EOF
+    function handler(event) {
+      var request = event.request;
+      request.uri = '/vwr/index.html';
       return request;
     }
   EOF

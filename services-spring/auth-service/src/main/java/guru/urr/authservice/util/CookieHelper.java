@@ -16,7 +16,7 @@ public class CookieHelper {
     private final int refreshTokenMaxAge;
 
     public CookieHelper(
-        @Value("${COOKIE_SECURE:false}") boolean secure,
+        @Value("${COOKIE_SECURE:true}") boolean secure,
         @Value("${app.security.jwt.expiration-seconds:1800}") int accessTokenMaxAge,
         @Value("${app.security.jwt.refresh-token-expiration-seconds:604800}") int refreshTokenMaxAge
     ) {

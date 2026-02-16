@@ -13,6 +13,7 @@ resources:
   - loki.yaml
   - promtail.yaml
   - grafana.yaml
+  - grafana-alerting.yaml
   - grafana-dashboards.yaml
   - prometheus.yaml
 

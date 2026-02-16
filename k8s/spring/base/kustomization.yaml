@@ -21,3 +21,4 @@ resources:
   - frontend/deployment.yaml
   - frontend/service.yaml
   - network-policies.yaml
+  - catalog-service-pdb.yaml

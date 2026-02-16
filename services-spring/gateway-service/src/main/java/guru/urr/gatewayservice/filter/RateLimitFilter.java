@@ -7,6 +7,8 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -28,6 +30,10 @@ public class RateLimitFilter extends OncePerRequestFilter {
 
     private final StringRedisTemplate redisTemplate;
     private final RedisScript<Long> rateLimitScript;
+
+    private final ConcurrentHashMap<String, AtomicInteger> fallbackCounters = new ConcurrentHashMap<>();
+    private volatile long lastFallbackClear = System.currentTimeMillis();
+    private static final long FALLBACK_CLEAR_INTERVAL_MS = 60_000;
 
     private final int authRpm;
     private final int queueRpm;
@@ -92,9 +98,20 @@ public class RateLimitFilter extends OncePerRequestFilter {
                 return;
             }
         } catch (Exception e) {
-            log.warn("Rate limit check failed (fail-open), allowing request: {}", e.getMessage());
-            filterChain.doFilter(request, response);
-            return;
+            // Clear stale counters periodically
+            long fallbackNow = System.currentTimeMillis();
+            if (fallbackNow - lastFallbackClear > FALLBACK_CLEAR_INTERVAL_MS) {
+                fallbackCounters.clear();
+                lastFallbackClear = fallbackNow;
+            }
+            String fallbackKey = clientId;
+            AtomicInteger counter = fallbackCounters.computeIfAbsent(fallbackKey, k -> new AtomicInteger(0));
+            if (counter.incrementAndGet() > limit * 2) {
+                log.warn("Rate limit exceeded (in-memory fallback) for client: {}", clientId);
+                sendRateLimitResponse(response);
+                return;
+            }
+            log.warn("Rate limit check failed, using in-memory fallback for client: {}", clientId);
         }
 
         filterChain.doFilter(request, response);

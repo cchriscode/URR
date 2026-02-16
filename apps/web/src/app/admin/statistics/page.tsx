@@ -1,25 +1,31 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import dynamic from "next/dynamic";
 import { AuthGuard } from "@/components/auth-guard";
+import { Spinner } from "@/components/ui/Spinner";
 import { statsApi } from "@/lib/api-client";
-import {
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  LineChart,
-  Line,
-  AreaChart,
-  Area,
-  PieChart,
-  Pie,
-  Cell,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-} from "recharts";
+import type { AxiosResponse } from "axios";
+import type {
+  HourlyDataPoint,
+  DailyDataPoint,
+  RevenueDataPoint,
+  SeatSection,
+  PriceTier,
+  UserType,
+  SpendingTier,
+  PaymentMethod,
+  PeakHour,
+} from "./StatisticsCharts";
+
+const StatisticsCharts = dynamic(() => import("./StatisticsCharts"), {
+  ssr: false,
+  loading: () => (
+    <div className="h-64 flex items-center justify-center">
+      <Spinner />
+    </div>
+  ),
+});
 
 /* ───────── constants ───────── */
 
@@ -42,18 +48,142 @@ function num(v: number | null | undefined): string {
   return v.toLocaleString();
 }
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
+/* ───────── interfaces ───────── */
+
+interface RealtimeCurrent {
+  locked_seats?: number;
+  active_payments?: number;
+  active_users?: number;
+}
+
+interface RealtimeLastHour {
+  revenue?: number;
+}
+
+interface TrendingEvent {
+  event_id?: string;
+  title?: string;
+  reservations?: number;
+  count?: number;
+}
+
+interface RealtimeData {
+  current?: RealtimeCurrent;
+  lastHour?: RealtimeLastHour;
+  trendingEvents?: TrendingEvent[];
+}
+
+interface OverviewData {
+  total_users?: number;
+  active_events?: number;
+  confirmed_reservations?: number;
+  total_revenue?: number;
+}
+
+interface ConversionFunnel {
+  total_started?: number;
+  completed?: number;
+  pending?: number;
+  cancelled?: number;
+}
+
+interface ConversionRates {
+  conversion_rate?: number;
+  cancellation_rate?: number;
+  pending_rate?: number;
+}
+
+interface ConversionData {
+  funnel?: ConversionFunnel;
+  rates?: ConversionRates;
+}
+
+interface HourlyTrafficData {
+  hourly?: HourlyDataPoint[];
+  peakHour?: PeakHour;
+}
+
+interface CancellationOverview {
+  total_cancelled?: number;
+  avg_hours_before_cancel?: number;
+  total_refund_amount?: number;
+}
+
+interface CancelByEvent {
+  event_id?: string;
+  title?: string;
+  event_title?: string;
+  cancelled_count?: number;
+  total_cancelled?: number;
+  refund_amount?: number;
+  total_refund?: number;
+}
+
+interface CancellationsData {
+  overview?: CancellationOverview;
+  byEvent?: CancelByEvent[];
+}
+
+interface SeatPreferencesData {
+  bySection?: SeatSection[];
+  byPriceTier?: PriceTier[];
+}
+
+interface AverageMetrics {
+  avg_reservations?: number;
+  avg_spending?: number;
+}
+
+interface UserBehaviorData {
+  userTypes?: UserType[];
+  spendingDistribution?: SpendingTier[];
+  averageMetrics?: AverageMetrics;
+}
+
+interface DatabaseInfo {
+  size?: string;
+  tableCounts?: number | Record<string, number>;
+}
+
+interface RecentPerformance {
+  successRate?: number;
+}
+
+interface PerformanceData {
+  database?: DatabaseInfo;
+  recentPerformance?: RecentPerformance;
+}
+
+interface EventStatItem {
+  event_id?: string;
+  title?: string;
+  total_reservations?: number;
+  total_revenue?: number;
+  seat_utilization?: number;
+}
+
+interface EventsResponse {
+  events?: EventStatItem[];
+}
 
 /* ───────── data extraction helpers ───────── */
 
-function extract(res: any): any {
-  return res?.data?.data ?? res?.data ?? null;
+interface ApiResponseData {
+  data?: Record<string, unknown>;
 }
 
-function extractArray(res: any, key?: string): any[] {
-  const d = res?.data?.data ?? res?.data;
-  if (key && d?.[key]) return d[key];
-  if (Array.isArray(d)) return d;
+function extract<T>(res: AxiosResponse<ApiResponseData | T>): T | null {
+  const d = res?.data as Record<string, unknown> | undefined;
+  return (d?.data ?? d ?? null) as T | null;
+}
+
+function extractArray<T>(res: AxiosResponse<ApiResponseData | T[]>, key?: string): T[] {
+  const d = res?.data as Record<string, unknown> | undefined;
+  const inner = d?.data ?? d;
+  if (key && inner && typeof inner === "object" && key in inner) {
+    return (inner as Record<string, unknown>)[key] as T[];
+  }
+  if (Array.isArray(inner)) return inner as T[];
   return [];
 }
 
@@ -62,51 +192,51 @@ function extractArray(res: any, key?: string): any[] {
 export default function AdminStatisticsPage() {
   /* ── state for all 12 sections ── */
   const [loading, setLoading] = useState(true);
-  const [realtime, setRealtime] = useState<any>(null);
-  const [overview, setOverview] = useState<any>(null);
-  const [conversion, setConversion] = useState<any>(null);
-  const [hourly, setHourly] = useState<any>(null);
-  const [daily, setDaily] = useState<any[]>([]);
-  const [revenue, setRevenue] = useState<any[]>([]);
-  const [cancellations, setCancellations] = useState<any>(null);
-  const [seatPrefs, setSeatPrefs] = useState<any>(null);
-  const [userBehavior, setUserBehavior] = useState<any>(null);
-  const [performance, setPerformance] = useState<any>(null);
-  const [eventStats, setEventStats] = useState<any[]>([]);
-  const [payments, setPayments] = useState<any[]>([]);
+  const [realtime, setRealtime] = useState<RealtimeData | null>(null);
+  const [overview, setOverview] = useState<OverviewData | null>(null);
+  const [conversion, setConversion] = useState<ConversionData | null>(null);
+  const [hourly, setHourly] = useState<HourlyTrafficData | null>(null);
+  const [daily, setDaily] = useState<DailyDataPoint[]>([]);
+  const [revenue, setRevenue] = useState<RevenueDataPoint[]>([]);
+  const [cancellations, setCancellations] = useState<CancellationsData | null>(null);
+  const [seatPrefs, setSeatPrefs] = useState<SeatPreferencesData | null>(null);
+  const [userBehavior, setUserBehavior] = useState<UserBehaviorData | null>(null);
+  const [performance, setPerformance] = useState<PerformanceData | null>(null);
+  const [eventStats, setEventStats] = useState<EventStatItem[]>([]);
+  const [payments, setPayments] = useState<PaymentMethod[]>([]);
 
   /* ── realtime fetcher (called on mount + every 30s) ── */
   const fetchRealtime = useCallback(() => {
     statsApi
       .realtime()
-      .then((res) => setRealtime(extract(res)))
+      .then((res) => setRealtime(extract<RealtimeData>(res)))
       .catch(() => {});
   }, []);
 
   /* ── initial parallel fetch ── */
   useEffect(() => {
     Promise.all([
-      statsApi.realtime().then((res) => setRealtime(extract(res))).catch(() => {}),
-      statsApi.overview().then((res) => setOverview(extract(res))).catch(() => {}),
-      statsApi.conversion(30).then((res) => setConversion(extract(res))).catch(() => {}),
-      statsApi.hourlyTraffic(7).then((res) => setHourly(extract(res))).catch(() => {}),
+      statsApi.realtime().then((res) => setRealtime(extract<RealtimeData>(res))).catch(() => {}),
+      statsApi.overview().then((res) => setOverview(extract<OverviewData>(res))).catch(() => {}),
+      statsApi.conversion(30).then((res) => setConversion(extract<ConversionData>(res))).catch(() => {}),
+      statsApi.hourlyTraffic(7).then((res) => setHourly(extract<HourlyTrafficData>(res))).catch(() => {}),
       statsApi.daily(30).then((res) => {
-        const arr = extractArray(res, "daily");
+        const arr = extractArray<DailyDataPoint>(res, "daily");
         setDaily([...arr].reverse());
       }).catch(() => {}),
       statsApi.revenue({ period: "daily", days: 30 }).then((res) => {
-        const arr = extractArray(res);
+        const arr = extractArray<RevenueDataPoint>(res);
         setRevenue([...arr].reverse());
       }).catch(() => {}),
-      statsApi.cancellations(30).then((res) => setCancellations(extract(res))).catch(() => {}),
-      statsApi.seatPreferences().then((res) => setSeatPrefs(extract(res))).catch(() => {}),
-      statsApi.userBehavior(30).then((res) => setUserBehavior(extract(res))).catch(() => {}),
-      statsApi.performance().then((res) => setPerformance(extract(res))).catch(() => {}),
+      statsApi.cancellations(30).then((res) => setCancellations(extract<CancellationsData>(res))).catch(() => {}),
+      statsApi.seatPreferences().then((res) => setSeatPrefs(extract<SeatPreferencesData>(res))).catch(() => {}),
+      statsApi.userBehavior(30).then((res) => setUserBehavior(extract<UserBehaviorData>(res))).catch(() => {}),
+      statsApi.performance().then((res) => setPerformance(extract<PerformanceData>(res))).catch(() => {}),
       statsApi.events({ limit: 20, sortBy: "revenue" }).then((res) => {
-        const d = extract(res);
-        setEventStats(d?.events ?? (Array.isArray(d) ? d : []));
+        const d = extract<EventsResponse>(res);
+        setEventStats(d?.events ?? (Array.isArray(d) ? d as unknown as EventStatItem[] : []));
       }).catch(() => {}),
-      statsApi.payments().then((res) => setPayments(extractArray(res))).catch(() => {}),
+      statsApi.payments().then((res) => setPayments(extractArray<PaymentMethod>(res))).catch(() => {}),
     ]).finally(() => setLoading(false));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -119,14 +249,14 @@ export default function AdminStatisticsPage() {
   /* ── derived data ── */
   const funnel = conversion?.funnel;
   const rates = conversion?.rates;
-  const hourlyData: any[] = hourly?.hourly ?? [];
-  const peakHour = hourly?.peakHour;
+  const hourlyData: HourlyDataPoint[] = hourly?.hourly ?? [];
+  const peakHour: PeakHour | null = hourly?.peakHour ?? null;
   const cancelOverview = cancellations?.overview;
-  const cancelByEvent: any[] = cancellations?.byEvent ?? [];
-  const seatSections: any[] = seatPrefs?.bySection ?? [];
-  const priceTiers: any[] = seatPrefs?.byPriceTier ?? [];
-  const userTypes: any[] = userBehavior?.userTypes ?? [];
-  const spendingDist: any[] = userBehavior?.spendingDistribution ?? [];
+  const cancelByEvent: CancelByEvent[] = cancellations?.byEvent ?? [];
+  const seatSections: SeatSection[] = seatPrefs?.bySection ?? [];
+  const priceTiers: PriceTier[] = seatPrefs?.byPriceTier ?? [];
+  const userTypes: UserType[] = userBehavior?.userTypes ?? [];
+  const spendingDist: SpendingTier[] = userBehavior?.spendingDistribution ?? [];
   const avgMetrics = userBehavior?.averageMetrics;
 
   /* ── funnel total for proportional bar ── */
@@ -145,7 +275,7 @@ export default function AdminStatisticsPage() {
 
         {loading ? (
           <div className="flex justify-center py-16">
-            <div className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-sky-500 border-t-transparent" />
+            <Spinner size="sm" className="border-sky-500 border-t-transparent" />
           </div>
         ) : (
           <div className="space-y-8">
@@ -208,7 +338,7 @@ export default function AdminStatisticsPage() {
                     인기 이벤트
                   </p>
                   <ul className="space-y-2">
-                    {realtime.trendingEvents.map((ev: any, i: number) => (
+                    {realtime!.trendingEvents!.map((ev: TrendingEvent, i: number) => (
                       <li
                         key={ev?.event_id ?? i}
                         className="flex items-center justify-between text-sm"
@@ -362,187 +492,20 @@ export default function AdminStatisticsPage() {
             </section>
 
             {/* ═══════════════════════════════════════════
-                4. 시간대별 트래픽 (Hourly Traffic)
+                Charts (dynamically loaded)
+                Sections 4-6, 8-9, 12
             ═══════════════════════════════════════════ */}
-            <section>
-              <h2 className="text-sm font-medium text-slate-700 mb-4">
-                시간대별 트래픽
-              </h2>
-              <div className="rounded-xl border border-slate-200 bg-white p-5">
-                {hourlyData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={300}>
-                    <BarChart data={hourlyData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                      <XAxis
-                        dataKey="hour"
-                        tick={{ fontSize: 12, fill: "#94a3b8" }}
-                        tickFormatter={(h: number) => `${h}시`}
-                      />
-                      <YAxis tick={{ fontSize: 12, fill: "#94a3b8" }} />
-                      <Tooltip
-                        formatter={(v: any) => [`${v ?? 0}건`, "예매"]}
-                        labelFormatter={(h: any) => `${h}시`}
-                      />
-                      <Bar
-                        dataKey="total_reservations"
-                        name="예매"
-                        fill="#0ea5e9"
-                        radius={[4, 4, 0, 0]}
-                      />
-                    </BarChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <p className="py-12 text-center text-sm text-slate-400">
-                    데이터가 없습니다
-                  </p>
-                )}
-
-                {peakHour != null && (
-                  <div className="mt-4 rounded-lg border border-slate-100 p-4 text-center">
-                    <p className="text-xs text-slate-400 mb-1">피크 시간대</p>
-                    <p className="text-lg font-bold text-sky-600">
-                      {peakHour?.hour ?? "-"}시{" "}
-                      <span className="text-sm font-normal text-slate-500">
-                        ({num(peakHour?.reservations)}건)
-                      </span>
-                    </p>
-                  </div>
-                )}
-              </div>
-            </section>
-
-            {/* ═══════════════════════════════════════════
-                5. 일별 예매 추이 (Daily Reservations)
-            ═══════════════════════════════════════════ */}
-            <section>
-              <h2 className="text-sm font-medium text-slate-700 mb-4">
-                일별 예매 추이 (30일)
-              </h2>
-              <div className="rounded-xl border border-slate-200 bg-white p-5">
-                {daily.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={300}>
-                    <LineChart data={daily}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                      <XAxis
-                        dataKey="date"
-                        tick={{ fontSize: 11, fill: "#94a3b8" }}
-                        tickFormatter={(d: string) => {
-                          const parts = d?.split?.("-");
-                          return parts
-                            ? `${parts[1]}/${parts[2]}`
-                            : d;
-                        }}
-                      />
-                      <YAxis tick={{ fontSize: 12, fill: "#94a3b8" }} />
-                      <Tooltip
-                        labelFormatter={(d: any) => `${d}`}
-                        formatter={(v: any, name: any) => [
-                          `${v ?? 0}건`,
-                          name === "reservations" ? "예매" : "확정",
-                        ]}
-                      />
-                      <Legend
-                        formatter={(value: string) =>
-                          value === "reservations" ? "예매" : "확정"
-                        }
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="reservations"
-                        stroke="#0ea5e9"
-                        strokeWidth={2}
-                        dot={false}
-                        name="reservations"
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="confirmed"
-                        stroke="#10b981"
-                        strokeWidth={2}
-                        dot={false}
-                        name="confirmed"
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <p className="py-12 text-center text-sm text-slate-400">
-                    데이터가 없습니다
-                  </p>
-                )}
-              </div>
-            </section>
-
-            {/* ═══════════════════════════════════════════
-                6. 일별 매출 추이 (Daily Revenue)
-            ═══════════════════════════════════════════ */}
-            <section>
-              <h2 className="text-sm font-medium text-slate-700 mb-4">
-                일별 매출 추이 (30일)
-              </h2>
-              <div className="rounded-xl border border-slate-200 bg-white p-5">
-                {revenue.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={300}>
-                    <AreaChart data={revenue}>
-                      <defs>
-                        <linearGradient
-                          id="revenueGradient"
-                          x1="0"
-                          y1="0"
-                          x2="0"
-                          y2="1"
-                        >
-                          <stop
-                            offset="5%"
-                            stopColor="#f59e0b"
-                            stopOpacity={0.3}
-                          />
-                          <stop
-                            offset="95%"
-                            stopColor="#f59e0b"
-                            stopOpacity={0}
-                          />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                      <XAxis
-                        dataKey="period"
-                        tick={{ fontSize: 11, fill: "#94a3b8" }}
-                        tickFormatter={(d: string) => {
-                          const parts = d?.split?.("-");
-                          return parts && parts.length >= 3
-                            ? `${parts[1]}/${parts[2]}`
-                            : d;
-                        }}
-                      />
-                      <YAxis
-                        tick={{ fontSize: 12, fill: "#94a3b8" }}
-                        tickFormatter={(v: number) =>
-                          v >= 10000
-                            ? `${(v / 10000).toFixed(0)}만`
-                            : v.toLocaleString()
-                        }
-                      />
-                      <Tooltip
-                        formatter={(v: any) => [won(v), "매출"]}
-                        labelFormatter={(d: any) => `${d}`}
-                      />
-                      <Area
-                        type="monotone"
-                        dataKey="total_revenue"
-                        stroke="#f59e0b"
-                        strokeWidth={2}
-                        fill="url(#revenueGradient)"
-                        name="매출"
-                      />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <p className="py-12 text-center text-sm text-slate-400">
-                    데이터가 없습니다
-                  </p>
-                )}
-              </div>
-            </section>
+            <StatisticsCharts
+              hourlyData={hourlyData}
+              peakHour={peakHour}
+              daily={daily}
+              revenue={revenue}
+              seatSections={seatSections}
+              priceTiers={priceTiers}
+              userTypes={userTypes}
+              spendingDist={spendingDist}
+              payments={payments}
+            />
 
             {/* ═══════════════════════════════════════════
                 7. 취소/환불 분석 (Cancellation Analysis)
@@ -604,7 +567,7 @@ export default function AdminStatisticsPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {cancelByEvent.map((ev: any, i: number) => (
+                        {cancelByEvent.map((ev: CancelByEvent, i: number) => (
                           <tr
                             key={ev?.event_id ?? i}
                             className="border-b border-slate-50 last:border-0"
@@ -628,243 +591,34 @@ export default function AdminStatisticsPage() {
             </section>
 
             {/* ═══════════════════════════════════════════
-                8. 좌석 선호도 (Seat Preferences)
+                9b. 사용자 행동 - Average Metrics
             ═══════════════════════════════════════════ */}
-            <section>
-              <h2 className="text-sm font-medium text-slate-700 mb-4">
-                좌석 선호도
-              </h2>
-              <div className="grid gap-4 lg:grid-cols-2">
-                {/* Section PieChart */}
-                <div className="rounded-xl border border-slate-200 bg-white p-5">
-                  <p className="text-xs font-medium uppercase tracking-wider text-slate-400 mb-3">
-                    구역별 예매 비율
-                  </p>
-                  {seatSections.length > 0 ? (
-                    <ResponsiveContainer width="100%" height={300}>
-                      <PieChart>
-                        <Pie
-                          data={seatSections}
-                          dataKey="reserved_seats"
-                          nameKey="section"
-                          cx="50%"
-                          cy="50%"
-                          outerRadius={100}
-                          label={({ section, percent }: any) =>
-                            `${section} ${(percent * 100).toFixed(0)}%`
-                          }
-                        >
-                          {seatSections.map((_: any, idx: number) => (
-                            <Cell
-                              key={idx}
-                              fill={COLORS[idx % COLORS.length]}
-                            />
-                          ))}
-                        </Pie>
-                        <Tooltip
-                          formatter={(v: any, _: any, entry: any) => [
-                            `${v ?? 0}석 / ${entry?.payload?.total_seats ?? "-"}석`,
-                            entry?.payload?.section,
-                          ]}
-                        />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <p className="py-12 text-center text-sm text-slate-400">
-                      데이터가 없습니다
+            {avgMetrics && (
+              <section>
+                <div className="grid gap-4 grid-cols-2">
+                  <div className="rounded-xl border border-slate-200 bg-white p-5 text-center">
+                    <p className="text-xs text-slate-400 mb-1">
+                      평균 예매 수
                     </p>
-                  )}
-                </div>
-
-                {/* Price tier horizontal bars */}
-                <div className="rounded-xl border border-slate-200 bg-white p-5">
-                  <p className="text-xs font-medium uppercase tracking-wider text-slate-400 mb-3">
-                    가격대별 선호도
-                  </p>
-                  {priceTiers.length > 0 ? (
-                    <div className="space-y-3 py-4">
-                      {priceTiers.map((tier: any, idx: number) => {
-                        const maxCount = Math.max(
-                          ...priceTiers.map(
-                            (t: any) =>
-                              t?.reserved_seats ?? t?.count ?? t?.reservations ?? 0
-                          ),
-                          1
-                        );
-                        const count =
-                          tier?.reserved_seats ?? tier?.count ?? tier?.reservations ?? 0;
-                        const widthPct = (count / maxCount) * 100;
-                        return (
-                          <div key={tier?.tier ?? tier?.price_tier ?? idx}>
-                            <div className="flex items-center justify-between text-sm mb-1">
-                              <span className="text-slate-600">
-                                {tier?.tier ?? tier?.price_tier ?? `구간 ${idx + 1}`}
-                              </span>
-                              <span className="font-medium text-slate-900">
-                                {num(count)}석
-                              </span>
-                            </div>
-                            <div className="h-3 w-full overflow-hidden rounded-full bg-slate-100">
-                              <div
-                                className="h-full rounded-full transition-all"
-                                style={{
-                                  width: `${widthPct}%`,
-                                  backgroundColor:
-                                    COLORS[idx % COLORS.length],
-                                }}
-                              />
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <p className="py-12 text-center text-sm text-slate-400">
-                      데이터가 없습니다
+                    <p className="text-xl font-bold text-sky-600">
+                      {avgMetrics?.avg_reservations != null
+                        ? Number(avgMetrics.avg_reservations).toFixed(1)
+                        : "-"}
                     </p>
-                  )}
-                </div>
-              </div>
-            </section>
-
-            {/* ═══════════════════════════════════════════
-                9. 사용자 행동 (User Behavior)
-            ═══════════════════════════════════════════ */}
-            <section>
-              <h2 className="text-sm font-medium text-slate-700 mb-4">
-                사용자 행동
-              </h2>
-              <div className="grid gap-4 lg:grid-cols-2">
-                {/* User type PieChart */}
-                <div className="rounded-xl border border-slate-200 bg-white p-5">
-                  <p className="text-xs font-medium uppercase tracking-wider text-slate-400 mb-3">
-                    사용자 유형
-                  </p>
-                  {userTypes.length > 0 ? (
-                    <ResponsiveContainer width="100%" height={300}>
-                      <PieChart>
-                        <Pie
-                          data={userTypes}
-                          dataKey="user_count"
-                          nameKey="user_type"
-                          cx="50%"
-                          cy="50%"
-                          outerRadius={100}
-                          label={({ user_type, percent }: any) => {
-                            const labelMap: Record<string, string> = {
-                              new: "신규",
-                              returning: "재방문",
-                              loyal: "충성",
-                            };
-                            return `${labelMap[user_type] ?? user_type} ${(percent * 100).toFixed(0)}%`;
-                          }}
-                        >
-                          {userTypes.map((_: any, idx: number) => (
-                            <Cell
-                              key={idx}
-                              fill={COLORS[idx % COLORS.length]}
-                            />
-                          ))}
-                        </Pie>
-                        <Tooltip
-                          formatter={(v: any, _: any, entry: any) => {
-                            const labelMap: Record<string, string> = {
-                              new: "신규",
-                              returning: "재방문",
-                              loyal: "충성",
-                            };
-                            const raw = entry?.payload?.user_type ?? "";
-                            return [
-                              `${v ?? 0}명`,
-                              labelMap[raw] ?? raw,
-                            ];
-                          }}
-                        />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <p className="py-12 text-center text-sm text-slate-400">
-                      데이터가 없습니다
-                    </p>
-                  )}
-                </div>
-
-                {/* Spending distribution + average metrics */}
-                <div className="space-y-4">
-                  {/* Spending tiers */}
-                  <div className="rounded-xl border border-slate-200 bg-white p-5">
-                    <p className="text-xs font-medium uppercase tracking-wider text-slate-400 mb-3">
-                      지출 분포
-                    </p>
-                    {spendingDist.length > 0 ? (
-                      <div className="space-y-2">
-                        {spendingDist.map((tier: any, idx: number) => {
-                          const maxVal = Math.max(
-                            ...spendingDist.map(
-                              (t: any) => t?.user_count ?? t?.count ?? 0
-                            ),
-                            1
-                          );
-                          const val = tier?.user_count ?? tier?.count ?? 0;
-                          return (
-                            <div key={tier?.range ?? tier?.tier ?? idx}>
-                              <div className="flex items-center justify-between text-xs mb-0.5">
-                                <span className="text-slate-500">
-                                  {tier?.range ?? tier?.tier ?? `구간 ${idx + 1}`}
-                                </span>
-                                <span className="font-medium text-slate-700">
-                                  {num(val)}명
-                                </span>
-                              </div>
-                              <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
-                                <div
-                                  className="h-full rounded-full"
-                                  style={{
-                                    width: `${(val / maxVal) * 100}%`,
-                                    backgroundColor:
-                                      COLORS[idx % COLORS.length],
-                                  }}
-                                />
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <p className="py-6 text-center text-sm text-slate-400">
-                        데이터가 없습니다
-                      </p>
-                    )}
                   </div>
-
-                  {/* Average metrics */}
-                  {avgMetrics && (
-                    <div className="grid gap-4 grid-cols-2">
-                      <div className="rounded-xl border border-slate-200 bg-white p-5 text-center">
-                        <p className="text-xs text-slate-400 mb-1">
-                          평균 예매 수
-                        </p>
-                        <p className="text-xl font-bold text-sky-600">
-                          {avgMetrics?.avg_reservations != null
-                            ? Number(avgMetrics.avg_reservations).toFixed(1)
-                            : "-"}
-                        </p>
-                      </div>
-                      <div className="rounded-xl border border-slate-200 bg-white p-5 text-center">
-                        <p className="text-xs text-slate-400 mb-1">
-                          평균 지출
-                        </p>
-                        <p className="text-xl font-bold text-amber-500">
-                          {avgMetrics?.avg_spending != null
-                            ? won(Number(avgMetrics.avg_spending))
-                            : "-"}
-                        </p>
-                      </div>
-                    </div>
-                  )}
+                  <div className="rounded-xl border border-slate-200 bg-white p-5 text-center">
+                    <p className="text-xs text-slate-400 mb-1">
+                      평균 지출
+                    </p>
+                    <p className="text-xl font-bold text-amber-500">
+                      {avgMetrics?.avg_spending != null
+                        ? won(Number(avgMetrics.avg_spending))
+                        : "-"}
+                    </p>
+                  </div>
                 </div>
-              </div>
-            </section>
+              </section>
+            )}
 
             {/* ═══════════════════════════════════════════
                 10. 시스템 성능 (System Performance)
@@ -963,7 +717,7 @@ export default function AdminStatisticsPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {eventStats.map((ev: any, i: number) => (
+                        {eventStats.map((ev: EventStatItem, i: number) => (
                           <tr
                             key={ev?.event_id ?? i}
                             className="border-b border-slate-50 last:border-0"
@@ -995,117 +749,6 @@ export default function AdminStatisticsPage() {
                     데이터가 없습니다
                   </p>
                 )}
-              </div>
-            </section>
-
-            {/* ═══════════════════════════════════════════
-                12. 결제 수단 (Payment Methods)
-            ═══════════════════════════════════════════ */}
-            <section>
-              <h2 className="text-sm font-medium text-slate-700 mb-4">
-                결제 수단
-              </h2>
-              <div className="grid gap-4 lg:grid-cols-2">
-                {/* PieChart */}
-                <div className="rounded-xl border border-slate-200 bg-white p-5">
-                  {payments.length > 0 ? (
-                    <ResponsiveContainer width="100%" height={300}>
-                      <PieChart>
-                        <Pie
-                          data={payments}
-                          dataKey="count"
-                          nameKey="method"
-                          cx="50%"
-                          cy="50%"
-                          outerRadius={100}
-                          label={({ method, percent }: any) =>
-                            `${method} ${(percent * 100).toFixed(0)}%`
-                          }
-                        >
-                          {payments.map((_: any, idx: number) => (
-                            <Cell
-                              key={idx}
-                              fill={COLORS[idx % COLORS.length]}
-                            />
-                          ))}
-                        </Pie>
-                        <Tooltip
-                          formatter={(v: any, _: any, entry: any) => [
-                            `${v ?? 0}건`,
-                            entry?.payload?.method,
-                          ]}
-                        />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <p className="py-12 text-center text-sm text-slate-400">
-                      데이터가 없습니다
-                    </p>
-                  )}
-                </div>
-
-                {/* Summary table */}
-                <div className="rounded-xl border border-slate-200 bg-white p-5">
-                  <p className="text-xs font-medium uppercase tracking-wider text-slate-400 mb-3">
-                    결제 수단별 상세
-                  </p>
-                  {payments.length > 0 ? (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="border-b border-slate-100">
-                            <th className="px-3 py-2 text-left text-xs font-medium text-slate-400">
-                              수단
-                            </th>
-                            <th className="px-3 py-2 text-right text-xs font-medium text-slate-400">
-                              건수
-                            </th>
-                            <th className="px-3 py-2 text-right text-xs font-medium text-slate-400">
-                              총 금액
-                            </th>
-                            <th className="px-3 py-2 text-right text-xs font-medium text-slate-400">
-                              평균 금액
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {payments.map((p: any, idx: number) => (
-                            <tr
-                              key={p?.method ?? idx}
-                              className="border-b border-slate-50 last:border-0"
-                            >
-                              <td className="px-3 py-2 text-slate-700 font-medium">
-                                <span className="flex items-center gap-2">
-                                  <span
-                                    className="inline-block h-2.5 w-2.5 rounded-full"
-                                    style={{
-                                      backgroundColor:
-                                        COLORS[idx % COLORS.length],
-                                    }}
-                                  />
-                                  {p?.method ?? "-"}
-                                </span>
-                              </td>
-                              <td className="px-3 py-2 text-right text-slate-600">
-                                {num(p?.count)}
-                              </td>
-                              <td className="px-3 py-2 text-right text-amber-600 font-medium">
-                                {won(p?.total_amount)}
-                              </td>
-                              <td className="px-3 py-2 text-right text-slate-500">
-                                {won(p?.average_amount)}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  ) : (
-                    <p className="py-12 text-center text-sm text-slate-400">
-                      데이터가 없습니다
-                    </p>
-                  )}
-                </div>
               </div>
             </section>
           </div>

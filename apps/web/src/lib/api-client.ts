@@ -146,7 +146,10 @@ export const eventsApi = {
 };
 
 export const queueApi = {
-  check: (eventId: string) => http.post<QueueStatus>(`/queue/check/${eventId}`),
+  check: (eventId: string, vwrPosition?: number | null) => {
+    const params = vwrPosition != null ? { vwrPosition } : undefined;
+    return http.post<QueueStatus>(`/queue/check/${eventId}`, undefined, { params });
+  },
   status: (eventId: string) => http.get<QueueStatus>(`/queue/status/${eventId}`),
   heartbeat: (eventId: string) => http.post(`/queue/heartbeat/${eventId}`),
   leave: (eventId: string) => http.post(`/queue/leave/${eventId}`),

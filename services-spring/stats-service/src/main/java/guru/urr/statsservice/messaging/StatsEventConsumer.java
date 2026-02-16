@@ -133,6 +133,38 @@ public class StatsEventConsumer {
         }
     }
 
+    @KafkaListener(topics = "transfer-events", groupId = "stats-service-group")
+    public void handleTransferEvent(Map<String, Object> event) {
+        try {
+            String eventKey = buildEventKey(event);
+            if (eventKey != null && isDuplicate(eventKey)) {
+                log.info("Stats: skipping duplicate transfer event: {}", eventKey);
+                return;
+            }
+
+            String type = str(event.get("type"));
+            log.info("Received transfer event: type={}", type);
+
+            if ("TRANSFER_COMPLETED".equals(type)) {
+                jdbcTemplate.update(
+                    "INSERT INTO daily_stats (stat_date, stat_type, stat_value) VALUES (CURRENT_DATE, 'transfer_completed', 1) " +
+                    "ON CONFLICT (stat_date, stat_type) DO UPDATE SET stat_value = daily_stats.stat_value + 1"
+                );
+            } else if ("TRANSFER_CANCELLED".equals(type)) {
+                jdbcTemplate.update(
+                    "INSERT INTO daily_stats (stat_date, stat_type, stat_value) VALUES (CURRENT_DATE, 'transfer_cancelled', 1) " +
+                    "ON CONFLICT (stat_date, stat_type) DO UPDATE SET stat_value = daily_stats.stat_value + 1"
+                );
+            }
+
+            if (eventKey != null) {
+                markProcessed(eventKey);
+            }
+        } catch (Exception e) {
+            log.error("Stats: failed to process transfer event: {}", e.getMessage(), e);
+        }
+    }
+
     // H7: Deduplication helpers
 
     private String buildEventKey(Map<String, Object> event) {

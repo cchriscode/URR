@@ -21,6 +21,8 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Set;
 
+// Entry Token is expiration-based one-time use. Reservation duplication is prevented by idempotencyKey.
+// For strict one-time enforcement, consider tracking JWT jti claims in Redis SET with TTL.
 @Component
 @Order(1)
 public class VwrEntryTokenFilter extends OncePerRequestFilter {
@@ -30,7 +32,7 @@ public class VwrEntryTokenFilter extends OncePerRequestFilter {
     private static final String HEADER_NAME = "x-queue-entry-token";
     private static final String CF_VERIFIED_HEADER = "X-CloudFront-Verified";
     private static final int HMAC_MIN_KEY_LENGTH = 32;
-    private static final Set<String> PROTECTED_METHODS = Set.of("POST", "PUT", "PATCH");
+    private static final Set<String> PROTECTED_METHODS = Set.of("GET", "POST", "PUT", "PATCH");
 
     private final SecretKey signingKey;
     private final String cloudFrontSecret;

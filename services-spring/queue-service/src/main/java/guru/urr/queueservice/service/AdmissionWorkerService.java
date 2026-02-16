@@ -19,7 +19,7 @@ public class AdmissionWorkerService {
     private final DefaultRedisScript<List> admissionScript;
     private final DefaultRedisScript<List> staleCleanupScript;
     private final QueueService queueService;
-    private final int threshold;
+    private final int defaultThreshold;
     private final int activeTtlSeconds;
     private final int seenTtlSeconds;
     private final int admitBatchSize;
@@ -38,7 +38,7 @@ public class AdmissionWorkerService {
         this.admissionScript = admissionScript;
         this.staleCleanupScript = staleCleanupScript;
         this.queueService = queueService;
-        this.threshold = threshold;
+        this.defaultThreshold = threshold;
         this.activeTtlSeconds = activeTtlSeconds;
         this.seenTtlSeconds = seenTtlSeconds;
         this.admitBatchSize = admitBatchSize;
@@ -74,18 +74,20 @@ public class AdmissionWorkerService {
                     continue;
                 }
 
+                int eventThreshold = getThreshold(eventId);
+
                 @SuppressWarnings("unchecked")
                 List<Object> result = redisTemplate.execute(
                     admissionScript,
                     List.of(
-                        "queue:" + eventId,
-                        "active:" + eventId,
-                        "queue:seen:" + eventId
+                        "{" + eventId + "}:queue",
+                        "{" + eventId + "}:active",
+                        "{" + eventId + "}:seen"
                     ),
                     String.valueOf(admitBatchSize),
                     String.valueOf(now),
                     String.valueOf(activeTtlMs),
-                    String.valueOf(threshold)
+                    String.valueOf(eventThreshold)
                 );
 
                 if (result != null && !result.isEmpty()) {
@@ -96,9 +98,9 @@ public class AdmissionWorkerService {
                     }
                 }
 
-                Long queueSize = redisTemplate.opsForZSet().size("queue:" + eventId);
+                Long queueSize = redisTemplate.opsForZSet().size("{" + eventId + "}:queue");
                 if (queueSize != null && queueSize == 0) {
-                    Long activeSize = redisTemplate.opsForZSet().count("active:" + eventId, now, Double.POSITIVE_INFINITY);
+                    Long activeSize = redisTemplate.opsForZSet().count("{" + eventId + "}:active", now, Double.POSITIVE_INFINITY);
                     if (activeSize != null && activeSize == 0) {
                         redisTemplate.opsForSet().remove("queue:active-events", eventId);
                     }
@@ -143,8 +145,8 @@ public class AdmissionWorkerService {
                     List<Object> result = redisTemplate.execute(
                         staleCleanupScript,
                         List.of(
-                            "queue:seen:" + eventId,
-                            "queue:" + eventId
+                            "{" + eventId + "}:seen",
+                            "{" + eventId + "}:queue"
                         ),
                         String.valueOf(cutoff),
                         String.valueOf(1000)
@@ -172,7 +174,7 @@ public class AdmissionWorkerService {
 
             try {
                 Long activeSeenRemoved = redisTemplate.opsForZSet()
-                    .removeRangeByScore("active:seen:" + eventId, Double.NEGATIVE_INFINITY, activeSeenCutoff);
+                    .removeRangeByScore("{" + eventId + "}:active-seen", Double.NEGATIVE_INFINITY, activeSeenCutoff);
                 if (activeSeenRemoved != null && activeSeenRemoved > 0) {
                     log.debug("Cleaned up {} stale entries from active:seen for event {}", activeSeenRemoved, eventId);
                 }
@@ -180,5 +182,10 @@ public class AdmissionWorkerService {
                 log.debug("active:seen cleanup failed for event {}: {}", eventId, ex.getMessage());
             }
         }
+    }
+
+    private int getThreshold(String eventId) {
+        String custom = redisTemplate.opsForValue().get("{" + eventId + "}:threshold");
+        return custom != null ? Integer.parseInt(custom) : defaultThreshold;
     }
 }

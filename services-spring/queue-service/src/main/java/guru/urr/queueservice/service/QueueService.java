@@ -26,7 +26,7 @@ public class QueueService {
     private final StringRedisTemplate redisTemplate;
     private final TicketInternalClient ticketInternalClient;
     private final SqsPublisher sqsPublisher;
-    private final int threshold;
+    private final int defaultThreshold;
     private final int activeTtlSeconds;
     private final SecretKey entryTokenKey;
     private final int entryTokenTtlSeconds;
@@ -51,13 +51,17 @@ public class QueueService {
         this.ticketInternalClient = ticketInternalClient;
         this.sqsPublisher = sqsPublisher;
         this.queueMetrics = queueMetrics;
-        this.threshold = threshold;
+        this.defaultThreshold = threshold;
         this.activeTtlSeconds = activeTtlSeconds;
         this.entryTokenKey = Keys.hmacShaKeyFor(entryTokenSecret.getBytes(StandardCharsets.UTF_8));
         this.entryTokenTtlSeconds = entryTokenTtlSeconds;
     }
 
     public Map<String, Object> check(UUID eventId, String userId) {
+        return check(eventId, userId, null);
+    }
+
+    public Map<String, Object> check(UUID eventId, String userId, Integer vwrPosition) {
         Map<String, Object> eventInfo = ticketInternalClient.getEventQueueInfo(eventId);
 
         if (isInQueue(eventId, userId)) {
@@ -75,8 +79,10 @@ public class QueueService {
         int currentUsers = getCurrentUsers(eventId);
         int queueSize = getQueueSize(eventId);
 
-        if (queueSize > 0 || currentUsers >= threshold) {
-            addToQueue(eventId, userId);
+        if (queueSize > 0 || currentUsers >= getThreshold(eventId)) {
+            // If user has VWR position, use it as priority score for better queue placement
+            double score = vwrPosition != null ? (double) vwrPosition : System.currentTimeMillis();
+            addToQueue(eventId, userId, score);
             trackActiveEvent(eventId);
             queueMetrics.recordQueueJoined();
             int position = getQueuePosition(eventId, userId);
@@ -110,12 +116,14 @@ public class QueueService {
 
         if (isActiveUser(eventId, userId)) {
             touchActiveUser(eventId, userId);
+            String entryToken = generateEntryToken(eventId.toString(), userId);
             Map<String, Object> result = new HashMap<>();
             result.put("status", "active");
             result.put("queued", false);
             result.put("currentUsers", getCurrentUsers(eventId));
             result.put("nextPoll", 3);
             result.put("message", "Entry allowed");
+            result.put("entryToken", entryToken);
             return result;
         }
 
@@ -150,12 +158,13 @@ public class QueueService {
     public Map<String, Object> admin(UUID eventId) {
         int currentUsers = getCurrentUsers(eventId);
         int queueSize = getQueueSize(eventId);
+        int eventThreshold = getThreshold(eventId);
         return Map.of(
             "eventId", eventId,
             "queueSize", queueSize,
             "currentUsers", currentUsers,
-            "threshold", threshold,
-            "available", Math.max(0, threshold - currentUsers)
+            "threshold", eventThreshold,
+            "available", Math.max(0, eventThreshold - currentUsers)
         );
     }
 
@@ -188,7 +197,7 @@ public class QueueService {
         result.put("peopleBehind", Math.max(0, queueSize - position));
         result.put("estimatedWait", estimateWait(position));
         result.put("nextPoll", calculateNextPoll(position));
-        result.put("threshold", threshold);
+        result.put("threshold", getThreshold(eventId));
         result.put("currentUsers", getCurrentUsers(eventId));
         result.put("eventInfo", eventInfo);
         return result;
@@ -201,7 +210,7 @@ public class QueueService {
         result.put("queued", false);
         result.put("status", "active");
         result.put("currentUsers", getCurrentUsers(eventId));
-        result.put("threshold", threshold);
+        result.put("threshold", getThreshold(eventId));
         result.put("nextPoll", 3);
         result.put("eventInfo", eventInfo);
         result.put("entryToken", entryToken);
@@ -247,12 +256,14 @@ public class QueueService {
         long admissions = recentAdmissions.get();
 
         if (elapsed < 5000 || admissions <= 0) {
-            return Math.max(position * 30, 0);
+            // Before throughput data is available, assume ~50 users/second processing rate
+            // and cap at a reasonable maximum to avoid alarming overestimates
+            return Math.max(position / 50, 5);
         }
 
         double throughputPerSecond = (admissions * 1000.0) / elapsed;
         if (throughputPerSecond <= 0) {
-            return Math.max(position * 30, 0);
+            return Math.max(position / 50, 5);
         }
         return (int) Math.ceil(position / throughputPerSecond);
     }
@@ -266,22 +277,33 @@ public class QueueService {
         }
     }
 
-    // -- Redis key helpers --
+    // -- Per-event threshold (#25) --
+
+    private int getThreshold(UUID eventId) {
+        String custom = redisTemplate.opsForValue().get("{" + eventId + "}:threshold");
+        return custom != null ? Integer.parseInt(custom) : defaultThreshold;
+    }
+
+    public void setThreshold(UUID eventId, int threshold) {
+        redisTemplate.opsForValue().set("{" + eventId + "}:threshold", String.valueOf(threshold));
+    }
+
+    // -- Redis key helpers (hash-tagged for Redis Cluster slot affinity) --
 
     private String queueKey(UUID eventId) {
-        return "queue:" + eventId;
+        return "{" + eventId + "}:queue";
     }
 
     private String activeKey(UUID eventId) {
-        return "active:" + eventId;
+        return "{" + eventId + "}:active";
     }
 
     private String queueSeenKey(UUID eventId) {
-        return "queue:seen:" + eventId;
+        return "{" + eventId + "}:seen";
     }
 
     private String activeSeenKey(UUID eventId) {
-        return "active:seen:" + eventId;
+        return "{" + eventId + "}:active-seen";
     }
 
     // -- Active users: ZSET with expiry-timestamp scores --
@@ -327,7 +349,11 @@ public class QueueService {
     }
 
     private void addToQueue(UUID eventId, String userId) {
-        redisTemplate.opsForZSet().add(queueKey(eventId), userId, System.currentTimeMillis());
+        addToQueue(eventId, userId, System.currentTimeMillis());
+    }
+
+    private void addToQueue(UUID eventId, String userId, double score) {
+        redisTemplate.opsForZSet().add(queueKey(eventId), userId, score);
         touchQueueUser(eventId, userId);
     }
 

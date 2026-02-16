@@ -22,6 +22,7 @@ patches:
   - path: patches/replicas.yaml
   - path: patches/services-env.yaml
 
+# CI/CD replaces ECR_REGISTRY via: sed -i "s|CHANGE_ME.dkr.ecr.ap-northeast-2.amazonaws.com|${ECR_REGISTRY}|g" kustomization.yaml
 images:
   - name: YOUR_ECR_URI/gateway-service
     newName: CHANGE_ME.dkr.ecr.ap-northeast-2.amazonaws.com/urr/gateway

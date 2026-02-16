@@ -65,7 +65,7 @@ public class AuthService {
     @Transactional
     public AuthResponse register(RegisterRequest request) {
         userRepository.findByEmail(request.email()).ifPresent(user -> {
-            throw new ApiException("Email already exists");
+            throw new ApiException("Registration failed. Please try again or login.");
         });
 
         UserEntity user = new UserEntity();
@@ -230,7 +230,7 @@ public class AuthService {
             user.setEmail(email);
             user.setName((name == null || name.isBlank()) ? email : name);
             user.setGoogleId(googleId);
-            user.setPasswordHash("OAUTH_USER_NO_PASSWORD");
+            user.setPasswordHash(null);
             user = userRepository.save(user);
         } else if (user.getGoogleId() == null || user.getGoogleId().isBlank()) {
             user.setGoogleId(googleId);

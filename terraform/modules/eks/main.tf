@@ -198,11 +198,12 @@ resource "aws_eks_node_group" "main" {
 
 # VPC CNI addon (for pod networking)
 resource "aws_eks_addon" "vpc_cni" {
-  cluster_name             = aws_eks_cluster.main.name
-  addon_name               = "vpc-cni"
-  addon_version            = var.vpc_cni_version
-  resolve_conflicts        = "OVERWRITE"
-  service_account_role_arn = aws_iam_role.vpc_cni.arn
+  cluster_name                = aws_eks_cluster.main.name
+  addon_name                  = "vpc-cni"
+  addon_version               = var.vpc_cni_version
+  most_recent                 = var.vpc_cni_version == null ? true : false
+  resolve_conflicts_on_update = "OVERWRITE"
+  service_account_role_arn    = aws_iam_role.vpc_cni.arn
 
   tags = {
     Name = "${var.name_prefix}-vpc-cni"
@@ -215,10 +216,11 @@ resource "aws_eks_addon" "vpc_cni" {
 
 # kube-proxy addon
 resource "aws_eks_addon" "kube_proxy" {
-  cluster_name      = aws_eks_cluster.main.name
-  addon_name        = "kube-proxy"
-  addon_version     = var.kube_proxy_version
-  resolve_conflicts = "OVERWRITE"
+  cluster_name                = aws_eks_cluster.main.name
+  addon_name                  = "kube-proxy"
+  addon_version               = var.kube_proxy_version
+  most_recent                 = var.kube_proxy_version == null ? true : false
+  resolve_conflicts_on_update = "OVERWRITE"
 
   tags = {
     Name = "${var.name_prefix}-kube-proxy"
@@ -227,10 +229,11 @@ resource "aws_eks_addon" "kube_proxy" {
 
 # CoreDNS addon
 resource "aws_eks_addon" "coredns" {
-  cluster_name      = aws_eks_cluster.main.name
-  addon_name        = "coredns"
-  addon_version     = var.coredns_version
-  resolve_conflicts = "OVERWRITE"
+  cluster_name                = aws_eks_cluster.main.name
+  addon_name                  = "coredns"
+  addon_version               = var.coredns_version
+  most_recent                 = var.coredns_version == null ? true : false
+  resolve_conflicts_on_update = "OVERWRITE"
 
   depends_on = [
     aws_eks_node_group.main
@@ -243,11 +246,12 @@ resource "aws_eks_addon" "coredns" {
 
 # EBS CSI Driver addon (for persistent volumes)
 resource "aws_eks_addon" "ebs_csi_driver" {
-  cluster_name             = aws_eks_cluster.main.name
-  addon_name               = "aws-ebs-csi-driver"
-  addon_version            = var.ebs_csi_driver_version
-  resolve_conflicts        = "OVERWRITE"
-  service_account_role_arn = aws_iam_role.ebs_csi.arn
+  cluster_name                = aws_eks_cluster.main.name
+  addon_name                  = "aws-ebs-csi-driver"
+  addon_version               = var.ebs_csi_driver_version
+  most_recent                 = var.ebs_csi_driver_version == null ? true : false
+  resolve_conflicts_on_update = "OVERWRITE"
+  service_account_role_arn    = aws_iam_role.ebs_csi.arn
 
   tags = {
     Name = "${var.name_prefix}-ebs-csi-driver"

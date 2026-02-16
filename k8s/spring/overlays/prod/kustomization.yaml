@@ -1,3 +1,10 @@
+# ─── Production Monitoring ─────────────────────────────────────────
+# Deploy kube-prometheus-stack via Helm:
+#   helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+#   helm install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+#     --namespace monitoring --create-namespace \
+#     -f k8s/spring/overlays/prod/monitoring-values.yaml
+# ────────────────────────────────────────────────────────────────────
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: urr-spring
@@ -14,6 +21,7 @@ resources:
   - rollouts/ticket-service.yaml
   - rollouts/payment-service.yaml
   - rollouts/queue-service.yaml
+  - network-policy-egress.yaml
 
 configMapGenerator:
   - name: spring-prod-config
@@ -32,6 +40,7 @@ patches:
   - path: patches/replicas.yaml
   - path: patches/services-env.yaml
 
+# CI/CD replaces ECR_REGISTRY via: sed -i "s|CHANGE_ME.dkr.ecr.ap-northeast-2.amazonaws.com|${ECR_REGISTRY}|g" kustomization.yaml
 images:
   - name: YOUR_ECR_URI/gateway-service
     newName: CHANGE_ME.dkr.ecr.ap-northeast-2.amazonaws.com/urr/gateway
