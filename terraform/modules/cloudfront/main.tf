@@ -1,3 +1,13 @@
+terraform {
+  required_providers {
+    aws = {
+      source                = "hashicorp/aws"
+      version               = ">= 5.0"
+      configuration_aliases = [aws.us_east_1]
+    }
+  }
+}
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Lambda@Edge Function for Queue Token Verification
 # (Must be deployed in us-east-1 for CloudFront)
@@ -164,10 +174,8 @@ resource "aws_cloudfront_distribution" "main" {
     cache_policy_id            = data.aws_cloudfront_cache_policy.caching_optimized.id
     origin_request_policy_id   = data.aws_cloudfront_origin_request_policy.cors_s3.id
     response_headers_policy_id = aws_cloudfront_response_headers_policy.security.id
-
-    min_ttl     = 31536000  # 1 year for immutable files
-    default_ttl = 31536000
-    max_ttl     = 31536000
+    # TTL is controlled by Managed-CachingOptimized cache policy (default 86400s)
+    # For immutable Next.js assets, origin sends Cache-Control: max-age=31536000
   }
 
   # Cache behavior for VWR static waiting page (S3, no Lambda@Edge)
@@ -180,7 +188,7 @@ resource "aws_cloudfront_distribution" "main" {
     viewer_protocol_policy = "redirect-to-https"
     compress               = true
 
-    cache_policy_id            = data.aws_cloudfront_cache_policy.caching_optimized.id
+    cache_policy_id            = aws_cloudfront_cache_policy.vwr_static.id
     origin_request_policy_id   = data.aws_cloudfront_origin_request_policy.cors_s3.id
     response_headers_policy_id = aws_cloudfront_response_headers_policy.security.id
 
@@ -188,10 +196,6 @@ resource "aws_cloudfront_distribution" "main" {
       event_type   = "viewer-request"
       function_arn = aws_cloudfront_function.vwr_page_rewrite.arn
     }
-
-    min_ttl     = 0
-    default_ttl = 300   # 5 minutes
-    max_ttl     = 3600
   }
 
   # Cache behavior for VWR API (API Gateway, no caching)
@@ -269,6 +273,31 @@ resource "aws_cloudfront_cache_policy" "frontend_ssr" {
 
     query_strings_config {
       query_string_behavior = "all"
+    }
+  }
+}
+
+resource "aws_cloudfront_cache_policy" "vwr_static" {
+  name        = "${var.name_prefix}-vwr-static-cache-policy"
+  comment     = "Cache policy for VWR static waiting page"
+  default_ttl = 300
+  max_ttl     = 3600
+  min_ttl     = 0
+
+  parameters_in_cache_key_and_forwarded_to_origin {
+    enable_accept_encoding_brotli = true
+    enable_accept_encoding_gzip   = true
+
+    cookies_config {
+      cookie_behavior = "none"
+    }
+
+    headers_config {
+      header_behavior = "none"
+    }
+
+    query_strings_config {
+      query_string_behavior = "none"
     }
   }
 }

@@ -19,6 +19,7 @@ locals {
 
 # A record: domain → CloudFront
 resource "aws_route53_record" "cloudfront_alias" {
+  count   = var.cloudfront_domain_name != "" ? 1 : 0
   zone_id = local.zone_id
   name    = var.domain_name
   type    = "A"

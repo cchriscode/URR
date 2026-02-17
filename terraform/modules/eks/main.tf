@@ -110,17 +110,16 @@ resource "aws_eks_cluster" "main" {
 
   enabled_cluster_log_types = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
 
-  # Encryption at rest
-  encryption_config {
-    provider {
-      key_arn = var.kms_key_arn
+  # Encryption at rest (only when KMS key is provided)
+  dynamic "encryption_config" {
+    for_each = var.kms_key_arn != "" ? [1] : []
+    content {
+      provider {
+        key_arn = var.kms_key_arn
+      }
+      resources = ["secrets"]
     }
-    resources = ["secrets"]
   }
-
-  depends_on = [
-    var.eks_cluster_role_arn
-  ]
 
   tags = {
     Name = "${var.name_prefix}-eks-cluster"
@@ -183,10 +182,6 @@ resource "aws_eks_node_group" "main" {
     Name                                        = "${var.name_prefix}-ng-initial"
     "kubernetes.io/cluster/${var.name_prefix}" = "owned"
   }
-
-  depends_on = [
-    var.eks_node_role_arn
-  ]
 
   lifecycle {
     ignore_changes = [scaling_config[0].desired_size]
@@ -395,7 +390,7 @@ resource "aws_iam_role_policy" "karpenter" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid    = "Karpenter"
+        Sid    = "KarpenterEC2"
         Effect = "Allow"
         Action = [
           "ec2:CreateFleet",
@@ -411,12 +406,16 @@ resource "aws_iam_role_policy" "karpenter" {
           "ec2:DescribeSecurityGroups",
           "ec2:DescribeSubnets",
           "ec2:RunInstances",
-          "ec2:TerminateInstances",
-          "iam:PassRole",
           "pricing:GetProducts",
           "ssm:GetParameter"
         ]
         Resource = "*"
+      },
+      {
+        Sid      = "KarpenterPassRole"
+        Effect   = "Allow"
+        Action   = "iam:PassRole"
+        Resource = var.eks_node_role_arn
       },
       {
         Sid      = "ConditionalEC2Termination"

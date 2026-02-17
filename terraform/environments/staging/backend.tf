@@ -1,9 +1,2 @@
-terraform {
-  backend "s3" {
-    bucket         = "urr-terraform-state-staging"
-    key            = "staging/terraform.tfstate"
-    region         = "ap-northeast-2"
-    dynamodb_table = "urr-terraform-locks"
-    encrypt        = true
-  }
-}
+# Backend configuration is in main.tf (same structure as prod)
+# This file is intentionally left minimal to avoid duplicate backend blocks.

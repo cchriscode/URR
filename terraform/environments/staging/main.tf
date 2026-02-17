@@ -104,11 +104,12 @@ module "rds" {
   vpc_id                      = module.vpc.vpc_id
   db_subnet_ids               = module.vpc.db_subnet_ids
   app_subnet_ids              = module.vpc.app_subnet_ids
-  eks_node_security_group_id  = module.eks.node_security_group_id
-  master_password             = module.secrets.rds_password
-  db_credentials_secret_arn   = module.secrets.rds_credentials_secret_arn
-  rds_proxy_role_arn          = module.iam.rds_proxy_role_arn
-  monitoring_role_arn         = module.iam.rds_monitoring_role_arn
+  eks_node_security_group_id      = module.eks.node_security_group_id
+  lambda_worker_security_group_id = module.lambda_worker.security_group_id
+  master_password                 = module.secrets.rds_password
+  db_credentials_secret_arn       = module.secrets.rds_credentials_secret_arn
+  rds_proxy_role_arn              = module.iam.rds_proxy_role_arn
+  monitoring_role_arn             = module.iam.rds_monitoring_role_arn
 
   engine_version       = var.rds_engine_version
   instance_class       = var.rds_instance_class

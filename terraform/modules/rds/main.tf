@@ -16,15 +16,17 @@ resource "aws_security_group" "rds" {
   }
 }
 
-# Allow inbound from EKS nodes (via RDS Proxy)
+# Allow direct inbound from app layer (when RDS Proxy is NOT used)
 resource "aws_security_group_rule" "rds_ingress_from_app" {
+  count = var.app_security_group_id != "" ? 1 : 0
+
   type                     = "ingress"
   from_port                = 5432
   to_port                  = 5432
   protocol                 = "tcp"
   source_security_group_id = var.app_security_group_id
   security_group_id        = aws_security_group.rds.id
-  description              = "Allow PostgreSQL from app layer (RDS Proxy)"
+  description              = "Allow PostgreSQL from app layer (direct, no proxy)"
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -82,7 +84,7 @@ resource "aws_db_instance" "main" {
   maintenance_window        = "mon:04:00-mon:05:00"  # UTC
   copy_tags_to_snapshot     = true
   skip_final_snapshot       = var.skip_final_snapshot
-  final_snapshot_identifier = var.skip_final_snapshot ? null : "${var.name_prefix}-final-snapshot-${formatdate("YYYY-MM-DD-hhmm", timestamp())}"
+  final_snapshot_identifier = var.skip_final_snapshot ? null : "${var.name_prefix}-final-snapshot"
 
   # Performance Insights
   enabled_cloudwatch_logs_exports = ["postgresql", "upgrade"]
@@ -154,9 +156,10 @@ resource "aws_db_proxy" "main" {
     secret_arn  = var.db_credentials_secret_arn
   }
 
-  role_arn               = var.rds_proxy_role_arn
-  vpc_subnet_ids         = var.app_subnet_ids  # IMPORTANT: Proxy runs in APP subnets, not DB subnets!
-  require_tls            = true
+  role_arn                 = var.rds_proxy_role_arn
+  vpc_subnet_ids           = var.app_subnet_ids  # IMPORTANT: Proxy runs in APP subnets, not DB subnets!
+  vpc_security_group_ids   = [aws_security_group.rds_proxy[0].id]
+  require_tls              = true
   idle_client_timeout    = 1800
 
   tags = {

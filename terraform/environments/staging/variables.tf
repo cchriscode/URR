@@ -156,6 +156,11 @@ variable "cors_allowed_origins" {
   description = "Allowed origins for CORS (e.g. [\"https://staging.urr.guru\"])"
   type        = list(string)
   default     = []
+
+  validation {
+    condition     = length(var.cors_allowed_origins) > 0
+    error_message = "cors_allowed_origins must contain at least one origin for VWR API Gateway and Lambda CORS configuration."
+  }
 }
 
 # ═════════════════════════════════════════════════════════════════════════════
