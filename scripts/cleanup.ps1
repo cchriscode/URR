@@ -8,13 +8,13 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 
 Write-Host ""
 Write-Host "==========================================" -ForegroundColor Red
-Write-Host "   TIKETI Spring - Complete Cleanup" -ForegroundColor Red
+Write-Host "   URR Spring - Complete Cleanup" -ForegroundColor Red
 Write-Host "==========================================" -ForegroundColor Red
 Write-Host ""
 Write-Host "This will DELETE:" -ForegroundColor Yellow
 Write-Host "  - Running Spring Boot (Java) processes" -ForegroundColor White
 Write-Host "  - Docker Compose DB containers + data" -ForegroundColor White
-Write-Host "  - Kind cluster 'tiketi-local'" -ForegroundColor White
+Write-Host "  - Kind cluster 'urr-local'" -ForegroundColor White
 Write-Host "  - Port-forward processes" -ForegroundColor White
 Write-Host "  - Docker images (optional)" -ForegroundColor White
 Write-Host "  - node_modules (optional)" -ForegroundColor White
@@ -39,7 +39,7 @@ $javaStopped = 0
 Get-Process java -ErrorAction SilentlyContinue | ForEach-Object {
     try {
         $cmdLine = (Get-CimInstance Win32_Process -Filter "ProcessId = $($_.Id)" -ErrorAction SilentlyContinue).CommandLine
-        if ($cmdLine -and ($cmdLine -like "*tiketi*" -or $cmdLine -like "*bootRun*" -or $cmdLine -like "*spring*")) {
+        if ($cmdLine -and ($cmdLine -like "*urr*" -or $cmdLine -like "*bootRun*" -or $cmdLine -like "*spring*")) {
             Stop-Process -Id $_.Id -Force
             $javaStopped++
         }
@@ -102,15 +102,15 @@ Write-Host "[4/6] Deleting Kind cluster ..." -ForegroundColor Cyan
 
 if (Get-Command kind -ErrorAction SilentlyContinue) {
     $clusters = kind get clusters 2>$null
-    if ($clusters -and ($clusters | Select-String -Pattern "^tiketi-local$" -Quiet)) {
-        kind delete cluster --name tiketi-local
+    if ($clusters -and ($clusters | Select-String -Pattern "^urr-local$" -Quiet)) {
+        kind delete cluster --name urr-local
         if ($LASTEXITCODE -eq 0) {
-            Write-Host "  Cluster 'tiketi-local' deleted" -ForegroundColor Green
+            Write-Host "  Cluster 'urr-local' deleted" -ForegroundColor Green
         } else {
             Write-Host "  Failed to delete cluster" -ForegroundColor Yellow
         }
     } else {
-        Write-Host "  Cluster 'tiketi-local' not found" -ForegroundColor Gray
+        Write-Host "  Cluster 'urr-local' not found" -ForegroundColor Gray
     }
 } else {
     Write-Host "  kind not installed (skipping)" -ForegroundColor Gray
@@ -129,14 +129,14 @@ if ($deleteImages -eq "y" -or $deleteImages -eq "Y") {
     Write-Host "[5/6] Deleting Docker images ..." -ForegroundColor Cyan
 
     $images = @(
-        "tiketi-spring-gateway-service:local",
-        "tiketi-spring-auth-service:local",
-        "tiketi-spring-ticket-service:local",
-        "tiketi-spring-payment-service:local",
-        "tiketi-spring-stats-service:local",
-        "tiketi-spring-queue-service:local",
-        "tiketi-spring-community-service:local",
-        "tiketi-spring-frontend:local"
+        "urr-spring-gateway-service:local",
+        "urr-spring-auth-service:local",
+        "urr-spring-ticket-service:local",
+        "urr-spring-payment-service:local",
+        "urr-spring-stats-service:local",
+        "urr-spring-queue-service:local",
+        "urr-spring-community-service:local",
+        "urr-spring-frontend:local"
     )
 
     foreach ($image in $images) {

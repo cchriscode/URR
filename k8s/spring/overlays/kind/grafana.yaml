@@ -29,9 +29,9 @@ data:
   dashboards.yaml: |
     apiVersion: 1
     providers:
-      - name: 'tiketi-dashboards'
+      - name: 'urr-dashboards'
         orgId: 1
-        folder: 'Tiketi'
+        folder: 'URR'
         type: file
         disableDeletion: false
         updateIntervalSeconds: 30
@@ -70,6 +70,8 @@ spec:
               value: "admin"
             - name: GF_USERS_ALLOW_SIGN_UP
               value: "false"
+            - name: GF_UNIFIED_ALERTING_ENABLED
+              value: "true"
             - name: GF_SERVER_HTTP_PORT
               value: "3006"
           volumeMounts:

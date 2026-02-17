@@ -55,7 +55,7 @@ resource "aws_iam_role" "external_secrets" {
       Action = "sts:AssumeRoleWithWebIdentity"
       Condition = {
         StringEquals = {
-          "${replace(var.oidc_issuer_url, "https://", "")}:sub" = "system:serviceaccount:tiketi-spring:external-secrets"
+          "${replace(var.oidc_issuer_url, "https://", "")}:sub" = "system:serviceaccount:urr-spring:external-secrets"
           "${replace(var.oidc_issuer_url, "https://", "")}:aud" = "sts.amazonaws.com"
         }
       }
@@ -92,7 +92,7 @@ apiVersion: external-secrets.io/v1beta1
 kind: SecretStore
 metadata:
   name: aws-secrets-manager
-  namespace: tiketi-spring
+  namespace: urr-spring
 spec:
   provider:
     aws:
@@ -112,7 +112,7 @@ apiVersion: external-secrets.io/v1beta1
 kind: ExternalSecret
 metadata:
   name: redis-credentials
-  namespace: tiketi-spring
+  namespace: urr-spring
 spec:
   refreshInterval: 1h
   secretStoreRef:
@@ -124,7 +124,7 @@ spec:
   data:
   - secretKey: password
     remoteRef:
-      key: tiketi-redis-auth-token  # AWS Secrets Manager secret name
+      key: urr-redis-auth-token  # AWS Secrets Manager secret name
       property: password            # JSON key in secret
 ```
 
@@ -143,7 +143,7 @@ spec:
       - name: ticket-service
         env:
         - name: REDIS_HOST
-          value: "tiketi-redis.abc123.cache.amazonaws.com"
+          value: "urr-redis.abc123.cache.amazonaws.com"
         - name: REDIS_PORT
           value: "6379"
         - name: REDIS_PASSWORD  # ADD THIS
@@ -179,17 +179,17 @@ apiVersion: secrets-store.csi.x-k8s.io/v1
 kind: SecretProviderClass
 metadata:
   name: aws-secrets
-  namespace: tiketi-spring
+  namespace: urr-spring
 spec:
   provider: aws
   parameters:
     objects: |
-      - objectName: "tiketi-redis-auth-token"
+      - objectName: "urr-redis-auth-token"
         objectType: "secretsmanager"
         jmesPath:
           - path: password
             objectAlias: redis-password
-      - objectName: "tiketi-rds-credentials"
+      - objectName: "urr-rds-credentials"
         objectType: "secretsmanager"
         jmesPath:
           - path: password
@@ -236,14 +236,14 @@ spec:
 ```bash
 # Get secret from AWS
 REDIS_PASSWORD=$(aws secretsmanager get-secret-value \
-  --secret-id tiketi-redis-auth-token \
+  --secret-id urr-redis-auth-token \
   --query SecretString \
   --output text | jq -r .password)
 
 # Create K8s secret
 kubectl create secret generic redis-credentials \
   --from-literal=password="$REDIS_PASSWORD" \
-  -n tiketi-spring
+  -n urr-spring
 ```
 
 ## Required Application Changes
@@ -267,7 +267,7 @@ spring:
 spring:
   datasource:
     url: ${STATS_DB_URL:jdbc:postgresql://localhost:5432/stats_db}
-    username: ${STATS_DB_USERNAME:tiketi_user}
+    username: ${STATS_DB_USERNAME:urr_user}
     password: ${STATS_DB_PASSWORD}  # Already exists, ensure it's set
 ```
 
@@ -277,13 +277,13 @@ spring:
 
 ```bash
 # Check ExternalSecret status
-kubectl get externalsecret -n tiketi-spring
+kubectl get externalsecret -n urr-spring
 
 # Check generated K8s secret
-kubectl get secret redis-credentials -n tiketi-spring -o yaml
+kubectl get secret redis-credentials -n urr-spring -o yaml
 
 # Verify secret content (base64 decoded)
-kubectl get secret redis-credentials -n tiketi-spring \
+kubectl get secret redis-credentials -n urr-spring \
   -o jsonpath='{.data.password}' | base64 -d
 ```
 
@@ -291,7 +291,7 @@ kubectl get secret redis-credentials -n tiketi-spring \
 
 ```bash
 # Exec into ticket-service pod
-kubectl exec -it ticket-service-xxx -n tiketi-spring -- sh
+kubectl exec -it ticket-service-xxx -n urr-spring -- sh
 
 # Test Redis connection with AUTH
 redis-cli -h $REDIS_HOST -p $REDIS_PORT -a $REDIS_PASSWORD --tls PING
@@ -326,10 +326,10 @@ kubectl logs -n external-secrets-system \
 
 ```bash
 # Check environment variables
-kubectl exec -it ticket-service-xxx -n tiketi-spring -- env | grep REDIS
+kubectl exec -it ticket-service-xxx -n urr-spring -- env | grep REDIS
 
 # Expected output:
-# REDIS_HOST=tiketi-redis.abc123.cache.amazonaws.com
+# REDIS_HOST=urr-redis.abc123.cache.amazonaws.com
 # REDIS_PORT=6379
 # REDIS_PASSWORD=<actual-password>
 # REDIS_SSL=true

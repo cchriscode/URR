@@ -70,7 +70,7 @@ variable "additional_databases" {
 variable "master_username" {
   description = "Master username for RDS"
   type        = string
-  default     = "tiketi_admin"
+  default     = "urr_admin"
 }
 
 variable "master_password" {
@@ -159,4 +159,18 @@ variable "rds_proxy_role_arn" {
   description = "IAM role ARN for RDS Proxy to access Secrets Manager"
   type        = string
   default     = ""
+}
+
+# Read Replica
+
+variable "enable_read_replica" {
+  description = "Create a read replica for read-heavy workloads"
+  type        = bool
+  default     = false
+}
+
+variable "read_replica_instance_class" {
+  description = "Instance class for read replica (defaults to same as primary)"
+  type        = string
+  default     = null
 }

@@ -110,9 +110,9 @@ resource "aws_lb" "main" {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Target Group for Gateway Service
-# Architecture: CloudFront → ALB → Gateway-Service (port 3001)
-#              Gateway internally routes to: auth(3005), ticket(3002), catalog(3009),
+# Target Group 1: Gateway Service (API 라우팅)
+# CloudFront /api/* → ALB → Gateway-Service (port 3001)
+# Gateway internally routes to: auth(3005), ticket(3002), catalog(3009),
 #              payment(3003), stats(3004), queue(3007), community(3008)
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -150,8 +150,40 @@ resource "aws_lb_target_group" "gateway_service" {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# HTTPS Listener (if certificate provided)
-# All traffic goes to gateway-service which handles internal routing
+# Target Group 2: Frontend (Next.js 페이지 서빙)
+# CloudFront /* (기본) → ALB → Frontend Pod (port 3000)
+# ─────────────────────────────────────────────────────────────────────────────
+
+resource "aws_lb_target_group" "frontend" {
+  name     = "${var.name_prefix}-frontend-tg"
+  port     = 3000
+  protocol = "HTTP"
+  vpc_id   = var.vpc_id
+
+  target_type = "ip"
+
+  health_check {
+    enabled             = true
+    path                = "/"
+    protocol            = "HTTP"
+    port                = "traffic-port"
+    healthy_threshold   = 2
+    unhealthy_threshold = 3
+    timeout             = 5
+    interval            = 30
+    matcher             = "200"
+  }
+
+  deregistration_delay = 30
+
+  tags = {
+    Name = "${var.name_prefix}-frontend-tg"
+  }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# HTTPS Listener
+# Default → Frontend (/*), Rule → Gateway (/api/*)
 # ─────────────────────────────────────────────────────────────────────────────
 
 resource "aws_lb_listener" "https" {
@@ -164,11 +196,29 @@ resource "aws_lb_listener" "https" {
 
   default_action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.gateway_service.arn
+    target_group_arn = aws_lb_target_group.frontend.arn
   }
 
   tags = {
     Name = "${var.name_prefix}-https-listener"
+  }
+}
+
+# Path-based rule: /api/* → Gateway Service
+resource "aws_lb_listener_rule" "api_to_gateway" {
+  count        = var.certificate_arn != "" ? 1 : 0
+  listener_arn = aws_lb_listener.https[0].arn
+  priority     = 100
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.gateway_service.arn
+  }
+
+  condition {
+    path_pattern {
+      values = ["/api/*"]
+    }
   }
 }
 
@@ -194,7 +244,7 @@ resource "aws_lb_listener" "http" {
       }
     }
 
-    target_group_arn = var.certificate_arn == "" ? aws_lb_target_group.gateway_service.arn : null
+    target_group_arn = var.certificate_arn == "" ? aws_lb_target_group.frontend.arn : null
   }
 
   tags = {

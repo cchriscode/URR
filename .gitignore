@@ -60,6 +60,10 @@ backend/dist/
 credentials.txt
 *.key
 
+# Terraform
+*.tfvars
+!*.tfvars.example
+
 # Gradle
 .gradle/
 **/build/

@@ -244,7 +244,7 @@ resource "aws_cloudfront_distribution" "main" {
 
 ```bash
 # Try to access ALB directly (should timeout or be rejected)
-curl -v https://tiketi-alb-123456.ap-northeast-2.elb.amazonaws.com
+curl -v https://urr-alb-123456.ap-northeast-2.elb.amazonaws.com
 
 # Expected: Connection timeout or 403 Forbidden
 ```
@@ -253,7 +253,7 @@ curl -v https://tiketi-alb-123456.ap-northeast-2.elb.amazonaws.com
 
 ```bash
 # Access via CloudFront (should work)
-curl -v https://tiketi.example.com
+curl -v https://urr.example.com
 
 # Expected: 200 OK
 ```
@@ -262,7 +262,7 @@ curl -v https://tiketi.example.com
 
 ```bash
 # Try ALB with correct header from different IP (should fail due to SG)
-curl -v https://tiketi-alb-123456.ap-northeast-2.elb.amazonaws.com \
+curl -v https://urr-alb-123456.ap-northeast-2.elb.amazonaws.com \
   -H "X-Custom-Header: <secret-value>"
 
 # Expected: Connection timeout (SG blocks non-CloudFront IPs)

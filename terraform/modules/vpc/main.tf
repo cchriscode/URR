@@ -118,6 +118,7 @@ resource "aws_subnet" "app" {
   tags = {
     Name                              = "${var.name_prefix}-app-${local.azs[count.index]}"
     "kubernetes.io/role/internal-elb" = "1"
+    "karpenter.sh/discovery"          = var.name_prefix
   }
 }
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-KIND_CLUSTER_NAME="tiketi-local"
+KIND_CLUSTER_NAME="urr-local"
 DELETE_CLUSTER=false
 
 for arg in "$@"; do
@@ -17,5 +17,5 @@ if $DELETE_CLUSTER; then
   exit 0
 fi
 
-kubectl delete namespace tiketi-spring --ignore-not-found=true
-echo "Deleted namespace 'tiketi-spring'."
+kubectl delete namespace urr-spring --ignore-not-found=true
+echo "Deleted namespace 'urr-spring'."

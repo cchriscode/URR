@@ -1,5 +1,5 @@
 {
-  "name": "tiketi-ticket-worker",
+  "name": "urr-ticket-worker",
   "version": "1.0.0",
   "description": "SQS FIFO consumer - processes ticket reservation messages",
   "main": "index.js",

@@ -24,7 +24,7 @@ function Assert-Endpoint {
     }
 }
 
-kubectl get pods -n tiketi-spring
+kubectl get pods -n urr-spring
 
 Assert-Endpoint -Url "http://localhost:3001/health" -ExpectedStatus 200
 Assert-Endpoint -Url "http://localhost:3001/api/auth/me" -ExpectedStatus 401

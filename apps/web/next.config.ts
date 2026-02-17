@@ -5,9 +5,11 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: path.resolve(__dirname),
   },
+  output: "standalone",
   images: {
     remotePatterns: [
-      { protocol: "https", hostname: "**" },
+      { protocol: "https", hostname: "*.amazonaws.com" },
+      { protocol: "https", hostname: "lh3.googleusercontent.com" },
     ],
   },
   // Security headers (CSP, X-Frame-Options, etc.) are set dynamically

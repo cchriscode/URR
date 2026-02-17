@@ -11,6 +11,10 @@ spec:
       app: stats-service
   template:
     metadata:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3004"
+        prometheus.io/path: "/actuator/prometheus"
       labels:
         app: stats-service
         tier: backend
@@ -36,17 +40,21 @@ spec:
               value: "3004"
             - name: SPRING_PROFILES_ACTIVE
               value: "prod"
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 3004
+            failureThreshold: 30
+            periodSeconds: 5
           readinessProbe:
             httpGet:
-              path: /health
+              path: /actuator/health/readiness
               port: 3004
-            initialDelaySeconds: 10
             periodSeconds: 10
           livenessProbe:
             httpGet:
-              path: /health
+              path: /actuator/health/liveness
               port: 3004
-            initialDelaySeconds: 20
             periodSeconds: 20
           resources:
             requests:

@@ -79,8 +79,8 @@ chmod +x ~/bin/kind
 cd /path/to/project
 chmod +x scripts/*.sh
 
-# Deploy everything to Kind (builds Docker images + deploys to k8s)
-./scripts/spring-kind-dev.sh
+# Deploy everything to Kind (single node - recommended for local dev)
+./scripts/spring-kind-dev.sh --single-node
 
 # Verify
 ./scripts/spring-kind-smoke.sh
@@ -90,18 +90,21 @@ chmod +x scripts/*.sh
 
 ```bash
 # 1. Create cluster + build images + deploy
-./scripts/spring-kind-up.sh
+./scripts/spring-kind-up.sh --single-node
 
 # 2. Build & reload images only (after code changes)
 ./scripts/spring-kind-build-load.sh
 
-# 3. Tear down namespace (keep cluster)
+# 3. Selective rebuild (changed services only)
+./scripts/spring-kind-build-load.sh --services auth-service,ticket-service
+
+# 4. Tear down namespace (keep cluster)
 ./scripts/spring-kind-down.sh
 
-# 4. Tear down and delete cluster
+# 5. Tear down and delete cluster
 ./scripts/spring-kind-down.sh --delete-cluster
 
-# 5. Set up kubectl port-forwards (for direct service access)
+# 6. Set up kubectl port-forwards (for direct service access)
 ./scripts/start-port-forwards.sh
 ```
 
@@ -125,14 +128,18 @@ chmod +x scripts/*.sh
 
 ## Script flags
 
-| Script | bash flags | PowerShell flags |
-|---|---|---|
-| `spring-kind-dev` | `--recreate-cluster`, `--skip-build` | `-RecreateCluster`, `-SkipBuild` |
-| `spring-kind-up` | `--recreate-cluster`, `--skip-build`, `--name=<cluster>` | `-RecreateCluster`, `-SkipBuild`, `-KindClusterName <name>` |
-| `spring-kind-build-load` | `--name=<cluster>` | `-KindClusterName <name>` |
-| `spring-kind-down` | `--delete-cluster`, `--name=<cluster>` | `-DeleteCluster`, `-KindClusterName <name>` |
-| `start-all` | `--build`, `--with-frontend` | `-Build`, `-WithFrontend` |
-| `cleanup` | `--force` | `-Force` |
+| Script | PowerShell | bash | 설명 |
+|---|---|---|---|
+| `spring-kind-dev` | `-RecreateCluster` | `--recreate-cluster` | 클러스터 재생성 |
+| | `-SkipBuild` | `--skip-build` | 빌드 건너뛰기 |
+| | `-SingleNode` | `--single-node` | 단일 노드 (이미지 로드 3배 빠름) |
+| | `-Services svc1,svc2` | `--services svc1,svc2` | 선택적 빌드 |
+| | `-Parallel N` | `--parallel N` | 동시 빌드 수 (기본 4) |
+| `spring-kind-up` | 위 옵션 모두 지원 | 위 옵션 모두 지원 | |
+| `spring-kind-build-load` | `-Services`, `-Parallel` | `--services`, `--parallel` | 빌드+로드만 |
+| `spring-kind-down` | `-DeleteCluster` | `--delete-cluster` | 정리 |
+| `start-all` | `-Build`, `-WithFrontend` | `--build`, `--with-frontend` | 로컬 개발 |
+| `cleanup` | `-Force` | `--force` | 전체 초기화 |
 
 ## Services
 

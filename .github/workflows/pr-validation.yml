@@ -1,0 +1,88 @@
+name: PR Validation
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  detect-changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      services: ${{ steps.filter.outputs.changes }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Detect changed paths
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            auth-service:
+              - 'services-spring/auth-service/**'
+            ticket-service:
+              - 'services-spring/ticket-service/**'
+            payment-service:
+              - 'services-spring/payment-service/**'
+            stats-service:
+              - 'services-spring/stats-service/**'
+            gateway-service:
+              - 'services-spring/gateway-service/**'
+            queue-service:
+              - 'services-spring/queue-service/**'
+            catalog-service:
+              - 'services-spring/catalog-service/**'
+            community-service:
+              - 'services-spring/community-service/**'
+            frontend:
+              - 'apps/web/**'
+
+  test-services:
+    name: Test ${{ matrix.service }}
+    needs: detect-changes
+    if: needs.detect-changes.outputs.services != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: ${{ fromJson(needs.detect-changes.outputs.services) }}
+      fail-fast: false
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Run tests
+        run: |
+          cd services-spring/${{ matrix.service }}
+          chmod +x gradlew
+          ./gradlew test
+
+  test-frontend:
+    name: Test Frontend
+    needs: detect-changes
+    if: needs.detect-changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install, lint, and build
+        working-directory: apps/web
+        run: |
+          npm ci
+          npm run lint --if-present
+          npm run build

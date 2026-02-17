@@ -175,25 +175,174 @@ spec:
       ports:
         - port: 3008
 ---
-# Backend egress: allow DNS + known destinations + infra (DB, Redis, Kafka)
+# Per-service egress policies (replaces blanket allow-backend-egress)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-backend-egress
+  name: auth-service-egress
 spec:
   podSelector:
     matchLabels:
-      tier: backend
+      app: auth-service
+  policyTypes:
+    - Egress
+  egress:
+    - to:  # DNS
+        - namespaceSelector: {}
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ticket-service-egress
+spec:
+  podSelector:
+    matchLabels:
+      app: ticket-service
+  policyTypes:
+    - Egress
+  egress:
+    - to:  # payment-service
+        - podSelector:
+            matchLabels:
+              app: payment-service
+    - to:  # Redis, Kafka, DB (in-cluster or external)
+        - podSelector:
+            matchLabels:
+              tier: data
+    - to:  # DNS
+        - namespaceSelector: {}
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: payment-service-egress
+spec:
+  podSelector:
+    matchLabels:
+      app: payment-service
   policyTypes:
     - Egress
   egress:
     - to:
-        - podSelector: {}
+        - podSelector:
+            matchLabels:
+              app: ticket-service
+    - to:
+        - podSelector:
+            matchLabels:
+              tier: data
     - to:
         - namespaceSelector: {}
-          podSelector:
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: queue-service-egress
+spec:
+  podSelector:
+    matchLabels:
+      app: queue-service
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
             matchLabels:
-              k8s-app: kube-dns
+              app: catalog-service
+    - to:
+        - podSelector:
+            matchLabels:
+              tier: data
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: stats-service-egress
+spec:
+  podSelector:
+    matchLabels:
+      app: stats-service
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              tier: data
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: catalog-service-egress
+spec:
+  podSelector:
+    matchLabels:
+      app: catalog-service
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: auth-service
+    - to:
+        - podSelector:
+            matchLabels:
+              tier: data
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: community-service-egress
+spec:
+  podSelector:
+    matchLabels:
+      app: community-service
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              tier: data
+    - to:
+        - namespaceSelector: {}
       ports:
         - port: 53
           protocol: UDP

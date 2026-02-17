@@ -10,6 +10,7 @@ resource "aws_security_group" "eks_nodes" {
   tags = {
     Name                                        = "${var.name_prefix}-eks-nodes-sg"
     "kubernetes.io/cluster/${var.name_prefix}" = "owned"
+    "karpenter.sh/discovery"                    = var.name_prefix
   }
 
   lifecycle {
@@ -109,17 +110,16 @@ resource "aws_eks_cluster" "main" {
 
   enabled_cluster_log_types = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
 
-  # Encryption at rest
-  encryption_config {
-    provider {
-      key_arn = var.kms_key_arn
+  # Encryption at rest (only when KMS key is provided)
+  dynamic "encryption_config" {
+    for_each = var.kms_key_arn != "" ? [1] : []
+    content {
+      provider {
+        key_arn = var.kms_key_arn
+      }
+      resources = ["secrets"]
     }
-    resources = ["secrets"]
   }
-
-  depends_on = [
-    var.eks_cluster_role_arn
-  ]
 
   tags = {
     Name = "${var.name_prefix}-eks-cluster"
@@ -183,10 +183,6 @@ resource "aws_eks_node_group" "main" {
     "kubernetes.io/cluster/${var.name_prefix}" = "owned"
   }
 
-  depends_on = [
-    var.eks_node_role_arn
-  ]
-
   lifecycle {
     ignore_changes = [scaling_config[0].desired_size]
   }
@@ -198,11 +194,12 @@ resource "aws_eks_node_group" "main" {
 
 # VPC CNI addon (for pod networking)
 resource "aws_eks_addon" "vpc_cni" {
-  cluster_name             = aws_eks_cluster.main.name
-  addon_name               = "vpc-cni"
-  addon_version            = var.vpc_cni_version
-  resolve_conflicts        = "OVERWRITE"
-  service_account_role_arn = aws_iam_role.vpc_cni.arn
+  cluster_name                = aws_eks_cluster.main.name
+  addon_name                  = "vpc-cni"
+  addon_version               = var.vpc_cni_version
+  most_recent                 = var.vpc_cni_version == null ? true : false
+  resolve_conflicts_on_update = "OVERWRITE"
+  service_account_role_arn    = aws_iam_role.vpc_cni.arn
 
   tags = {
     Name = "${var.name_prefix}-vpc-cni"
@@ -215,10 +212,11 @@ resource "aws_eks_addon" "vpc_cni" {
 
 # kube-proxy addon
 resource "aws_eks_addon" "kube_proxy" {
-  cluster_name      = aws_eks_cluster.main.name
-  addon_name        = "kube-proxy"
-  addon_version     = var.kube_proxy_version
-  resolve_conflicts = "OVERWRITE"
+  cluster_name                = aws_eks_cluster.main.name
+  addon_name                  = "kube-proxy"
+  addon_version               = var.kube_proxy_version
+  most_recent                 = var.kube_proxy_version == null ? true : false
+  resolve_conflicts_on_update = "OVERWRITE"
 
   tags = {
     Name = "${var.name_prefix}-kube-proxy"
@@ -227,10 +225,11 @@ resource "aws_eks_addon" "kube_proxy" {
 
 # CoreDNS addon
 resource "aws_eks_addon" "coredns" {
-  cluster_name      = aws_eks_cluster.main.name
-  addon_name        = "coredns"
-  addon_version     = var.coredns_version
-  resolve_conflicts = "OVERWRITE"
+  cluster_name                = aws_eks_cluster.main.name
+  addon_name                  = "coredns"
+  addon_version               = var.coredns_version
+  most_recent                 = var.coredns_version == null ? true : false
+  resolve_conflicts_on_update = "OVERWRITE"
 
   depends_on = [
     aws_eks_node_group.main
@@ -243,11 +242,12 @@ resource "aws_eks_addon" "coredns" {
 
 # EBS CSI Driver addon (for persistent volumes)
 resource "aws_eks_addon" "ebs_csi_driver" {
-  cluster_name             = aws_eks_cluster.main.name
-  addon_name               = "aws-ebs-csi-driver"
-  addon_version            = var.ebs_csi_driver_version
-  resolve_conflicts        = "OVERWRITE"
-  service_account_role_arn = aws_iam_role.ebs_csi.arn
+  cluster_name                = aws_eks_cluster.main.name
+  addon_name                  = "aws-ebs-csi-driver"
+  addon_version               = var.ebs_csi_driver_version
+  most_recent                 = var.ebs_csi_driver_version == null ? true : false
+  resolve_conflicts_on_update = "OVERWRITE"
+  service_account_role_arn    = aws_iam_role.ebs_csi.arn
 
   tags = {
     Name = "${var.name_prefix}-ebs-csi-driver"
@@ -342,6 +342,100 @@ resource "aws_iam_role" "ebs_csi" {
 resource "aws_iam_role_policy_attachment" "ebs_csi" {
   role       = aws_iam_role.ebs_csi.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# IRSA Role for Karpenter Controller
+# ─────────────────────────────────────────────────────────────────────────────
+
+data "aws_iam_policy_document" "karpenter_assume_role" {
+  statement {
+    effect = "Allow"
+
+    principals {
+      type        = "Federated"
+      identifiers = [aws_iam_openid_connect_provider.cluster.arn]
+    }
+
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "${replace(aws_iam_openid_connect_provider.cluster.url, "https://", "")}:sub"
+      values   = ["system:serviceaccount:kube-system:karpenter"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "${replace(aws_iam_openid_connect_provider.cluster.url, "https://", "")}:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "karpenter" {
+  name               = "${var.name_prefix}-karpenter-controller"
+  assume_role_policy = data.aws_iam_policy_document.karpenter_assume_role.json
+
+  tags = {
+    Name = "${var.name_prefix}-karpenter-controller"
+  }
+}
+
+resource "aws_iam_role_policy" "karpenter" {
+  name = "${var.name_prefix}-karpenter-policy"
+  role = aws_iam_role.karpenter.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "KarpenterEC2"
+        Effect = "Allow"
+        Action = [
+          "ec2:CreateFleet",
+          "ec2:CreateLaunchTemplate",
+          "ec2:CreateTags",
+          "ec2:DeleteLaunchTemplate",
+          "ec2:DescribeAvailabilityZones",
+          "ec2:DescribeImages",
+          "ec2:DescribeInstances",
+          "ec2:DescribeInstanceTypeOfferings",
+          "ec2:DescribeInstanceTypes",
+          "ec2:DescribeLaunchTemplates",
+          "ec2:DescribeSecurityGroups",
+          "ec2:DescribeSubnets",
+          "ec2:RunInstances",
+          "pricing:GetProducts",
+          "ssm:GetParameter"
+        ]
+        Resource = "*"
+      },
+      {
+        Sid      = "KarpenterPassRole"
+        Effect   = "Allow"
+        Action   = "iam:PassRole"
+        Resource = var.eks_node_role_arn
+      },
+      {
+        Sid      = "ConditionalEC2Termination"
+        Effect   = "Allow"
+        Action   = "ec2:TerminateInstances"
+        Resource = "*"
+        Condition = {
+          StringLike = {
+            "ec2:ResourceTag/karpenter.sh/nodepool" = "*"
+          }
+        }
+      },
+      {
+        Sid    = "EKSClusterAccess"
+        Effect = "Allow"
+        Action = ["eks:DescribeCluster"]
+        Resource = aws_eks_cluster.main.arn
+      }
+    ]
+  })
 }
 
 # ─────────────────────────────────────────────────────────────────────────────

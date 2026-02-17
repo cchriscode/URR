@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-alerting-config
+  namespace: urr-spring
+data:
+  alerting.yaml: |
+    apiVersion: 1
+    contactPoints:
+      - orgId: 1
+        name: discord-alerts
+        receivers:
+          - uid: discord
+            type: discord
+            settings:
+              url: ${DISCORD_WEBHOOK_URL}
+              message: |
+                {{ range .Alerts }}
+                  **{{ .Labels.alertname }}** - {{ .Status }}
+                  {{ .Annotations.summary }}
+                {{ end }}
+    policies:
+      - orgId: 1
+        receiver: discord-alerts
+        group_by: ['alertname']
+        group_wait: 30s
+        group_interval: 5m
+        repeat_interval: 4h

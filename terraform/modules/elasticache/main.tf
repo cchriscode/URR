@@ -111,14 +111,13 @@ resource "aws_elasticache_replication_group" "main" {
   # Security
   at_rest_encryption_enabled = true
   transit_encryption_enabled = true
-  auth_token_enabled         = var.auth_token_enabled
   auth_token                 = var.auth_token_enabled ? var.auth_token : null
 
   # Maintenance & Backup
   maintenance_window       = "sun:05:00-sun:07:00"  # UTC
   snapshot_window          = "03:00-05:00"  # UTC
   snapshot_retention_limit = var.snapshot_retention_limit
-  final_snapshot_identifier = var.skip_final_snapshot ? null : "${var.name_prefix}-final-snapshot-${formatdate("YYYY-MM-DD-hhmm", timestamp())}"
+  final_snapshot_identifier = var.skip_final_snapshot ? null : "${var.name_prefix}-redis-final-snapshot"
 
   # Logging
   log_delivery_configuration {

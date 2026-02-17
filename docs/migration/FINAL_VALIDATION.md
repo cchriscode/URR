@@ -30,7 +30,7 @@ Expanded API checks include:
 
 ## Extra prerequisite for expanded API checks
 
-- `kubectl` access to kind namespace `tiketi-spring`
+- `kubectl` access to kind namespace `urr-spring`
 - `postgres-spring` pod reachable (script uses SQL fixture inserts for admin role + seat fixture)
 
 ## Optional flags

@@ -1,5 +1,5 @@
--- KEYS[1] = queue:seen:{eventId}   (heartbeat ZSET)
--- KEYS[2] = queue:{eventId}        (queue ZSET)
+-- KEYS[1] = {eventId}:seen          (heartbeat ZSET)
+-- KEYS[2] = {eventId}:queue         (queue ZSET)
 -- ARGV[1] = cutoffTimestamp         (stale threshold ms)
 -- ARGV[2] = batchSize               (max to clean per batch)
 

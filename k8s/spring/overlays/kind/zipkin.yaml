@@ -17,6 +17,14 @@ spec:
           image: openzipkin/zipkin:3
           ports:
             - containerPort: 9411
+          env:
+            - name: STORAGE_TYPE
+              value: "mem"  # Kind only. Production: "elasticsearch"
+            # Production Elasticsearch config:
+            # - name: ES_HOSTS
+            #   value: "http://elasticsearch:9200"
+            # - name: ES_INDEX
+            #   value: "zipkin"
           resources:
             requests:
               memory: "256Mi"

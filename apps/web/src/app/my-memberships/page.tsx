@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useEffect, useState } from "react";
 import { AuthGuard } from "@/components/auth-guard";
 import { membershipsApi } from "@/lib/api-client";
@@ -60,7 +61,7 @@ export default function MyMembershipsPage() {
                     {/* Artist image or initial */}
                     <div className="h-12 w-12 shrink-0 rounded-full bg-slate-100 flex items-center justify-center overflow-hidden">
                       {m.artist_image_url ? (
-                        <img src={m.artist_image_url} alt="" className="h-full w-full object-cover" />
+                        <Image src={m.artist_image_url} alt="" width={48} height={48} className="h-full w-full object-cover" />
                       ) : (
                         <span className="text-lg font-bold text-slate-300">
                           {(m.artist_name ?? "?").charAt(0)}

@@ -1,0 +1,39 @@
+name: Gateway Service CI/CD
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'services-spring/gateway-service/**'
+      - '.github/workflows/gateway-service-ci-cd.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - prod
+
+jobs:
+  prod-approval:
+    name: Production Approval
+    if: github.event.inputs.environment == 'prod'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Approved
+        run: echo "Production deployment approved for gateway-service"
+
+  ci-cd:
+    needs: [prod-approval]
+    if: always() && (needs.prod-approval.result == 'success' || needs.prod-approval.result == 'skipped')
+    uses: ./.github/workflows/reusable-spring-ci-cd.yml
+    with:
+      service-name: gateway-service
+      ecr-repository: urr/gateway
+      service-path: services-spring/gateway-service
+      environment: ${{ github.event.inputs.environment || 'staging' }}
+    secrets: inherit

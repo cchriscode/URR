@@ -9,10 +9,10 @@ terraform {
   }
 
   backend "s3" {
-    bucket         = "tiketi-terraform-state-prod"
+    bucket         = "urr-terraform-state-prod"
     key            = "prod/terraform.tfstate"
     region         = "ap-northeast-2"
-    dynamodb_table = "tiketi-terraform-locks"
+    dynamodb_table = "urr-terraform-locks"
     encrypt        = true
   }
 }
@@ -22,7 +22,7 @@ provider "aws" {
 
   default_tags {
     tags = {
-      Project     = "Tiketi"
+      Project     = "URR"
       Environment = var.environment
       ManagedBy   = "Terraform"
     }
@@ -36,7 +36,7 @@ provider "aws" {
 
   default_tags {
     tags = {
-      Project     = "Tiketi"
+      Project     = "URR"
       Environment = var.environment
       ManagedBy   = "Terraform"
     }
@@ -75,7 +75,7 @@ module "secrets" {
   source = "../../modules/secrets"
 
   name_prefix  = var.name_prefix
-  rds_username = "tiketi_admin"
+  rds_username = "urr_admin"
   rds_endpoint = module.rds.db_instance_address
 }
 
@@ -130,11 +130,12 @@ module "rds" {
   vpc_id                      = module.vpc.vpc_id
   db_subnet_ids               = module.vpc.db_subnet_ids
   app_subnet_ids              = module.vpc.app_subnet_ids
-  eks_node_security_group_id  = module.eks.node_security_group_id
-  master_password             = module.secrets.rds_password
-  db_credentials_secret_arn   = module.secrets.rds_credentials_secret_arn
-  rds_proxy_role_arn          = module.iam.rds_proxy_role_arn
-  monitoring_role_arn         = module.iam.rds_monitoring_role_arn
+  eks_node_security_group_id      = module.eks.node_security_group_id
+  lambda_worker_security_group_id = module.lambda_worker.security_group_id
+  master_password                 = module.secrets.rds_password
+  db_credentials_secret_arn       = module.secrets.rds_credentials_secret_arn
+  rds_proxy_role_arn              = module.iam.rds_proxy_role_arn
+  monitoring_role_arn             = module.iam.rds_monitoring_role_arn
 
   engine_version       = var.rds_engine_version
   instance_class       = var.rds_instance_class
@@ -142,6 +143,7 @@ module "rds" {
   multi_az             = true
   enable_rds_proxy     = true
   deletion_protection  = true
+  enable_read_replica  = true
 }
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -157,6 +159,7 @@ module "elasticache" {
   eks_node_security_group_id = module.eks.node_security_group_id
   preferred_azs              = module.vpc.availability_zones
 
+  node_type          = var.elasticache_node_type
   auth_token_enabled = true
   auth_token         = module.secrets.redis_auth_token
   num_cache_clusters = 2
@@ -258,10 +261,63 @@ module "cloudfront" {
   s3_bucket_name                 = module.s3.frontend_bucket_name
   s3_bucket_regional_domain_name = module.s3.frontend_bucket_regional_domain_name
   cors_allowed_origins           = var.cors_allowed_origins
+  web_acl_arn                    = module.waf.web_acl_arn
+
+  # VWR Tier 1
+  vwr_token_secret       = module.secrets.queue_entry_token_secret_value
+  vwr_api_gateway_domain = replace(module.api_gateway_vwr.api_gateway_invoke_url, "/https?:\\/\\/([^/]+).*/", "$1")
+  vwr_api_gateway_stage  = module.api_gateway_vwr.api_gateway_stage_name
 }
 
 # ═════════════════════════════════════════════════════════════════════════════
-# 13. Lambda Worker - SQS Consumer (depends on: VPC, RDS, ElastiCache, SQS, IAM)
+# 13. DynamoDB - VWR Tier 1 Tables (no dependencies)
+# ═════════════════════════════════════════════════════════════════════════════
+
+module "dynamodb_vwr" {
+  source = "../../modules/dynamodb-vwr"
+
+  name_prefix                   = var.name_prefix
+  enable_point_in_time_recovery = true
+}
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 14. VWR API Gateway + Lambda (depends on: DynamoDB VWR, Secrets)
+# ═════════════════════════════════════════════════════════════════════════════
+
+module "api_gateway_vwr" {
+  source = "../../modules/api-gateway-vwr"
+
+  name_prefix            = var.name_prefix
+  lambda_invoke_arn      = module.lambda_vwr.vwr_api_invoke_arn
+  cors_origin            = var.cors_allowed_origins[0]
+  throttling_burst_limit = 10000
+  throttling_rate_limit  = 5000
+}
+
+module "lambda_vwr" {
+  source = "../../modules/lambda-vwr"
+
+  name_prefix                    = var.name_prefix
+  lambda_source_dir              = "${path.root}/../../lambda/vwr-api"
+  counter_advancer_source_dir    = "${path.root}/../../lambda/vwr-counter-advancer"
+  reserved_concurrent_executions = 100
+  counter_advance_batch_size     = 500
+
+  dynamodb_counters_table_name = module.dynamodb_vwr.counters_table_name
+  dynamodb_positions_table_name = module.dynamodb_vwr.positions_table_name
+  dynamodb_table_arns = [
+    module.dynamodb_vwr.counters_table_arn,
+    module.dynamodb_vwr.positions_table_arn,
+    module.dynamodb_vwr.positions_table_gsi_arn,
+  ]
+
+  vwr_token_secret          = module.secrets.queue_entry_token_secret_value
+  cors_origin               = var.cors_allowed_origins[0]
+  api_gateway_execution_arn = module.api_gateway_vwr.api_gateway_execution_arn
+}
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 15. Lambda Worker - SQS Consumer (depends on: VPC, RDS, ElastiCache, SQS, IAM)
 # ═════════════════════════════════════════════════════════════════════════════
 
 module "lambda_worker" {
@@ -288,7 +344,7 @@ module "lambda_worker" {
   environment       = var.environment
 
   additional_env_vars = {
-    TICKET_SERVICE_URL      = "http://ticket-service.tiketi-spring.svc.cluster.local:3002"
+    TICKET_SERVICE_URL      = "http://ticket-service.urr-spring.svc.cluster.local:3002"
     INTERNAL_API_TOKEN      = var.internal_api_token
     KAFKA_BOOTSTRAP_SERVERS = module.msk.bootstrap_brokers_tls
   }
@@ -303,4 +359,57 @@ module "lambda_worker" {
   enable_xray_tracing      = true
   enable_cloudwatch_alarms = true
   sns_topic_arn            = var.sns_topic_arn
+}
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 16. Monitoring - AMP + AMG (depends on: EKS for OIDC)
+# ═════════════════════════════════════════════════════════════════════════════
+
+module "monitoring" {
+  source = "../../modules/monitoring"
+
+  name_prefix       = var.name_prefix
+  oidc_provider_arn = module.eks.oidc_provider_arn
+  oidc_provider_url = replace(module.eks.cluster_oidc_issuer_url, "https://", "")
+}
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 17. WAF (CLOUDFRONT scope, us-east-1) (no dependencies)
+# ═════════════════════════════════════════════════════════════════════════════
+
+module "waf" {
+  source = "../../modules/waf"
+
+  providers = {
+    aws.us_east_1 = aws.us_east_1
+  }
+
+  name_prefix = var.name_prefix
+  rate_limit  = var.waf_rate_limit
+}
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 18. Route53 (depends on: CloudFront)
+# ═════════════════════════════════════════════════════════════════════════════
+
+module "route53" {
+  source = "../../modules/route53"
+
+  name_prefix               = var.name_prefix
+  domain_name               = var.domain_name
+  create_hosted_zone        = var.create_hosted_zone
+  hosted_zone_id            = var.hosted_zone_id
+  cloudfront_domain_name    = module.cloudfront.distribution_domain_name
+  cloudfront_hosted_zone_id = module.cloudfront.distribution_hosted_zone_id
+}
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 19. ECR Repositories (no dependencies)
+# ═════════════════════════════════════════════════════════════════════════════
+
+module "ecr" {
+  source = "../../modules/ecr"
+
+  name_prefix     = "urr"
+  max_image_count = 30
 }

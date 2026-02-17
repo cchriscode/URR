@@ -9,5 +9,5 @@ spec:
         - name: frontend
           imagePullPolicy: IfNotPresent
           env:
-            - name: NEXT_PUBLIC_API_URL
+            - name: INTERNAL_API_URL
               value: "http://gateway-service:3001"

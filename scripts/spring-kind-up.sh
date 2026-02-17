@@ -9,7 +9,7 @@ GREEN='\033[0;32m'
 CYAN='\033[0;36m'
 RESET='\033[0m'
 
-KIND_CLUSTER_NAME="tiketi-local"
+KIND_CLUSTER_NAME="urr-local"
 RECREATE_CLUSTER=false
 SKIP_BUILD=false
 
@@ -62,7 +62,7 @@ kubectl apply -k "$REPO_ROOT/k8s/spring/overlays/kind"
 
 # ── Wait for rollouts ─────────────────────────────────────────────
 
-NAMESPACE="tiketi-spring"
+NAMESPACE="urr-spring"
 DEPLOYMENTS=(
   postgres-spring
   dragonfly-spring

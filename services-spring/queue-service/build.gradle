@@ -4,9 +4,9 @@ plugins {
 	id 'io.spring.dependency-management' version '1.1.7'
 }
 
-group = 'com.tiketi'
+group = 'com.urr'
 version = '0.1.0'
-description = 'Tiketi Queue Service'
+description = 'URR Queue Service'
 
 java {
 	toolchain {
@@ -26,6 +26,7 @@ dependencies {
 	implementation 'io.github.resilience4j:resilience4j-spring-boot3:2.2.0'
 	implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
 	implementation 'software.amazon.awssdk:sqs:2.29.0'
+	implementation 'software.amazon.awssdk:dynamodb:2.29.0'
 	implementation 'software.amazon.awssdk:sts:2.29.0'
 	implementation 'io.micrometer:micrometer-registry-prometheus'
 	implementation 'io.micrometer:micrometer-tracing-bridge-brave'
@@ -34,6 +35,8 @@ dependencies {
 	runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.6'
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testImplementation 'org.mockito:mockito-core'
+	testImplementation 'org.testcontainers:testcontainers'
+	testImplementation 'org.testcontainers:junit-jupiter'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 

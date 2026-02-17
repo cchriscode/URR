@@ -65,23 +65,26 @@ data "aws_iam_policy_document" "queue_policy" {
   }
 
   # Allow Lambda worker to receive and delete messages
-  statement {
-    sid    = "AllowLambdaWorkerReceiveMessage"
-    effect = "Allow"
+  dynamic "statement" {
+    for_each = var.lambda_worker_role_arn != "" ? [1] : []
+    content {
+      sid    = "AllowLambdaWorkerReceiveMessage"
+      effect = "Allow"
 
-    principals {
-      type        = "AWS"
-      identifiers = var.lambda_worker_role_arn != "" ? [var.lambda_worker_role_arn] : []
+      principals {
+        type        = "AWS"
+        identifiers = [var.lambda_worker_role_arn]
+      }
+
+      actions = [
+        "sqs:ReceiveMessage",
+        "sqs:DeleteMessage",
+        "sqs:GetQueueAttributes",
+        "sqs:ChangeMessageVisibility"
+      ]
+
+      resources = [aws_sqs_queue.ticket_events.arn]
     }
-
-    actions = [
-      "sqs:ReceiveMessage",
-      "sqs:DeleteMessage",
-      "sqs:GetQueueAttributes",
-      "sqs:ChangeMessageVisibility"
-    ]
-
-    resources = [aws_sqs_queue.ticket_events.arn]
   }
 }
 

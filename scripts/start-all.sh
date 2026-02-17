@@ -23,7 +23,7 @@ done
 
 echo ""
 echo -e "${CYAN}================================================${RESET}"
-echo -e "${CYAN}   TIKETI Spring - Start All Services${RESET}"
+echo -e "${CYAN}   URR Spring - Start All Services${RESET}"
 echo -e "${CYAN}================================================${RESET}"
 echo ""
 
@@ -112,8 +112,8 @@ for entry in "${SERVICES[@]}"; do
   fi
 
   echo -e "${GRAY}  Starting $SVC_NAME (port $SVC_PORT) ...${RESET}"
-  "$GRADLEW" -p "$SVC_PATH" bootRun >/tmp/tiketi-"$SVC_NAME".log 2>&1 &
-  echo $! > "$PID_DIR/tiketi-$SVC_NAME.pid"
+  "$GRADLEW" -p "$SVC_PATH" bootRun >/tmp/urr-"$SVC_NAME".log 2>&1 &
+  echo $! > "$PID_DIR/urr-$SVC_NAME.pid"
 done
 
 # Wait for services to be ready
@@ -154,8 +154,8 @@ if $WITH_FRONTEND; then
   fi
 
   NEXT_PUBLIC_API_URL="http://localhost:3001" \
-    npm --prefix "$WEB_PATH" run dev >/tmp/tiketi-frontend.log 2>&1 &
-  echo $! > "$PID_DIR/tiketi-frontend.pid"
+    npm --prefix "$WEB_PATH" run dev >/tmp/urr-frontend.log 2>&1 &
+  echo $! > "$PID_DIR/urr-frontend.pid"
   echo -e "${GREEN}  OK: Frontend dev server starting (port 3000)${RESET}"
 else
   echo ""

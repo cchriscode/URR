@@ -15,13 +15,13 @@ spring:
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
       properties:
-        spring.json.trusted.packages: "com.tiketi.paymentservice.messaging.event,com.tiketi.ticketservice.messaging.event,java.util,java.lang"
+        spring.json.trusted.packages: "com.urr.paymentservice.messaging.event,com.urr.ticketservice.messaging.event,java.util,java.lang"
         spring.json.use.type.headers: false
         spring.json.value.default.type: java.util.LinkedHashMap
   datasource:
     url: ${TICKET_DB_URL:jdbc:postgresql://localhost:5434/ticket_db}
-    username: ${TICKET_DB_USERNAME:tiketi_user}
-    password: ${TICKET_DB_PASSWORD:tiketi_password}
+    username: ${TICKET_DB_USERNAME:urr_user}
+    password: ${TICKET_DB_PASSWORD:urr_password}
   jpa:
     hibernate:
       ddl-auto: validate
@@ -44,10 +44,16 @@ management:
     health:
       show-details: always
       show-components: always
+      probes:
+        enabled: true
   health:
     db:
       enabled: true
     redis:
+      enabled: true
+    livenessstate:
+      enabled: true
+    readinessstate:
       enabled: true
   endpoints:
     web:
@@ -103,3 +109,16 @@ resilience4j:
         retry-exceptions:
           - org.springframework.web.client.ResourceAccessException
           - java.net.ConnectException
+
+---
+spring:
+  config:
+    activate:
+      on-profile: prod
+  data:
+    redis:
+      cluster:
+        nodes: ${REDIS_CLUSTER_NODES:}
+      password: ${REDIS_PASSWORD:}
+      ssl:
+        enabled: true

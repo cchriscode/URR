@@ -7,9 +7,11 @@ ARG NEXT_PUBLIC_API_URL=http://localhost:3001
 
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 
+# Layer 1: Dependencies (cached when package.json unchanged)
 COPY package*.json ./
 RUN npm ci
 
+# Layer 2: Source build
 COPY . .
 RUN npm run build
 
@@ -20,15 +22,16 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
-COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/node_modules ./node_modules
+RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
 
-RUN addgroup --system --gid 1001 app && adduser --system --uid 1001 --ingroup app app
-RUN chown -R app:app /app
-USER app
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+
+USER nextjs
 
 EXPOSE 3000
+ENV PORT=3000
+ENV HOSTNAME="0.0.0.0"
 
-CMD ["npm", "run", "start"]
+CMD ["node", "server.js"]

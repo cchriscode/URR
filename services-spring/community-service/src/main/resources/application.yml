@@ -3,8 +3,8 @@ spring:
     name: community-service
   datasource:
     url: ${COMMUNITY_DB_URL:jdbc:postgresql://localhost:5437/community_db}
-    username: ${COMMUNITY_DB_USERNAME:tiketi_user}
-    password: ${COMMUNITY_DB_PASSWORD:tiketi_password}
+    username: ${COMMUNITY_DB_USERNAME:urr_user}
+    password: ${COMMUNITY_DB_PASSWORD:urr_password}
   flyway:
     enabled: true
     baseline-on-migrate: true
@@ -19,8 +19,14 @@ management:
     health:
       show-details: always
       show-components: always
+      probes:
+        enabled: true
   health:
     db:
+      enabled: true
+    livenessstate:
+      enabled: true
+    readinessstate:
       enabled: true
   endpoints:
     web:

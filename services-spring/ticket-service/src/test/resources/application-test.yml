@@ -1,6 +1,8 @@
 spring:
   autoconfigure:
-    exclude: org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration
+    exclude:
+      - org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
   datasource:
     url: jdbc:h2:mem:testdb;MODE=PostgreSQL;DB_CLOSE_DELAY=-1
     driver-class-name: org.h2.Driver
@@ -8,13 +10,13 @@ spring:
     password:
   jpa:
     hibernate:
-      ddl-auto: create-drop
+      ddl-auto: none
   flyway:
     enabled: false
-  data:
-    redis:
-      host: localhost
-      port: 6379
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
 
 JWT_SECRET: test-jwt-secret-for-unit-tests-minimum-32-chars
 INTERNAL_API_TOKEN: test-internal-token

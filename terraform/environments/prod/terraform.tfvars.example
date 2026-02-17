@@ -1,0 +1,42 @@
+# General
+# aws_region          = "ap-northeast-2"
+# environment         = "prod"
+# name_prefix         = "urr-prod"
+
+# VPC
+# vpc_cidr            = "10.0.0.0/16"
+
+# EKS
+# eks_cluster_version                      = "1.31"
+# eks_cluster_endpoint_public_access       = true
+# eks_cluster_endpoint_public_access_cidrs = ["0.0.0.0/0"]
+# kms_key_arn                              = null
+# eks_node_desired_size                    = 3
+# eks_node_min_size                        = 2
+# eks_node_max_size                        = 5
+# eks_node_instance_types                  = ["t3.medium"]
+# eks_node_capacity_type                   = "ON_DEMAND"
+
+# RDS
+# rds_engine_version    = "16.4"
+# rds_instance_class    = "db.t3.medium"
+# rds_allocated_storage = 50
+
+# MSK (Kafka)
+# msk_broker_instance_type   = "kafka.t3.small"
+# msk_broker_ebs_volume_size = 50
+
+# ElastiCache
+# elasticache_node_type = "cache.r6g.large"
+
+# Domain & TLS
+# domain_aliases       = []
+# certificate_arn      = ""
+# cors_allowed_origins = []
+
+# Secrets (required, no defaults)
+# cloudfront_custom_header_value = ""
+# internal_api_token             = ""
+
+# Monitoring
+# sns_topic_arn = ""

@@ -1,8 +1,11 @@
 "use client";
 
-import Link from "next/link";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { useCountdown, formatCountdown } from "@/hooks/use-countdown";
 import { formatEventDate } from "@/lib/format";
+import VwrModal from "@/components/vwr-modal";
 import type { EventDetail, TicketType } from "@/lib/types";
 
 function statusBadge(status?: string) {
@@ -23,6 +26,8 @@ function statusBadge(status?: string) {
 }
 
 export default function EventDetailClient({ event }: { event: EventDetail }) {
+  const router = useRouter();
+  const [vwrOpen, setVwrOpen] = useState(false);
   const badge = statusBadge(event.status);
   const poster = event.poster_image_url ?? event.posterImageUrl;
   const artist = event.artist_name ?? event.artistName;
@@ -50,8 +55,8 @@ export default function EventDetailClient({ event }: { event: EventDetail }) {
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       {poster && (
-        <div className="rounded-2xl overflow-hidden border border-slate-200 bg-slate-100 h-64 flex items-center justify-center">
-          <img src={poster} alt={event.title} className="h-full w-full object-cover" />
+        <div className="relative rounded-2xl overflow-hidden border border-slate-200 bg-slate-100 h-64 flex items-center justify-center">
+          <Image src={poster} alt={event.title} className="object-cover" fill sizes="(max-width: 672px) 100vw, 672px" />
         </div>
       )}
 
@@ -134,12 +139,23 @@ export default function EventDetailClient({ event }: { event: EventDetail }) {
       )}
 
       {canBook && event.id && (
-        <Link
-          href={`/queue/${event.id}`}
-          className="block w-full rounded-xl bg-sky-500 px-6 py-3.5 text-center font-medium text-white hover:bg-sky-600 transition-colors"
-        >
-          {seatLayoutId ? "좌석 선택 예매하기" : "바로 예매하기"}
-        </Link>
+        <>
+          <button
+            onClick={() => setVwrOpen(true)}
+            className="block w-full rounded-xl bg-sky-500 px-6 py-3.5 text-center font-medium text-white hover:bg-sky-600 transition-colors"
+          >
+            {seatLayoutId ? "좌석 선택 예매하기" : "바로 예매하기"}
+          </button>
+          <VwrModal
+            eventId={event.id}
+            open={vwrOpen}
+            onClose={() => setVwrOpen(false)}
+            onAdmitted={() => {
+              setVwrOpen(false);
+              router.push(`/queue/${event.id}`);
+            }}
+          />
+        </>
       )}
       {event.status === "upcoming" && !timeLeft.isExpired && (
         <div className="rounded-xl bg-amber-50 border border-amber-200 px-6 py-3.5 text-center text-sm text-amber-700">

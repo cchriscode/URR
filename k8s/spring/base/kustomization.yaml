@@ -1,6 +1,6 @@
 ﻿apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-namespace: tiketi-dev
+namespace: urr-dev
 resources:
   - gateway-service/deployment.yaml
   - gateway-service/service.yaml
@@ -21,3 +21,4 @@ resources:
   - frontend/deployment.yaml
   - frontend/service.yaml
   - network-policies.yaml
+  - catalog-service-pdb.yaml

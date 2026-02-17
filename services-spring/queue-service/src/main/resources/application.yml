@@ -16,8 +16,14 @@ management:
     health:
       show-details: always
       show-components: always
+      probes:
+        enabled: true
   health:
     redis:
+      enabled: true
+    livenessstate:
+      enabled: true
+    readinessstate:
       enabled: true
   endpoints:
     web:
@@ -54,6 +60,12 @@ aws:
     queue-url: ${SQS_QUEUE_URL:}
     enabled: ${SQS_ENABLED:false}
   region: ${AWS_REGION:ap-northeast-2}
+
+vwr:
+  dynamodb:
+    enabled: ${VWR_DYNAMODB_ENABLED:false}
+    counters-table: ${VWR_DYNAMODB_COUNTERS_TABLE:}
+    endpoint: ${VWR_DYNAMODB_ENDPOINT:}
 
 resilience4j:
   circuitbreaker:

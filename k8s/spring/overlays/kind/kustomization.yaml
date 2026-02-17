@@ -1,6 +1,6 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-namespace: tiketi-spring
+namespace: urr-spring
 
 resources:
   - namespace.yaml
@@ -13,6 +13,7 @@ resources:
   - loki.yaml
   - promtail.yaml
   - grafana.yaml
+  - grafana-alerting.yaml
   - grafana-dashboards.yaml
   - prometheus.yaml
 
@@ -44,29 +45,29 @@ patches:
 
 images:
   - name: YOUR_ECR_URI/gateway-service
-    newName: tiketi-spring-gateway-service
+    newName: urr-spring-gateway-service
     newTag: local
   - name: YOUR_ECR_URI/auth-service
-    newName: tiketi-spring-auth-service
+    newName: urr-spring-auth-service
     newTag: local
   - name: YOUR_ECR_URI/ticket-service
-    newName: tiketi-spring-ticket-service
+    newName: urr-spring-ticket-service
     newTag: local
   - name: YOUR_ECR_URI/payment-service
-    newName: tiketi-spring-payment-service
+    newName: urr-spring-payment-service
     newTag: local
   - name: YOUR_ECR_URI/stats-service
-    newName: tiketi-spring-stats-service
+    newName: urr-spring-stats-service
     newTag: local
   - name: YOUR_ECR_URI/queue-service
-    newName: tiketi-spring-queue-service
+    newName: urr-spring-queue-service
     newTag: local
   - name: YOUR_ECR_URI/catalog-service
-    newName: tiketi-spring-catalog-service
+    newName: urr-spring-catalog-service
     newTag: local
   - name: YOUR_ECR_URI/community-service
-    newName: tiketi-spring-community-service
+    newName: urr-spring-community-service
     newTag: local
   - name: YOUR_ECR_URI/frontend
-    newName: tiketi-spring-frontend
+    newName: urr-spring-frontend
     newTag: local

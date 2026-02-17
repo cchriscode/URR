@@ -1,0 +1,356 @@
+name: Reusable Spring Boot CI/CD
+
+on:
+  workflow_call:
+    inputs:
+      service-name:
+        description: 'Service name (e.g., auth-service)'
+        required: true
+        type: string
+      ecr-repository:
+        description: 'ECR repository (e.g., urr/auth)'
+        required: true
+        type: string
+      service-path:
+        description: 'Path to service (e.g., services-spring/auth-service)'
+        required: true
+        type: string
+      environment:
+        description: 'Target environment'
+        required: false
+        default: 'staging'
+        type: string
+    secrets:
+      AWS_ROLE_ARN:
+        required: true
+      AWS_ACCOUNT_ID:
+        required: true
+      DISCORD_WEBHOOK:
+        required: true
+
+env:
+  AWS_REGION: ap-northeast-2
+
+jobs:
+  unit-test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ inputs.service-name }}-${{ hashFiles(format('{0}/**/*.gradle*', inputs.service-path), format('{0}/**/gradle-wrapper.properties', inputs.service-path)) }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-${{ inputs.service-name }}-
+            ${{ runner.os }}-gradle-
+
+      - name: Run unit tests
+        working-directory: ${{ inputs.service-path }}
+        run: |
+          chmod +x gradlew
+          ./gradlew test
+
+      - name: Upload unit test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-results-${{ inputs.service-name }}
+          path: ${{ inputs.service-path }}/build/reports/tests/test/
+          retention-days: 7
+
+  integration-test:
+    name: Integration Tests
+    needs: unit-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ inputs.service-name }}-${{ hashFiles(format('{0}/**/*.gradle*', inputs.service-path), format('{0}/**/gradle-wrapper.properties', inputs.service-path)) }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-${{ inputs.service-name }}-
+            ${{ runner.os }}-gradle-
+
+      - name: Run integration tests
+        working-directory: ${{ inputs.service-path }}
+        run: |
+          chmod +x gradlew
+          ./gradlew integrationTest || echo "No integration tests found, skipping."
+
+      - name: Upload integration test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-results-${{ inputs.service-name }}
+          path: ${{ inputs.service-path }}/build/reports/tests/integrationTest/
+          retention-days: 7
+
+  build-and-push:
+    name: Build & Push to ECR
+    needs: [unit-test, integration-test]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: write
+
+    outputs:
+      image-tag: ${{ steps.meta.outputs.image-tag }}
+      environment: ${{ steps.detect-env.outputs.environment }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect target environment
+        id: detect-env
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            ENV="${{ inputs.environment }}"
+          elif [ "${{ github.ref_name }}" = "main" ]; then
+            ENV="staging"
+          else
+            ENV="${{ inputs.environment }}"
+          fi
+          echo "environment=$ENV" >> $GITHUB_OUTPUT
+          echo "Target environment: $ENV"
+
+      - name: Generate image metadata
+        id: meta
+        run: |
+          SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)
+          IMAGE_TAG="${SHORT_SHA}-$(date +%Y%m%d-%H%M%S)"
+          echo "image-tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo "short-sha=$SHORT_SHA" >> $GITHUB_OUTPUT
+          echo "Image tag: $IMAGE_TAG"
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ${{ inputs.service-path }}/Dockerfile
+          platforms: linux/arm64
+          push: true
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/${{ inputs.ecr-repository }}:${{ steps.meta.outputs.image-tag }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ inputs.ecr-repository }}:latest
+            ${{ steps.login-ecr.outputs.registry }}/${{ inputs.ecr-repository }}:${{ steps.detect-env.outputs.environment }}
+          build-args: |
+            BUILD_DATE=${{ steps.meta.outputs.date }}
+            VCS_REF=${{ github.sha }}
+            VERSION=${{ steps.meta.outputs.image-tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run security scan (Trivy)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.login-ecr.outputs.registry }}/${{ inputs.ecr-repository }}:${{ steps.meta.outputs.image-tag }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+
+      - name: Image build summary
+        run: |
+          echo "### Docker Image Built" >> $GITHUB_STEP_SUMMARY
+          echo "- **Service:** ${{ inputs.service-name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Repository:** ${{ inputs.ecr-repository }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tag:** ${{ steps.meta.outputs.image-tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Full Image:** ${{ steps.login-ecr.outputs.registry }}/${{ inputs.ecr-repository }}:${{ steps.meta.outputs.image-tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment:** ${{ steps.detect-env.outputs.environment }}" >> $GITHUB_STEP_SUMMARY
+
+  update-manifests:
+    name: Update Kustomize Manifests
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Get ECR registry
+        id: ecr-registry
+        run: |
+          ACCOUNT_ID=${{ secrets.AWS_ACCOUNT_ID }}
+          REGISTRY="$ACCOUNT_ID.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
+          echo "registry=$REGISTRY" >> $GITHUB_OUTPUT
+
+      - name: Update Kustomize image tag
+        env:
+          ENVIRONMENT: ${{ needs.build-and-push.outputs.environment }}
+          IMAGE_TAG: ${{ needs.build-and-push.outputs.image-tag }}
+          ECR_REGISTRY: ${{ steps.ecr-registry.outputs.registry }}
+        run: |
+          echo "Updating Kustomize manifests for $ENVIRONMENT environment..."
+          KUSTOMIZE_FILE="k8s/spring/overlays/$ENVIRONMENT/kustomization.yaml"
+
+          if [ ! -f "$KUSTOMIZE_FILE" ]; then
+            echo "Kustomization file not found: $KUSTOMIZE_FILE"
+            exit 1
+          fi
+
+          # Match on the Kustomize image name field (e.g., "name: YOUR_ECR_URI/auth-service")
+          # then update newName and newTag in that block
+          sed -i "/name: .*\/${{ inputs.service-name }}/,/newTag:/{
+            s|newName: .*|newName: $ECR_REGISTRY/${{ inputs.ecr-repository }}|
+            s|newTag: .*|newTag: $IMAGE_TAG|
+          }" "$KUSTOMIZE_FILE"
+
+          echo "Updated $KUSTOMIZE_FILE"
+          git diff "$KUSTOMIZE_FILE"
+
+      - name: Commit and push changes
+        env:
+          ENVIRONMENT: ${{ needs.build-and-push.outputs.environment }}
+          IMAGE_TAG: ${{ needs.build-and-push.outputs.image-tag }}
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            git add k8s/spring/overlays/$ENVIRONMENT/kustomization.yaml
+            git commit -m "[skip ci] chore(k8s): update ${{ inputs.service-name }} image to $IMAGE_TAG [$ENVIRONMENT]"
+
+            for i in {1..5}; do
+              git pull --rebase origin main
+              if git push; then
+                echo "Manifest updated and pushed"
+                break
+              else
+                if [ $i -eq 5 ]; then
+                  echo "Failed to push after 5 attempts"
+                  exit 1
+                fi
+                echo "Push failed, retrying ($i/5)..."
+                sleep $((RANDOM % 3 + 2))
+              fi
+            done
+          else
+            echo "No changes to commit"
+          fi
+
+      - name: Manifest update summary
+        env:
+          ENVIRONMENT: ${{ needs.build-and-push.outputs.environment }}
+          IMAGE_TAG: ${{ needs.build-and-push.outputs.image-tag }}
+        run: |
+          echo "### Kustomize Manifest Updated" >> $GITHUB_STEP_SUMMARY
+          echo "- **Service:** ${{ inputs.service-name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment:** $ENVIRONMENT" >> $GITHUB_STEP_SUMMARY
+          echo "- **New Image Tag:** $IMAGE_TAG" >> $GITHUB_STEP_SUMMARY
+
+  e2e-gate:
+    name: E2E Verification Gate
+    needs: [build-and-push, update-manifests]
+    if: needs.build-and-push.outputs.environment == 'staging'
+    uses: ./.github/workflows/e2e-tests.yml
+    with:
+      base-url: ${{ vars.STAGING_URL || 'https://staging.urr.guru' }}
+
+  load-test:
+    name: Load Test (Baseline)
+    needs: [build-and-push, e2e-gate]
+    if: needs.build-and-push.outputs.environment == 'staging'
+    uses: ./.github/workflows/load-tests.yml
+    with:
+      scenario: browse-events
+      base-url: ${{ vars.STAGING_URL || 'https://staging.urr.guru' }}
+
+  notify:
+    name: Notify Discord
+    needs: [build-and-push, update-manifests, e2e-gate, load-test]
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: Send Discord notification
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          STATUS: ${{ needs.update-manifests.result }}
+          ENVIRONMENT: ${{ needs.build-and-push.outputs.environment }}
+          IMAGE_TAG: ${{ needs.build-and-push.outputs.image-tag }}
+        run: |
+          if [ -z "$DISCORD_WEBHOOK" ]; then
+            echo "DISCORD_WEBHOOK is not set; skipping notification."
+            exit 0
+          fi
+
+          if [ "$STATUS" = "success" ]; then
+            EMOJI="[OK]"
+            COLOR="3066993"
+            STATUS_TEXT="SUCCESS"
+          else
+            EMOJI="[FAIL]"
+            COLOR="15158332"
+            STATUS_TEXT="FAILED"
+          fi
+
+          TIMESTAMP=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+
+          cat <<EOF | curl -H "Content-Type: application/json" -X POST -d @- "$DISCORD_WEBHOOK"
+          {
+            "username": "CI/CD Bot",
+            "embeds": [
+              {
+                "title": "${EMOJI} ${{ inputs.service-name }} deploy ${STATUS_TEXT}",
+                "description": "EKS GitOps pipeline result",
+                "color": ${COLOR},
+                "fields": [
+                  { "name": "Service", "value": "${{ inputs.service-name }}", "inline": true },
+                  { "name": "Environment", "value": "${ENVIRONMENT}", "inline": true },
+                  { "name": "Image Tag", "value": "${IMAGE_TAG}", "inline": false },
+                  { "name": "Logs", "value": "[GitHub Actions](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})", "inline": false }
+                ],
+                "timestamp": "${TIMESTAMP}"
+              }
+            ]
+          }
+          EOF

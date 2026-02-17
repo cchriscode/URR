@@ -25,8 +25,12 @@ spec:
               value: "3009"
             - name: SPRING_PROFILES_ACTIVE
               value: "kind"
-            - name: TICKET_DB_URL
+            - name: CATALOG_DB_URL
               value: "jdbc:postgresql://postgres-spring:5432/ticket_db"
+            - name: CATALOG_DB_USERNAME
+              value: "urr_user"
+            - name: CATALOG_DB_PASSWORD
+              value: "urr_password"
             - name: TICKET_SERVICE_URL
               value: "http://ticket-service:3002"
             - name: AUTH_SERVICE_URL

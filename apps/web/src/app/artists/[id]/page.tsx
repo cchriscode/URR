@@ -7,6 +7,7 @@ import { useParams, useRouter } from "next/navigation";
 import { artistsApi, membershipsApi } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
 import { formatDate, formatDateTime, formatPrice } from "@/lib/format";
+import { Spinner } from "@/components/ui/Spinner";
 import type { Artist, ArtistMembership, MembershipPointLog, MembershipTier } from "@/lib/types";
 
 const tierConfig: Record<MembershipTier, { label: string; emoji: string; cls: string; border: string }> = {
@@ -122,7 +123,7 @@ export default function ArtistDetailPage() {
   if (loading) {
     return (
       <div className="flex justify-center py-20">
-        <div className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-sky-500 border-t-transparent" />
+        <Spinner size="sm" className="border-sky-500 border-t-transparent" />
       </div>
     );
   }

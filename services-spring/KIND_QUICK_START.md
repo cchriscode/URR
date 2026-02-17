@@ -6,7 +6,7 @@ This guide runs the Spring migration stack on local Kind.
 
 - Docker Desktop running
 - `kind`, `kubectl`
-- Enough resources to build 5 service images + 1 frontend image
+- Enough resources to build 8 service images + 1 frontend image
 
 ## 1) Start stack
 
@@ -21,6 +21,9 @@ Options:
 ```powershell
 .\scripts\spring-kind-up.ps1 -RecreateCluster
 .\scripts\spring-kind-up.ps1 -SkipBuild
+.\scripts\spring-kind-up.ps1 -SingleNode              # 단일 노드 (이미지 로드 빠름)
+.\scripts\spring-kind-up.ps1 -Services auth-service    # 선택적 빌드
+.\scripts\spring-kind-up.ps1 -Parallel 6               # 동시 빌드 수 (기본 4)
 ```
 
 ## 2) Smoke test
@@ -46,11 +49,11 @@ Expected:
 ## 4) Useful checks
 
 ```powershell
-kubectl get pods -n tiketi-spring
-kubectl logs -n tiketi-spring deployment/gateway-service
-kubectl logs -n tiketi-spring deployment/auth-service
-kubectl logs -n tiketi-spring deployment/frontend
-kubectl logs -n tiketi-spring deployment/grafana
+kubectl get pods -n urr-spring
+kubectl logs -n urr-spring deployment/gateway-service
+kubectl logs -n urr-spring deployment/auth-service
+kubectl logs -n urr-spring deployment/frontend
+kubectl logs -n urr-spring deployment/grafana
 ```
 
 ## 5) Stop stack
@@ -86,4 +89,6 @@ Options:
 ```powershell
 .\scripts\spring-kind-dev.ps1 -RecreateCluster
 .\scripts\spring-kind-dev.ps1 -SkipBuild
+.\scripts\spring-kind-dev.ps1 -SingleNode                          # 빠른 개발
+.\scripts\spring-kind-dev.ps1 -Services ticket-service,auth-service # 선택적 빌드
 ```

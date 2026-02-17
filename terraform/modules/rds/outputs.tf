@@ -43,3 +43,13 @@ output "connection_string" {
   value       = var.enable_rds_proxy ? "postgresql://${var.master_username}@${aws_db_proxy.main[0].endpoint}:5432/${aws_db_instance.main.db_name}" : "postgresql://${var.master_username}@${aws_db_instance.main.endpoint}/${aws_db_instance.main.db_name}"
   sensitive   = true
 }
+
+output "read_replica_endpoint" {
+  description = "Read replica endpoint (use for read-only queries)"
+  value       = var.enable_read_replica ? aws_db_instance.read_replica[0].endpoint : null
+}
+
+output "read_replica_address" {
+  description = "Read replica hostname"
+  value       = var.enable_read_replica ? aws_db_instance.read_replica[0].address : null
+}

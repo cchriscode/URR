@@ -1,0 +1,56 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: queue-service
+  namespace: urr-spring
+  labels:
+    app: queue-service
+spec:
+  replicas: 3
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app: queue-service
+  template:
+    metadata:
+      labels:
+        app: queue-service
+    spec:
+      containers:
+        - name: queue-service
+          image: YOUR_ECR_URI/queue-service:latest
+          ports:
+            - containerPort: 3007
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3007
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3007
+            initialDelaySeconds: 20
+            periodSeconds: 20
+  strategy:
+    blueGreen:
+      activeService: queue-service
+      previewService: queue-service-preview
+      autoPromotionEnabled: false
+      prePromotionAnalysis:
+        templates:
+          - templateName: health-check
+        args:
+          - name: service-name
+            value: queue-service-preview
+          - name: port
+            value: "3007"
+      scaleDownDelaySeconds: 30

@@ -47,7 +47,7 @@ export function useQueuePolling(eventId: string, enabled = true) {
           // Store entry token as cookie for Lambda@Edge verification
           if (data.entryToken) {
             const isSecure = window.location.protocol === 'https:';
-            document.cookie = `tiketi-entry-token=${data.entryToken}; path=/; max-age=600; SameSite=Strict${isSecure ? '; Secure' : ''}`;
+            document.cookie = `urr-entry-token=${data.entryToken}; path=/; max-age=600; SameSite=Strict${isSecure ? '; Secure' : ''}`;
           }
         }
       } catch {

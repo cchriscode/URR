@@ -1,6 +1,9 @@
 param(
     [switch]$RecreateCluster,
-    [switch]$SkipBuild
+    [switch]$SkipBuild,
+    [switch]$SingleNode,
+    [string[]]$Services,
+    [int]$Parallel = 4
 )
 
 $ErrorActionPreference = "Stop"
@@ -9,9 +12,12 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 Set-Location $repoRoot
 
 Write-Host "Starting full stack on kind ..."
-$upArgs = @()
-if ($RecreateCluster) { $upArgs += "-RecreateCluster" }
-if ($SkipBuild) { $upArgs += "-SkipBuild" }
+$upArgs = @{}
+if ($RecreateCluster) { $upArgs.RecreateCluster = $true }
+if ($SkipBuild) { $upArgs.SkipBuild = $true }
+if ($SingleNode) { $upArgs.SingleNode = $true }
+if ($Services -and $Services.Count -gt 0) { $upArgs.Services = $Services }
+$upArgs.Parallel = $Parallel
 & "$repoRoot\scripts\spring-kind-up.ps1" @upArgs
 
 Write-Host ""

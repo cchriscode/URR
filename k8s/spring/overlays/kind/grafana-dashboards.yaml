@@ -8,9 +8,9 @@ metadata:
 data:
   service-overview.json: |
     {
-      "uid": "tiketi-service-overview",
+      "uid": "urr-service-overview",
       "title": "Service Overview",
-      "tags": ["tiketi", "auto-provisioned"],
+      "tags": ["urr", "auto-provisioned"],
       "timezone": "browser",
       "schemaVersion": 39,
       "version": 1,
@@ -259,9 +259,9 @@ data:
 
   jvm-metrics.json: |
     {
-      "uid": "tiketi-jvm-metrics",
+      "uid": "urr-jvm-metrics",
       "title": "JVM Metrics",
-      "tags": ["tiketi", "auto-provisioned"],
+      "tags": ["urr", "auto-provisioned"],
       "timezone": "browser",
       "schemaVersion": 39,
       "version": 1,
@@ -513,9 +513,9 @@ data:
 
   kafka-metrics.json: |
     {
-      "uid": "tiketi-kafka-metrics",
+      "uid": "urr-kafka-metrics",
       "title": "Kafka Metrics",
-      "tags": ["tiketi", "auto-provisioned"],
+      "tags": ["urr", "auto-provisioned"],
       "timezone": "browser",
       "schemaVersion": 39,
       "version": 1,
@@ -719,9 +719,9 @@ data:
 
   infrastructure.json: |
     {
-      "uid": "tiketi-infrastructure",
+      "uid": "urr-infrastructure",
       "title": "Infrastructure",
-      "tags": ["tiketi", "auto-provisioned"],
+      "tags": ["urr", "auto-provisioned"],
       "timezone": "browser",
       "schemaVersion": 39,
       "version": 1,
@@ -1002,9 +1002,9 @@ data:
 
   alerts.json: |
     {
-      "uid": "tiketi-alerts",
-      "title": "Tiketi Alert Rules",
-      "tags": ["tiketi", "auto-provisioned"],
+      "uid": "urr-alerts",
+      "title": "URR Alert Rules",
+      "tags": ["urr", "auto-provisioned"],
       "timezone": "browser",
       "schemaVersion": 39,
       "version": 1,
@@ -1211,7 +1211,7 @@ data:
           "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
           "options": {
             "mode": "markdown",
-            "content": "## Tiketi Alert Rules Summary\n\n| Alert | Condition | Duration | Severity |\n|-------|-----------|----------|----------|\n| **High Error Rate** | Error rate > 5% of total requests | 5 minutes | Critical |\n| **Service Down** | `up` metric equals 0 | 1 minute | Critical |\n| **High Latency** | p95 response time > 3 seconds | 5 minutes | Warning |\n| **Low Disk Space** | Free disk space < 10% | 5 minutes | Warning |\n\n### Monitored Services\n- auth-service (port 3005)\n- gateway-service (port 3001)\n- ticket-service (port 3002)\n- payment-service (port 3003)\n- stats-service (port 3004)\n- queue-service (port 3007)\n- community-service (port 3008)\n\n### Notes\n- All metrics are scraped from `/actuator/prometheus` every 10 seconds.\n- Error rate is computed over a 5-minute rolling window to reduce noise.\n- The `up` metric is provided by Prometheus itself based on successful scrape targets.\n- Disk metrics depend on the Spring Boot Actuator `disk` endpoint being enabled."
+            "content": "## URR Alert Rules Summary\n\n| Alert | Condition | Duration | Severity |\n|-------|-----------|----------|----------|\n| **High Error Rate** | Error rate > 5% of total requests | 5 minutes | Critical |\n| **Service Down** | `up` metric equals 0 | 1 minute | Critical |\n| **High Latency** | p95 response time > 3 seconds | 5 minutes | Warning |\n| **Low Disk Space** | Free disk space < 10% | 5 minutes | Warning |\n\n### Monitored Services\n- auth-service (port 3005)\n- gateway-service (port 3001)\n- ticket-service (port 3002)\n- payment-service (port 3003)\n- stats-service (port 3004)\n- queue-service (port 3007)\n- community-service (port 3008)\n\n### Notes\n- All metrics are scraped from `/actuator/prometheus` every 10 seconds.\n- Error rate is computed over a 5-minute rolling window to reduce noise.\n- The `up` metric is provided by Prometheus itself based on successful scrape targets.\n- Disk metrics depend on the Spring Boot Actuator `disk` endpoint being enabled."
           }
         }
       ]

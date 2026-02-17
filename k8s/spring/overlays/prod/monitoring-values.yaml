@@ -1,0 +1,39 @@
+# kube-prometheus-stack Helm values for URR production
+prometheus:
+  prometheusSpec:
+    retention: 30d
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: gp3
+          resources:
+            requests:
+              storage: 50Gi
+    serviceMonitorSelector:
+      matchLabels:
+        release: kube-prometheus-stack
+
+grafana:
+  persistence:
+    enabled: true
+    size: 10Gi
+  adminPassword: ${GRAFANA_ADMIN_PASSWORD}
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+        - name: default
+          folder: URR
+          type: file
+          options:
+            path: /var/lib/grafana/dashboards
+
+alertmanager:
+  alertmanagerSpec:
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: gp3
+          resources:
+            requests:
+              storage: 5Gi

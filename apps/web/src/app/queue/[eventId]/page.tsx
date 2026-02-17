@@ -21,10 +21,37 @@ export default function QueuePage() {
   const router = useRouter();
   const eventId = params.eventId ?? "";
   const [joined, setJoined] = useState(false);
+  const [vwrPosition, setVwrPosition] = useState<number | null>(null);
+
+  // Extract VWR token info for priority bridging
+  useEffect(() => {
+    const vwrToken = document.cookie
+      .split('; ')
+      .find(row => row.startsWith('urr-vwr-token='))
+      ?.split('=')[1];
+
+    if (vwrToken) {
+      try {
+        const payload = JSON.parse(atob(vwrToken.split('.')[1]));
+        setVwrPosition(payload.position || null);
+      } catch {
+        // Invalid token, ignore
+      }
+    }
+  }, []);
 
   // undefined = still loading event; null = standing (no seat map); string = has seat map
   // Derived from server data — not from URL params — to prevent client-side bypass.
   const [seatLayoutId, setSeatLayoutId] = useState<string | null | undefined>(undefined);
+
+  // Notify backend when user leaves the page
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      navigator.sendBeacon(`${process.env.NEXT_PUBLIC_API_URL || ''}/api/v1/queue/leave/${eventId}`);
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [eventId]);
 
   // Fetch event detail to determine seated vs standing flow
   useEffect(() => {
@@ -49,11 +76,25 @@ export default function QueuePage() {
   // Join queue on mount
   useEffect(() => {
     if (!eventId) return;
-    queueApi.check(eventId).then(({ data }) => {
+    // Read VWR position directly from cookie to avoid state timing issues
+    let vwrPos: number | null = null;
+    try {
+      const vwrToken = document.cookie
+        .split('; ')
+        .find(row => row.startsWith('urr-vwr-token='))
+        ?.split('=')[1];
+      if (vwrToken) {
+        const payload = JSON.parse(atob(vwrToken.split('.')[1]));
+        vwrPos = payload.position || null;
+      }
+    } catch {
+      // Invalid token, ignore
+    }
+    queueApi.check(eventId, vwrPos).then(({ data }) => {
       // Store entry token as cookie for Lambda@Edge verification
       if (data?.entryToken) {
         const isSecure = window.location.protocol === 'https:';
-        document.cookie = `tiketi-entry-token=${data.entryToken}; path=/; max-age=600; SameSite=Strict${isSecure ? '; Secure' : ''}`;
+        document.cookie = `urr-entry-token=${data.entryToken}; path=/; max-age=600; SameSite=Strict${isSecure ? '; Secure' : ''}`;
       }
       setCheckResult(data);
       // Only start polling if actually queued

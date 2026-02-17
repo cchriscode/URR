@@ -98,7 +98,7 @@ resource "aws_msk_configuration" "main" {
   server_properties = <<-PROPERTIES
     auto.create.topics.enable=true
     default.replication.factor=${var.number_of_broker_nodes > 1 ? 2 : 1}
-    min.insync.replicas=${var.number_of_broker_nodes > 1 ? 2 : 1}
+    min.insync.replicas=${var.number_of_broker_nodes > 2 ? 2 : 1}
     num.io.threads=8
     num.network.threads=5
     num.partitions=${var.default_partitions}

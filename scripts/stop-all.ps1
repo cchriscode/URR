@@ -4,7 +4,7 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 
 Write-Host ""
 Write-Host "================================================" -ForegroundColor Cyan
-Write-Host "   TIKETI Spring - Stop All Services" -ForegroundColor Cyan
+Write-Host "   URR Spring - Stop All Services" -ForegroundColor Cyan
 Write-Host "================================================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -16,7 +16,7 @@ $javaStopped = 0
 Get-Process java -ErrorAction SilentlyContinue | ForEach-Object {
     try {
         $cmdLine = (Get-CimInstance Win32_Process -Filter "ProcessId = $($_.Id)" -ErrorAction SilentlyContinue).CommandLine
-        if ($cmdLine -and $cmdLine -like "*tiketi*") {
+        if ($cmdLine -and $cmdLine -like "*urr*") {
             Stop-Process -Id $_.Id -Force
             $javaStopped++
         }

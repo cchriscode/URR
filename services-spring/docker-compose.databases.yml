@@ -3,8 +3,8 @@ services:
     image: postgres:16
     environment:
       POSTGRES_DB: auth_db
-      POSTGRES_USER: tiketi_user
-      POSTGRES_PASSWORD: tiketi_password
+      POSTGRES_USER: urr_user
+      POSTGRES_PASSWORD: urr_password
     ports:
       - "5438:5432"
 
@@ -12,8 +12,8 @@ services:
     image: postgres:16
     environment:
       POSTGRES_DB: ticket_db
-      POSTGRES_USER: tiketi_user
-      POSTGRES_PASSWORD: tiketi_password
+      POSTGRES_USER: urr_user
+      POSTGRES_PASSWORD: urr_password
     ports:
       - "5434:5432"
 
@@ -21,8 +21,8 @@ services:
     image: postgres:16
     environment:
       POSTGRES_DB: payment_db
-      POSTGRES_USER: tiketi_user
-      POSTGRES_PASSWORD: tiketi_password
+      POSTGRES_USER: urr_user
+      POSTGRES_PASSWORD: urr_password
     ports:
       - "5435:5432"
 
@@ -30,8 +30,8 @@ services:
     image: postgres:16
     environment:
       POSTGRES_DB: stats_db
-      POSTGRES_USER: tiketi_user
-      POSTGRES_PASSWORD: tiketi_password
+      POSTGRES_USER: urr_user
+      POSTGRES_PASSWORD: urr_password
     ports:
       - "5436:5432"
 
@@ -39,8 +39,8 @@ services:
     image: postgres:16
     environment:
       POSTGRES_DB: community_db
-      POSTGRES_USER: tiketi_user
-      POSTGRES_PASSWORD: tiketi_password
+      POSTGRES_USER: urr_user
+      POSTGRES_PASSWORD: urr_password
     ports:
       - "5437:5432"
 

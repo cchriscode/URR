@@ -24,13 +24,13 @@ PID_DIR="/tmp"
 
 echo ""
 echo -e "${RED}==========================================${RESET}"
-echo -e "${RED}   TIKETI Spring - Complete Cleanup${RESET}"
+echo -e "${RED}   URR Spring - Complete Cleanup${RESET}"
 echo -e "${RED}==========================================${RESET}"
 echo ""
 echo -e "${YELLOW}This will DELETE:${RESET}"
 echo -e "${WHITE}  - Running Spring Boot (Java) processes${RESET}"
 echo -e "${WHITE}  - Docker Compose DB containers + data${RESET}"
-echo -e "${WHITE}  - Kind cluster 'tiketi-local'${RESET}"
+echo -e "${WHITE}  - Kind cluster 'urr-local'${RESET}"
 echo -e "${WHITE}  - Port-forward processes${RESET}"
 echo -e "${WHITE}  - Docker images (optional)${RESET}"
 echo -e "${WHITE}  - node_modules (optional)${RESET}"
@@ -55,7 +55,7 @@ echo -e "${CYAN}[1/6] Stopping Spring Boot services ...${RESET}"
 
 JAVA_STOPPED=0
 for svc in "${SERVICES[@]}"; do
-  PID_FILE="$PID_DIR/tiketi-$svc.pid"
+  PID_FILE="$PID_DIR/urr-$svc.pid"
   if [ -f "$PID_FILE" ]; then
     PID=$(cat "$PID_FILE")
     if kill -0 "$PID" 2>/dev/null; then
@@ -65,7 +65,7 @@ for svc in "${SERVICES[@]}"; do
   fi
 done
 
-pkill -f "tiketi"  2>/dev/null && JAVA_STOPPED=$((JAVA_STOPPED + 1)) || true
+pkill -f "urr"  2>/dev/null && JAVA_STOPPED=$((JAVA_STOPPED + 1)) || true
 pkill -f "bootRun" 2>/dev/null && JAVA_STOPPED=$((JAVA_STOPPED + 1)) || true
 
 if [ $JAVA_STOPPED -gt 0 ]; then
@@ -89,7 +89,7 @@ echo ""
 echo -e "${CYAN}[2/6] Stopping port-forward processes ...${RESET}"
 
 pkill -f "kubectl port-forward" 2>/dev/null || true
-for pid_file in "$PID_DIR"/tiketi-pf-*.pid; do
+for pid_file in "$PID_DIR"/urr-pf-*.pid; do
   [ -f "$pid_file" ] && rm -f "$pid_file" || true
 done
 
@@ -118,14 +118,14 @@ echo ""
 echo -e "${CYAN}[4/6] Deleting Kind cluster ...${RESET}"
 
 if command -v kind >/dev/null 2>&1; then
-  if kind get clusters 2>/dev/null | grep -qx "tiketi-local"; then
-    if kind delete cluster --name tiketi-local; then
-      echo -e "${GREEN}  Cluster 'tiketi-local' deleted${RESET}"
+  if kind get clusters 2>/dev/null | grep -qx "urr-local"; then
+    if kind delete cluster --name urr-local; then
+      echo -e "${GREEN}  Cluster 'urr-local' deleted${RESET}"
     else
       echo -e "${YELLOW}  Failed to delete cluster${RESET}"
     fi
   else
-    echo -e "${GRAY}  Cluster 'tiketi-local' not found${RESET}"
+    echo -e "${GRAY}  Cluster 'urr-local' not found${RESET}"
   fi
 else
   echo -e "${GRAY}  kind not installed (skipping)${RESET}"
@@ -144,12 +144,12 @@ if [[ "$DELETE_IMAGES" == "y" || "$DELETE_IMAGES" == "Y" ]]; then
   echo -e "${CYAN}[5/6] Deleting Docker images ...${RESET}"
 
   IMAGES=(
-    "tiketi-spring-gateway-service:local"
-    "tiketi-spring-auth-service:local"
-    "tiketi-spring-ticket-service:local"
-    "tiketi-spring-payment-service:local"
-    "tiketi-spring-stats-service:local"
-    "tiketi-spring-frontend:local"
+    "urr-spring-gateway-service:local"
+    "urr-spring-auth-service:local"
+    "urr-spring-ticket-service:local"
+    "urr-spring-payment-service:local"
+    "urr-spring-stats-service:local"
+    "urr-spring-frontend:local"
   )
 
   for image in "${IMAGES[@]}"; do

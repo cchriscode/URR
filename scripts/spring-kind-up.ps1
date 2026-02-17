@@ -1,7 +1,10 @@
 param(
-    [string]$KindClusterName = "tiketi-local",
+    [string]$KindClusterName = "urr-local",
     [switch]$RecreateCluster,
-    [switch]$SkipBuild
+    [switch]$SkipBuild,
+    [switch]$SingleNode,
+    [string[]]$Services,
+    [int]$Parallel = 4
 )
 
 $ErrorActionPreference = "Stop"
@@ -55,8 +58,10 @@ if ($RecreateCluster -and $clusterExists) {
 }
 
 if (-not $clusterExists) {
-    Write-Host "Creating kind cluster '$KindClusterName' ..."
-    kind create cluster --name $KindClusterName --config kind-config.yaml
+    $kindConfig = if ($SingleNode) { "kind-config-single.yaml" } else { "kind-config.yaml" }
+    $nodeLabel = if ($SingleNode) { "single-node" } else { "multi-node (3)" }
+    Write-Host "Creating kind cluster '$KindClusterName' ($nodeLabel) ..."
+    kind create cluster --name $KindClusterName --config $kindConfig
     if ($LASTEXITCODE -ne 0) {
         throw "Failed to create kind cluster '$KindClusterName'."
     }
@@ -68,7 +73,11 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 if (-not $SkipBuild) {
-    & "$repoRoot\scripts\spring-kind-build-load.ps1" -KindClusterName $KindClusterName
+    $buildArgs = @{ KindClusterName = $KindClusterName; Parallel = $Parallel }
+    if ($Services -and $Services.Count -gt 0) {
+        $buildArgs.Services = $Services
+    }
+    & "$repoRoot\scripts\spring-kind-build-load.ps1" @buildArgs
 }
 
 Write-Host "Applying spring kind overlay ..."
@@ -77,7 +86,7 @@ if ($LASTEXITCODE -ne 0) {
     throw "kubectl apply failed for k8s/spring/overlays/kind"
 }
 
-$namespace = "tiketi-spring"
+$namespace = "urr-spring"
 $deployments = @(
     "postgres-spring",
     "dragonfly-spring",

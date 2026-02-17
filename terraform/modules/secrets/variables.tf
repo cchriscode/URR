@@ -12,7 +12,7 @@ variable "recovery_window_in_days" {
 variable "rds_username" {
   description = "RDS master username"
   type        = string
-  default     = "tiketi_admin"
+  default     = "urr_admin"
 }
 
 variable "rds_endpoint" {

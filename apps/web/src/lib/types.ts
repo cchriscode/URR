@@ -135,6 +135,32 @@ export interface QueueStatus {
   };
 }
 
+export interface VwrAssignResponse {
+  requestId: string;
+  position: number;
+  estimatedWait: number;
+  servingCounter: number;
+}
+
+export interface VwrCheckResponse {
+  admitted: boolean;
+  position: number;
+  servingCounter: number;
+  totalInQueue: number;
+  ahead: number;
+  token?: string;
+  estimatedWait?: number;
+  nextPoll?: number;
+}
+
+export interface VwrStatusResponse {
+  eventId: string;
+  isActive: boolean;
+  totalInQueue: number;
+  serving: number;
+  waitingCount: number;
+}
+
 export type MembershipTier = "BRONZE" | "SILVER" | "GOLD" | "DIAMOND";
 
 export interface Artist {

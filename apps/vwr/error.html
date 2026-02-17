@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>URR - 오류</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0a0a0a;
+      color: #e5e5e5;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .container { text-align: center; max-width: 420px; padding: 40px 24px; }
+    .logo { font-size: 28px; font-weight: 700; color: #fff; margin-bottom: 32px; }
+    .title { font-size: 20px; font-weight: 600; color: #fff; margin-bottom: 8px; }
+    .subtitle { font-size: 14px; color: #888; margin-bottom: 24px; }
+    .retry-btn {
+      display: inline-block;
+      padding: 10px 24px;
+      background: #3b82f6;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      cursor: pointer;
+      text-decoration: none;
+    }
+    .retry-btn:hover { background: #2563eb; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo">URR</div>
+    <div class="title">일시적인 오류가 발생했습니다</div>
+    <div class="subtitle">잠시 후 다시 시도해주세요</div>
+    <a href="javascript:window.location.reload()" class="retry-btn">다시 시도</a>
+  </div>
+</body>
+</html>

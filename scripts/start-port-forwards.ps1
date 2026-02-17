@@ -1,12 +1,12 @@
 param(
-    [string]$Namespace = "tiketi-spring"
+    [string]$Namespace = "urr-spring"
 )
 
 $ErrorActionPreference = "Stop"
 
 Write-Host ""
 Write-Host "================================================" -ForegroundColor Cyan
-Write-Host "   TIKETI Spring - Port Forward Setup" -ForegroundColor Cyan
+Write-Host "   URR Spring - Port Forward Setup" -ForegroundColor Cyan
 Write-Host "================================================" -ForegroundColor Cyan
 Write-Host ""
 

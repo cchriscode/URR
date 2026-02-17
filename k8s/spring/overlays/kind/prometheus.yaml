@@ -11,41 +11,55 @@ data:
     scrape_configs:
       - job_name: 'spring-services'
         metrics_path: '/actuator/prometheus'
-        scrape_interval: 10s
-        static_configs:
-          - targets:
-              - 'auth-service:3005'
-            labels:
-              service: auth-service
-          - targets:
-              - 'gateway-service:3001'
-            labels:
-              service: gateway-service
-          - targets:
-              - 'ticket-service:3002'
-            labels:
-              service: ticket-service
-          - targets:
-              - 'payment-service:3003'
-            labels:
-              service: payment-service
-          - targets:
-              - 'stats-service:3004'
-            labels:
-              service: stats-service
-          - targets:
-              - 'queue-service:3007'
-            labels:
-              service: queue-service
-          - targets:
-              - 'community-service:3008'
-            labels:
-              service: community-service
-          - targets:
-              - 'catalog-service:3009'
-            labels:
-              service: catalog-service
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names:
+                - urr-spring
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: "true"
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            target_label: __address__
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            action: replace
+            target_label: service
 
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: prometheus-urr
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "nodes", "endpoints", "services"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus-urr
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: prometheus-urr
+subjects:
+  - kind: ServiceAccount
+    name: prometheus
+    namespace: urr-spring
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -55,6 +69,8 @@ metadata:
     app: prometheus
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: prometheus
@@ -63,6 +79,7 @@ spec:
       labels:
         app: prometheus
     spec:
+      serviceAccountName: prometheus
       containers:
         - name: prometheus
           image: prom/prometheus:v2.51.0
