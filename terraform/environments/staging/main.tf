@@ -116,6 +116,7 @@ module "rds" {
   multi_az             = false
   enable_rds_proxy     = true
   deletion_protection  = false
+  enable_read_replica  = false
 }
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -131,6 +132,7 @@ module "elasticache" {
   eks_node_security_group_id = module.eks.node_security_group_id
   preferred_azs              = module.vpc.availability_zones
 
+  node_type          = var.elasticache_node_type
   auth_token_enabled = true
   auth_token         = module.secrets.redis_auth_token
   num_cache_clusters = 1
@@ -291,4 +293,16 @@ module "lambda_worker" {
   enable_xray_tracing      = true
   enable_cloudwatch_alarms = true
   sns_topic_arn            = var.sns_topic_arn
+}
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 15. Monitoring - AMP + AMG (depends on: EKS for OIDC)
+# ═════════════════════════════════════════════════════════════════════════════
+
+module "monitoring" {
+  source = "../../modules/monitoring"
+
+  name_prefix       = var.name_prefix
+  oidc_provider_arn = module.eks.oidc_provider_arn
+  oidc_provider_url = replace(module.eks.cluster_oidc_issuer_url, "https://", "")
 }

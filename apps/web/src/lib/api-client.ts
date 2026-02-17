@@ -3,7 +3,7 @@
 import axios from "axios";
 import type { AxiosRequestConfig } from "axios";
 import { clearAuth } from "@/lib/storage";
-import type { QueueStatus } from "@/lib/types";
+import type { QueueStatus, VwrAssignResponse, VwrCheckResponse, VwrStatusResponse } from "@/lib/types";
 
 function resolveBaseUrl() {
   // Build-time env var (baked into JS bundle by Next.js)
@@ -246,6 +246,31 @@ export const transfersApi = {
   detail: (id: string) => http.get(`/transfers/${id}`),
   create: (reservationId: string) => http.post("/transfers", { reservationId }),
   cancel: (id: string) => http.post(`/transfers/${id}/cancel`),
+};
+
+// VWR API uses a separate base path (/vwr-api/) routed by CloudFront to API Gateway
+const VWR_BASE = '/vwr-api';
+
+export const vwrApi = {
+  status: (eventId: string): Promise<VwrStatusResponse> =>
+    fetch(`${VWR_BASE}/vwr/status/${eventId}`).then((r) => {
+      if (!r.ok) throw new Error(`VWR status failed: ${r.status}`);
+      return r.json();
+    }),
+  assign: (eventId: string, userId: string): Promise<VwrAssignResponse> =>
+    fetch(`${VWR_BASE}/vwr/assign/${eventId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId }),
+    }).then((r) => {
+      if (!r.ok) throw new Error(`VWR assign failed: ${r.status}`);
+      return r.json();
+    }),
+  check: (eventId: string, requestId: string, userId: string): Promise<VwrCheckResponse> =>
+    fetch(`${VWR_BASE}/vwr/check/${eventId}/${requestId}?userId=${encodeURIComponent(userId)}`).then((r) => {
+      if (!r.ok) throw new Error(`VWR check failed: ${r.status}`);
+      return r.json();
+    }),
 };
 
 export const adminApi = {

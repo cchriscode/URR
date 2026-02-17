@@ -127,6 +127,16 @@ variable "msk_broker_ebs_volume_size" {
 }
 
 # ═════════════════════════════════════════════════════════════════════════════
+# ElastiCache
+# ═════════════════════════════════════════════════════════════════════════════
+
+variable "elasticache_node_type" {
+  description = "ElastiCache Redis node type"
+  type        = string
+  default     = "cache.r6g.large"
+}
+
+# ═════════════════════════════════════════════════════════════════════════════
 # Domain & TLS
 # ═════════════════════════════════════════════════════════════════════════════
 
@@ -170,6 +180,38 @@ variable "internal_api_token" {
 
 variable "sns_topic_arn" {
   description = "SNS topic ARN for CloudWatch alarm notifications"
+  type        = string
+  default     = ""
+}
+
+# ═════════════════════════════════════════════════════════════════════════════
+# WAF
+# ═════════════════════════════════════════════════════════════════════════════
+
+variable "waf_rate_limit" {
+  description = "WAF rate limit: max requests per 5-min window per IP"
+  type        = number
+  default     = 2000
+}
+
+# ═════════════════════════════════════════════════════════════════════════════
+# Route53
+# ═════════════════════════════════════════════════════════════════════════════
+
+variable "domain_name" {
+  description = "Domain name for Route53 (e.g., urr.guru)"
+  type        = string
+  default     = ""
+}
+
+variable "create_hosted_zone" {
+  description = "Whether to create a new Route53 hosted zone"
+  type        = bool
+  default     = true
+}
+
+variable "hosted_zone_id" {
+  description = "Existing Route53 hosted zone ID (when create_hosted_zone = false)"
   type        = string
   default     = ""
 }

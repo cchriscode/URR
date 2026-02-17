@@ -26,6 +26,9 @@
 # msk_broker_instance_type   = "kafka.t3.small"
 # msk_broker_ebs_volume_size = 20
 
+# ElastiCache
+# elasticache_node_type = "cache.t4g.small"
+
 # Domain & TLS
 # domain_aliases       = []
 # certificate_arn      = ""

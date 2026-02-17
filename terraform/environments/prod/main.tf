@@ -142,6 +142,7 @@ module "rds" {
   multi_az             = true
   enable_rds_proxy     = true
   deletion_protection  = true
+  enable_read_replica  = true
 }
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -157,6 +158,7 @@ module "elasticache" {
   eks_node_security_group_id = module.eks.node_security_group_id
   preferred_azs              = module.vpc.availability_zones
 
+  node_type          = var.elasticache_node_type
   auth_token_enabled = true
   auth_token         = module.secrets.redis_auth_token
   num_cache_clusters = 2
@@ -258,6 +260,7 @@ module "cloudfront" {
   s3_bucket_name                 = module.s3.frontend_bucket_name
   s3_bucket_regional_domain_name = module.s3.frontend_bucket_regional_domain_name
   cors_allowed_origins           = var.cors_allowed_origins
+  web_acl_arn                    = module.waf.web_acl_arn
 
   # VWR Tier 1
   vwr_token_secret       = module.secrets.queue_entry_token_secret_value
@@ -355,4 +358,57 @@ module "lambda_worker" {
   enable_xray_tracing      = true
   enable_cloudwatch_alarms = true
   sns_topic_arn            = var.sns_topic_arn
+}
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 16. Monitoring - AMP + AMG (depends on: EKS for OIDC)
+# ═════════════════════════════════════════════════════════════════════════════
+
+module "monitoring" {
+  source = "../../modules/monitoring"
+
+  name_prefix       = var.name_prefix
+  oidc_provider_arn = module.eks.oidc_provider_arn
+  oidc_provider_url = replace(module.eks.cluster_oidc_issuer_url, "https://", "")
+}
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 17. WAF (CLOUDFRONT scope, us-east-1) (no dependencies)
+# ═════════════════════════════════════════════════════════════════════════════
+
+module "waf" {
+  source = "../../modules/waf"
+
+  providers = {
+    aws.us_east_1 = aws.us_east_1
+  }
+
+  name_prefix = var.name_prefix
+  rate_limit  = var.waf_rate_limit
+}
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 18. Route53 (depends on: CloudFront)
+# ═════════════════════════════════════════════════════════════════════════════
+
+module "route53" {
+  source = "../../modules/route53"
+
+  name_prefix               = var.name_prefix
+  domain_name               = var.domain_name
+  create_hosted_zone        = var.create_hosted_zone
+  hosted_zone_id            = var.hosted_zone_id
+  cloudfront_domain_name    = module.cloudfront.distribution_domain_name
+  cloudfront_hosted_zone_id = module.cloudfront.distribution_hosted_zone_id
+}
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 19. ECR Repositories (no dependencies)
+# ═════════════════════════════════════════════════════════════════════════════
+
+module "ecr" {
+  source = "../../modules/ecr"
+
+  name_prefix     = "urr"
+  max_image_count = 30
 }

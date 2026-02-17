@@ -1,0 +1,19 @@
+# Karpenter Helm chart values
+# Install: helm install karpenter oci://public.ecr.aws/karpenter/karpenter \
+#   --namespace kube-system --version 1.1.1 \
+#   -f karpenter-values.yaml
+#
+# Replace placeholders before install:
+#   ${KARPENTER_ROLE_ARN}  = terraform output -raw karpenter_role_arn
+#   ${CLUSTER_NAME}        = terraform output -raw cluster_name
+#   ${CLUSTER_ENDPOINT}    = terraform output -raw cluster_endpoint
+
+serviceAccount:
+  annotations:
+    eks.amazonaws.com/role-arn: "${KARPENTER_ROLE_ARN}"
+
+settings:
+  clusterName: "${CLUSTER_NAME}"
+  clusterEndpoint: "${CLUSTER_ENDPOINT}"
+
+replicas: 1

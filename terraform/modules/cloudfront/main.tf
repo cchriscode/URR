@@ -54,11 +54,10 @@ resource "aws_lambda_function" "edge_queue_check" {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# CloudFront Origin Access Control (for S3 origin if needed)
+# CloudFront Origin Access Control (for S3 origin)
 # ─────────────────────────────────────────────────────────────────────────────
 
 resource "aws_cloudfront_origin_access_control" "s3" {
-  count                             = var.s3_bucket_name != "" ? 1 : 0
   name                              = "${var.name_prefix}-s3-oac"
   description                       = "OAC for S3 bucket ${var.s3_bucket_name}"
   origin_access_control_origin_type = "s3"
@@ -71,14 +70,14 @@ resource "aws_cloudfront_origin_access_control" "s3" {
 # ─────────────────────────────────────────────────────────────────────────────
 
 resource "aws_cloudfront_distribution" "main" {
-  enabled             = true
-  is_ipv6_enabled     = true
-  comment             = "${var.name_prefix} ticketing system distribution"
-  default_root_object = "index.html"
-  price_class         = var.price_class
-  aliases             = var.aliases
+  enabled         = true
+  is_ipv6_enabled = true
+  comment         = "${var.name_prefix} ticketing system distribution"
+  price_class     = var.price_class
+  aliases         = var.aliases
+  web_acl_id      = var.web_acl_arn
 
-  # Primary origin: ALB for API traffic
+  # ALB origin for API traffic
   origin {
     domain_name = var.alb_dns_name
     origin_id   = "alb"
@@ -96,14 +95,11 @@ resource "aws_cloudfront_distribution" "main" {
     }
   }
 
-  # Secondary origin: S3 for static assets (if provided)
-  dynamic "origin" {
-    for_each = var.s3_bucket_name != "" ? [1] : []
-    content {
-      domain_name              = var.s3_bucket_regional_domain_name
-      origin_id                = "s3"
-      origin_access_control_id = aws_cloudfront_origin_access_control.s3[0].id
-    }
+  # S3 origin for static assets (/_next/static/*, /vwr/*)
+  origin {
+    domain_name              = var.s3_bucket_regional_domain_name
+    origin_id                = "s3"
+    origin_access_control_id = aws_cloudfront_origin_access_control.s3.id
   }
 
   # VWR API Gateway origin (if provided)
@@ -123,7 +119,7 @@ resource "aws_cloudfront_distribution" "main" {
     }
   }
 
-  # Default cache behavior (API traffic to ALB)
+  # Default cache behavior: ALB → Frontend Pod (Next.js SSR)
   default_cache_behavior {
     allowed_methods        = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
     cached_methods         = ["GET", "HEAD", "OPTIONS"]
@@ -131,12 +127,24 @@ resource "aws_cloudfront_distribution" "main" {
     viewer_protocol_policy = "redirect-to-https"
     compress               = true
 
-    # Managed caching disabled for API (forward all)
+    cache_policy_id            = aws_cloudfront_cache_policy.frontend_ssr.id
+    origin_request_policy_id   = aws_cloudfront_origin_request_policy.api.id
+    response_headers_policy_id = aws_cloudfront_response_headers_policy.security.id
+  }
+
+  # API traffic to ALB (no caching, with Lambda@Edge for VWR queue token verification)
+  ordered_cache_behavior {
+    path_pattern           = "/api/*"
+    allowed_methods        = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
+    cached_methods         = ["GET", "HEAD", "OPTIONS"]
+    target_origin_id       = "alb"
+    viewer_protocol_policy = "redirect-to-https"
+    compress               = true
+
     cache_policy_id            = aws_cloudfront_cache_policy.api.id
     origin_request_policy_id   = aws_cloudfront_origin_request_policy.api.id
     response_headers_policy_id = aws_cloudfront_response_headers_policy.security.id
 
-    # Lambda@Edge association for queue token verification
     lambda_function_association {
       event_type   = "viewer-request"
       lambda_arn   = aws_lambda_function.edge_queue_check.qualified_arn
@@ -144,74 +152,46 @@ resource "aws_cloudfront_distribution" "main" {
     }
   }
 
-  # Cache behavior for static assets (S3) - if S3 bucket provided
-  dynamic "ordered_cache_behavior" {
-    for_each = var.s3_bucket_name != "" ? [1] : []
-    content {
-      path_pattern           = "/static/*"
-      allowed_methods        = ["GET", "HEAD", "OPTIONS"]
-      cached_methods         = ["GET", "HEAD", "OPTIONS"]
-      target_origin_id       = "s3"
-      viewer_protocol_policy = "redirect-to-https"
-      compress               = true
+  # Cache behavior for Next.js static files (immutable, 1-year TTL)
+  ordered_cache_behavior {
+    path_pattern           = "/_next/static/*"
+    allowed_methods        = ["GET", "HEAD", "OPTIONS"]
+    cached_methods         = ["GET", "HEAD", "OPTIONS"]
+    target_origin_id       = "s3"
+    viewer_protocol_policy = "redirect-to-https"
+    compress               = true
 
-      # Use managed caching optimized for S3
-      cache_policy_id            = data.aws_cloudfront_cache_policy.caching_optimized.id
-      origin_request_policy_id   = data.aws_cloudfront_origin_request_policy.cors_s3.id
-      response_headers_policy_id = aws_cloudfront_response_headers_policy.security.id
+    cache_policy_id            = data.aws_cloudfront_cache_policy.caching_optimized.id
+    origin_request_policy_id   = data.aws_cloudfront_origin_request_policy.cors_s3.id
+    response_headers_policy_id = aws_cloudfront_response_headers_policy.security.id
 
-      min_ttl     = 0
-      default_ttl = 3600
-      max_ttl     = 86400
-    }
-  }
-
-  # Cache behavior for Next.js static files
-  dynamic "ordered_cache_behavior" {
-    for_each = var.s3_bucket_name != "" ? [1] : []
-    content {
-      path_pattern           = "/_next/static/*"
-      allowed_methods        = ["GET", "HEAD", "OPTIONS"]
-      cached_methods         = ["GET", "HEAD", "OPTIONS"]
-      target_origin_id       = "s3"
-      viewer_protocol_policy = "redirect-to-https"
-      compress               = true
-
-      cache_policy_id            = data.aws_cloudfront_cache_policy.caching_optimized.id
-      origin_request_policy_id   = data.aws_cloudfront_origin_request_policy.cors_s3.id
-      response_headers_policy_id = aws_cloudfront_response_headers_policy.security.id
-
-      min_ttl     = 31536000  # 1 year for immutable files
-      default_ttl = 31536000
-      max_ttl     = 31536000
-    }
+    min_ttl     = 31536000  # 1 year for immutable files
+    default_ttl = 31536000
+    max_ttl     = 31536000
   }
 
   # Cache behavior for VWR static waiting page (S3, no Lambda@Edge)
-  # CloudFront Function rewrites /vwr/{eventId} → /vwr/index.html for S3
-  dynamic "ordered_cache_behavior" {
-    for_each = var.s3_bucket_name != "" ? [1] : []
-    content {
-      path_pattern           = "/vwr/*"
-      allowed_methods        = ["GET", "HEAD", "OPTIONS"]
-      cached_methods         = ["GET", "HEAD", "OPTIONS"]
-      target_origin_id       = "s3"
-      viewer_protocol_policy = "redirect-to-https"
-      compress               = true
+  # CloudFront Function rewrites /vwr/{eventId} -> /vwr/index.html for S3
+  ordered_cache_behavior {
+    path_pattern           = "/vwr/*"
+    allowed_methods        = ["GET", "HEAD", "OPTIONS"]
+    cached_methods         = ["GET", "HEAD", "OPTIONS"]
+    target_origin_id       = "s3"
+    viewer_protocol_policy = "redirect-to-https"
+    compress               = true
 
-      cache_policy_id            = data.aws_cloudfront_cache_policy.caching_optimized.id
-      origin_request_policy_id   = data.aws_cloudfront_origin_request_policy.cors_s3.id
-      response_headers_policy_id = aws_cloudfront_response_headers_policy.security.id
+    cache_policy_id            = data.aws_cloudfront_cache_policy.caching_optimized.id
+    origin_request_policy_id   = data.aws_cloudfront_origin_request_policy.cors_s3.id
+    response_headers_policy_id = aws_cloudfront_response_headers_policy.security.id
 
-      function_association {
-        event_type   = "viewer-request"
-        function_arn = aws_cloudfront_function.vwr_page_rewrite[0].arn
-      }
-
-      min_ttl     = 0
-      default_ttl = 300   # 5 minutes
-      max_ttl     = 3600
+    function_association {
+      event_type   = "viewer-request"
+      function_arn = aws_cloudfront_function.vwr_page_rewrite.arn
     }
+
+    min_ttl     = 0
+    default_ttl = 300   # 5 minutes
+    max_ttl     = 3600
   }
 
   # Cache behavior for VWR API (API Gateway, no caching)
@@ -252,21 +232,6 @@ resource "aws_cloudfront_distribution" "main" {
     minimum_protocol_version       = "TLSv1.2_2021"
   }
 
-  # Custom error responses
-  custom_error_response {
-    error_code         = 404
-    response_code      = 200
-    response_page_path = "/index.html"
-    error_caching_min_ttl = 10
-  }
-
-  custom_error_response {
-    error_code         = 403
-    response_code      = 200
-    response_page_path = "/index.html"
-    error_caching_min_ttl = 10
-  }
-
   tags = {
     Name = "${var.name_prefix}-cloudfront"
   }
@@ -275,6 +240,38 @@ resource "aws_cloudfront_distribution" "main" {
 # ─────────────────────────────────────────────────────────────────────────────
 # Cache Policy for API Traffic (no caching, forward all)
 # ─────────────────────────────────────────────────────────────────────────────
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Cache Policy for Frontend SSR (short TTL, forward cookies for auth)
+# ─────────────────────────────────────────────────────────────────────────────
+
+resource "aws_cloudfront_cache_policy" "frontend_ssr" {
+  name        = "${var.name_prefix}-frontend-ssr-cache-policy"
+  comment     = "Cache policy for Next.js SSR pages - short TTL"
+  default_ttl = 0
+  max_ttl     = 60
+  min_ttl     = 0
+
+  parameters_in_cache_key_and_forwarded_to_origin {
+    enable_accept_encoding_brotli = true
+    enable_accept_encoding_gzip   = true
+
+    cookies_config {
+      cookie_behavior = "all"
+    }
+
+    headers_config {
+      header_behavior = "whitelist"
+      headers {
+        items = ["Authorization", "Host"]
+      }
+    }
+
+    query_strings_config {
+      query_string_behavior = "all"
+    }
+  }
+}
 
 resource "aws_cloudfront_cache_policy" "api" {
   name        = "${var.name_prefix}-api-cache-policy"
@@ -412,7 +409,6 @@ resource "aws_cloudfront_function" "vwr_api_rewrite" {
 
 # Rewrites /vwr/{eventId} to /vwr/index.html so S3 serves the SPA
 resource "aws_cloudfront_function" "vwr_page_rewrite" {
-  count   = var.s3_bucket_name != "" ? 1 : 0
   name    = "${var.name_prefix}-vwr-page-rewrite"
   runtime = "cloudfront-js-2.0"
   comment = "Rewrites /vwr/{eventId} to /vwr/index.html for S3 static page"

@@ -254,3 +254,31 @@ resource "aws_security_group_rule" "rds_ingress_from_proxy" {
   security_group_id        = aws_security_group.rds.id
   description              = "Allow PostgreSQL from RDS Proxy"
 }
+
+# ─────────────────────────────────────────────────────────────────────────────
+# RDS Read Replica
+# ─────────────────────────────────────────────────────────────────────────────
+
+resource "aws_db_instance" "read_replica" {
+  count = var.enable_read_replica ? 1 : 0
+
+  identifier          = "${var.name_prefix}-postgres-replica"
+  replicate_source_db = aws_db_instance.main.identifier
+  instance_class      = coalesce(var.read_replica_instance_class, var.instance_class)
+  storage_encrypted   = true
+  publicly_accessible = false
+
+  vpc_security_group_ids = [aws_security_group.rds.id]
+  parameter_group_name   = aws_db_parameter_group.main.name
+
+  performance_insights_enabled          = var.performance_insights_enabled
+  performance_insights_retention_period = var.performance_insights_enabled ? 7 : null
+  monitoring_interval                   = var.monitoring_interval
+  monitoring_role_arn                   = var.monitoring_interval > 0 ? var.monitoring_role_arn : null
+
+  skip_final_snapshot = true
+
+  tags = {
+    Name = "${var.name_prefix}-postgres-replica"
+  }
+}

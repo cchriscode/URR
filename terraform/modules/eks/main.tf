@@ -10,6 +10,7 @@ resource "aws_security_group" "eks_nodes" {
   tags = {
     Name                                        = "${var.name_prefix}-eks-nodes-sg"
     "kubernetes.io/cluster/${var.name_prefix}" = "owned"
+    "karpenter.sh/discovery"                    = var.name_prefix
   }
 
   lifecycle {
@@ -346,6 +347,96 @@ resource "aws_iam_role" "ebs_csi" {
 resource "aws_iam_role_policy_attachment" "ebs_csi" {
   role       = aws_iam_role.ebs_csi.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# IRSA Role for Karpenter Controller
+# ─────────────────────────────────────────────────────────────────────────────
+
+data "aws_iam_policy_document" "karpenter_assume_role" {
+  statement {
+    effect = "Allow"
+
+    principals {
+      type        = "Federated"
+      identifiers = [aws_iam_openid_connect_provider.cluster.arn]
+    }
+
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "${replace(aws_iam_openid_connect_provider.cluster.url, "https://", "")}:sub"
+      values   = ["system:serviceaccount:kube-system:karpenter"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "${replace(aws_iam_openid_connect_provider.cluster.url, "https://", "")}:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "karpenter" {
+  name               = "${var.name_prefix}-karpenter-controller"
+  assume_role_policy = data.aws_iam_policy_document.karpenter_assume_role.json
+
+  tags = {
+    Name = "${var.name_prefix}-karpenter-controller"
+  }
+}
+
+resource "aws_iam_role_policy" "karpenter" {
+  name = "${var.name_prefix}-karpenter-policy"
+  role = aws_iam_role.karpenter.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "Karpenter"
+        Effect = "Allow"
+        Action = [
+          "ec2:CreateFleet",
+          "ec2:CreateLaunchTemplate",
+          "ec2:CreateTags",
+          "ec2:DeleteLaunchTemplate",
+          "ec2:DescribeAvailabilityZones",
+          "ec2:DescribeImages",
+          "ec2:DescribeInstances",
+          "ec2:DescribeInstanceTypeOfferings",
+          "ec2:DescribeInstanceTypes",
+          "ec2:DescribeLaunchTemplates",
+          "ec2:DescribeSecurityGroups",
+          "ec2:DescribeSubnets",
+          "ec2:RunInstances",
+          "ec2:TerminateInstances",
+          "iam:PassRole",
+          "pricing:GetProducts",
+          "ssm:GetParameter"
+        ]
+        Resource = "*"
+      },
+      {
+        Sid      = "ConditionalEC2Termination"
+        Effect   = "Allow"
+        Action   = "ec2:TerminateInstances"
+        Resource = "*"
+        Condition = {
+          StringLike = {
+            "ec2:ResourceTag/karpenter.sh/nodepool" = "*"
+          }
+        }
+      },
+      {
+        Sid    = "EKSClusterAccess"
+        Effect = "Allow"
+        Action = ["eks:DescribeCluster"]
+        Resource = aws_eks_cluster.main.arn
+      }
+    ]
+  })
 }
 
 # ─────────────────────────────────────────────────────────────────────────────

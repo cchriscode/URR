@@ -160,3 +160,17 @@ variable "rds_proxy_role_arn" {
   type        = string
   default     = ""
 }
+
+# Read Replica
+
+variable "enable_read_replica" {
+  description = "Create a read replica for read-heavy workloads"
+  type        = bool
+  default     = false
+}
+
+variable "read_replica_instance_class" {
+  description = "Instance class for read replica (defaults to same as primary)"
+  type        = string
+  default     = null
+}

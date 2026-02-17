@@ -26,15 +26,13 @@ variable "queue_entry_token_secret" {
 }
 
 variable "s3_bucket_name" {
-  description = "S3 bucket name for static assets (optional)"
+  description = "S3 bucket name for frontend static files"
   type        = string
-  default     = ""
 }
 
 variable "s3_bucket_regional_domain_name" {
   description = "S3 bucket regional domain name"
   type        = string
-  default     = ""
 }
 
 variable "certificate_arn" {
@@ -92,4 +90,12 @@ variable "vwr_api_gateway_stage" {
   description = "Stage name of the VWR API Gateway"
   type        = string
   default     = "v1"
+}
+
+# WAF
+
+variable "web_acl_arn" {
+  description = "ARN of WAFv2 Web ACL to associate with CloudFront (must be CLOUDFRONT scope in us-east-1)"
+  type        = string
+  default     = ""
 }

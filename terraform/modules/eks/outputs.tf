@@ -63,3 +63,8 @@ output "ebs_csi_driver_role_arn" {
   description = "ARN of EBS CSI driver IRSA role"
   value       = aws_iam_role.ebs_csi.arn
 }
+
+output "karpenter_role_arn" {
+  description = "ARN of Karpenter controller IRSA role"
+  value       = aws_iam_role.karpenter.arn
+}

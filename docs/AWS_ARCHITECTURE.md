@@ -42,7 +42,7 @@ graph TB
         subgraph APP["App Subnets (10.0.10.0/24, 10.0.11.0/24) - NAT 경유"]
             EKS_CP["EKS Control Plane<br/>K8s 1.28 | Private Only<br/>5 Log Types"]
 
-            subgraph WORKERS["EKS Worker Nodes (t3.medium x 2~5)"]
+            subgraph WORKERS["EKS Worker Nodes (Karpenter 자동확장)"]
                 GW["gateway x3<br/>:3001"]
                 TK["ticket x3<br/>:3002"]
                 QU["queue x3<br/>:3007"]
@@ -65,12 +65,12 @@ graph TB
         end
 
         subgraph DB["DB Subnets (10.0.20.0/24, 10.0.21.0/24) - 인터넷 차단"]
-            RDS["RDS PostgreSQL<br/>Multi-AZ | db.t4g.micro | 50GB<br/>ticket_db, auth_db, payment_db<br/>stats_db, community_db"]
+            RDS["RDS PostgreSQL<br/>Multi-AZ | db.t4g.micro | 50GB<br/>+ Read Replica (읽기 분산)"]
             RDSP["RDS Proxy<br/>커넥션 풀링 + TLS"]
         end
 
         subgraph CACHE["Cache Subnets (10.0.30.0/24, 10.0.31.0/24) - 인터넷 차단"]
-            REDIS["ElastiCache Redis 7.1<br/>cache.t4g.micro<br/>Primary + Replica<br/>TLS + AUTH + Failover"]
+            REDIS["ElastiCache Redis 7.1<br/>cache.r6g.large (13GB)<br/>Primary + Replica<br/>TLS + AUTH + Failover"]
         end
 
         subgraph STREAM["Streaming Subnets (10.0.40.0/24, 10.0.41.0/24) - NAT 경유"]
@@ -111,7 +111,7 @@ graph TB
 block-beta
     columns 5
 
-    block:PUB["Public Subnets"]:2
+    block:PUB["🟢 Public Subnets"]:2
         ALB_B["ALB"] NAT_B["NAT x2"]
     end
     space
@@ -119,7 +119,7 @@ block-beta
         IGW_B["Internet Gateway"]
     end
 
-    block:APPZ["App Subnets (EKS)"]:5
+    block:APPZ["🟠 Private (NAT) - App Subnets (EKS)"]:5
         EKS_B["EKS Control Plane"]
         GW_B["gateway x3"]
         TK_B["ticket x3"]
@@ -132,7 +132,6 @@ block-beta
         ST_B["stats x2"]
         CM_B["community x2"]
         CA_B["catalog x1"]
-        FE_B["frontend x2"]
     end
 
     block:APP3[" "]:5
@@ -140,15 +139,15 @@ block-beta
         VPCE_B["VPC Endpoints x11"]
     end
 
-    block:DBZ["DB Subnets (격리)"]:2
-        RDS_B["RDS PostgreSQL<br/>Multi-AZ<br/>5 databases"]
+    block:DBZ["🔴 Private (격리) - DB Subnets"]:2
+        RDS_B["RDS PostgreSQL<br/>Multi-AZ + Read Replica<br/>5 databases"]
     end
     space
-    block:CACHEZ["Cache Subnets (격리)"]:2
-        REDIS_B["ElastiCache Redis<br/>Primary + Replica"]
+    block:CACHEZ["🔴 Private (격리) - Cache Subnets"]:2
+        REDIS_B["ElastiCache Redis<br/>r6g.large (13GB)<br/>Primary + Replica"]
     end
 
-    block:STREAMZ["Streaming Subnets"]:5
+    block:STREAMZ["🟠 Private (NAT) - Streaming Subnets"]:5
         MSK_B["MSK Kafka<br/>2 brokers"]
         SQS_B["SQS FIFO<br/>+ DLQ"]
         LW_B["Lambda Worker"]
@@ -159,8 +158,8 @@ block-beta
     style APP2 fill:#fff3e0
     style APP3 fill:#fff3e0
     style DBZ fill:#fce4ec
-    style CACHEZ fill:#f3e5f5
-    style STREAMZ fill:#e0f2f1
+    style CACHEZ fill:#fce4ec
+    style STREAMZ fill:#fff3e0
 ```
 
 ---
@@ -180,13 +179,22 @@ block-beta
 
 ### 1.2 서브넷 구성
 
-| 서브넷 | AZ-a CIDR | AZ-c CIDR | 인터넷 | 용도 |
-|--------|-----------|-----------|--------|------|
-| **Public** | 10.0.0.0/24 | 10.0.1.0/24 | IGW 직접 | ALB, NAT Gateway |
-| **App** | 10.0.10.0/24 | 10.0.11.0/24 | NAT (AZ별) | EKS Worker 노드 |
-| **Database** | 10.0.20.0/24 | 10.0.21.0/24 | 차단 | RDS PostgreSQL |
-| **Cache** | 10.0.30.0/24 | 10.0.31.0/24 | 차단 | ElastiCache Redis |
-| **Streaming** | 10.0.40.0/24 | 10.0.41.0/24 | NAT (AZ별) | MSK Kafka, Lambda Worker |
+모든 서브넷은 **Public 1종 + Private 4종**으로 분류되며, Private 서브넷은 보안 수준에 따라 두 가지로 나뉜다.
+
+| 분류 | 서브넷 | AZ-a CIDR | AZ-c CIDR | 인터넷 | 용도 |
+|------|--------|-----------|-----------|--------|------|
+| **Public** | Public | 10.0.0.0/24 | 10.0.1.0/24 | IGW 직접 | ALB, NAT Gateway |
+| **Private (NAT)** | App | 10.0.10.0/24 | 10.0.11.0/24 | NAT 경유 (아웃바운드만) | EKS Worker 노드 |
+| **Private (NAT)** | Streaming | 10.0.40.0/24 | 10.0.41.0/24 | NAT 경유 (아웃바운드만) | MSK Kafka, Lambda Worker |
+| **Private (격리)** | Database | 10.0.20.0/24 | 10.0.21.0/24 | 완전 차단 | RDS PostgreSQL |
+| **Private (격리)** | Cache | 10.0.30.0/24 | 10.0.31.0/24 | 완전 차단 | ElastiCache Redis |
+
+> **Private (NAT) vs Private (격리) 차이**
+>
+> - **Private (NAT)**: NAT Gateway를 통해 아웃바운드 인터넷 가능. ECR 이미지 pull, 외부 API 호출 등에 필요.
+> - **Private (격리)**: NAT 연결 없이 인바운드만 허용. 아웃바운드 경로가 아예 없으므로 노드가 침해되더라도 데이터 유출 경로 차단. AWS 서비스 접근은 VPC Endpoint로만 가능.
+>
+> DB/Cache를 별도 격리 서브넷으로 분리한 이유는, EKS 노드가 침해되더라도 DB/Redis에서 외부로 데이터가 유출되는 네트워크 경로 자체를 제거하기 위함이다.
 
 ### 1.3 라우팅 정책
 
@@ -195,29 +203,46 @@ graph LR
     IGW["Internet Gateway"]
     NAT_A["NAT GW AZ-a"]
     NAT_C["NAT GW AZ-c"]
-    NONE["라우트 없음"]
-    INET["0.0.0.0/0"]
+    NONE["라우트 없음<br/>(아웃바운드 차단)"]
+    INET["0.0.0.0/0<br/>(인터넷)"]
 
-    subgraph Routes
-        PUB["Public 서브넷"] -->|직접| IGW
-        APP_A["App 서브넷 AZ-a"] -->|아웃바운드만| NAT_A
-        APP_C["App 서브넷 AZ-c"] -->|아웃바운드만| NAT_C
-        DB["DB/Cache 서브넷"] -->|완전 격리| NONE
-        STR_A["Streaming AZ-a"] -->|아웃바운드만| NAT_A
-        STR_C["Streaming AZ-c"] -->|아웃바운드만| NAT_C
+    subgraph PUBLIC["Public (1종)"]
+        PUB["Public 서브넷 × 2AZ"]
     end
+
+    subgraph PRIVATE_NAT["Private - NAT 경유 (2종)"]
+        APP_A["App 서브넷 AZ-a"]
+        APP_C["App 서브넷 AZ-c"]
+        STR_A["Streaming AZ-a"]
+        STR_C["Streaming AZ-c"]
+    end
+
+    subgraph PRIVATE_ISO["Private - 격리 (2종)"]
+        DB["DB 서브넷 × 2AZ"]
+        CACHE["Cache 서브넷 × 2AZ"]
+    end
+
+    PUB -->|"직접"| IGW
+    APP_A -->|"아웃바운드만"| NAT_A
+    APP_C -->|"아웃바운드만"| NAT_C
+    STR_A -->|"아웃바운드만"| NAT_A
+    STR_C -->|"아웃바운드만"| NAT_C
+    DB -->|"완전 격리"| NONE
+    CACHE -->|"완전 격리"| NONE
 
     IGW --> INET
     NAT_A --> INET
     NAT_C --> INET
 
-    style DB fill:#fce4ec,stroke:#c62828
+    style PUBLIC fill:#e8f5e9,stroke:#2e7d32
+    style PRIVATE_NAT fill:#fff3e0,stroke:#e65100
+    style PRIVATE_ISO fill:#fce4ec,stroke:#c62828
     style NONE fill:#fce4ec,stroke:#c62828
 ```
 
-**핵심**: DB와 Cache 서브넷은 NAT도 없는 완전 격리. VPC 엔드포인트로만 AWS 서비스 접근.
+> **참고**: DB와 Cache 서브넷은 동일한 라우트 테이블을 공유한다 (`aws_route_table.db`). 이 라우트 테이블에는 `0.0.0.0/0` 경로가 없어서 VPC 외부로의 통신이 불가능하다.
 
-### 1.4 VPC Endpoints (11개)
+### 1.4 VPC Endpoints (10개)
 
 NAT Gateway 비용 절감 + 보안 강화를 위해 PrivateLink 사용.
 
@@ -225,7 +250,8 @@ NAT Gateway 비용 절감 + 보안 강화를 위해 PrivateLink 사용.
 | 서비스 | 연결 대상 |
 |--------|-----------|
 | S3 | 모든 라우트 테이블 |
-| DynamoDB | 모든 라우트 테이블 |
+
+> DynamoDB는 VWR Lambda(VPC 밖)에서만 접근하므로 VPC Gateway Endpoint 불필요.
 
 **Interface Endpoints (App 서브넷에 배치)**:
 | 서비스 | 용도 |
@@ -254,7 +280,7 @@ NAT Gateway 비용 절감 + 보안 강화를 위해 PrivateLink 사용.
 | 컨트롤 플레인 로깅 | api, audit, authenticator, controllerManager, scheduler |
 | 로그 보관 | CloudWatch 7일 |
 
-### 2.2 Worker Node Group
+### 2.2 Worker Node Group (초기 노드)
 
 | 항목 | Prod | Staging |
 |------|------|---------|
@@ -266,7 +292,34 @@ NAT Gateway 비용 절감 + 보안 강화를 위해 PrivateLink 사용.
 | 서브넷 | App 서브넷 (2 AZ) | App 서브넷 (2 AZ) |
 | 레이블 | `role: initial` | `role: initial` |
 
-### 2.3 EKS Addons
+> 초기 노드 그룹은 Karpenter가 관리하기 전 기본 Pod (CoreDNS, Karpenter 자체 등)를 위한 것이다.
+> `scaling_config.desired_size`에 `ignore_changes`가 설정되어 있어 Karpenter가 노드 수를 자유롭게 조정할 수 있다.
+
+### 2.3 Karpenter (노드 자동확장)
+
+| 항목 | 값 |
+|------|-----|
+| IRSA | `karpenter` SA (kube-system) → EC2/EKS 관리 정책 |
+| NodePool | `default` |
+| 허용 인스턴스 | t3.medium, t3.large, t3.xlarge, m5.large, m5.xlarge |
+| 용량 타입 | on-demand + spot 혼합 |
+| 리소스 상한 | CPU 32코어, 메모리 64Gi |
+| 통합 정책 | 비어있거나 과소 활용 시 60초 후 통합 |
+| AMI | Amazon Linux 2023 (최신) |
+| 디스크 | 30Gi gp3 |
+| 디스커버리 | `karpenter.sh/discovery` 태그로 서브넷/SG 자동 탐색 |
+
+**동작 원리**: HPA가 Pod를 늘리려 하는데 노드 여유가 없으면, Karpenter가 워크로드 요구사항에 맞는 EC2 인스턴스를 자동 프로비저닝한다. 트래픽 감소 후 Pod가 줄어들면 빈 노드를 자동 정리(consolidation)한다.
+
+**Helm 설치**:
+```bash
+helm install karpenter oci://public.ecr.aws/karpenter/karpenter \
+  --namespace kube-system --version 1.1.1 \
+  -f k8s/karpenter/karpenter-values.yaml
+kubectl apply -f k8s/karpenter/nodepool.yaml
+```
+
+### 2.4 EKS Addons
 
 | Addon | IRSA | 역할 |
 |-------|------|------|
@@ -275,9 +328,10 @@ NAT Gateway 비용 절감 + 보안 강화를 위해 PrivateLink 사용.
 | coredns | - | 클러스터 DNS |
 | aws-ebs-csi-driver | `ebs-csi-controller-sa` → EBSCSIDriverPolicy | EBS 볼륨 관리 |
 
-### 2.4 서비스 메시
+### 2.5 서비스 메시
 
-**Istio / Linkerd 미사용**. Kubernetes 네이티브 NetworkPolicy로 서비스 간 통신 제어.
+**Istio / Linkerd 미사용**. Spring Cloud Gateway가 API Gateway 역할, NetworkPolicy로 서비스 간 통신 제어.
+현재 규모(서비스 9개)에서는 Istio의 mTLS/사이드카 오버헤드가 불필요하다.
 
 ---
 
@@ -295,19 +349,40 @@ NAT Gateway 비용 절감 + 보안 강화를 위해 PrivateLink 사용.
 | **queue-service** | 3007 | 3 | 100m / 500m | 256Mi / 512Mi | 3~8 (70%) | Blue-Green |
 | **community-service** | 3008 | 2 | 100m / 500m | 256Mi / 512Mi | - | - |
 | **catalog-service** | 3009 | 1 | 100m / 500m | 256Mi / 512Mi | - | - |
-| **frontend** | 3000 | 2 | 100m / 500m | 128Mi / 256Mi | - | - |
+
+> **Frontend (Next.js)**: EKS Pod로 실행 (standalone 모드). CloudFront → ALB → Frontend Pod (:3000).
 
 **총 Prod Pod 수**: 20개 (최소) ~ 44개 (HPA max)
 
-### 3.2 서비스 간 호출 관계
+### 3.2 AZ 균등 배치 (topologySpreadConstraints)
+
+모든 서비스에 `topologySpreadConstraints`를 적용하여 Pod가 AZ-a와 AZ-c에 균등 분산되도록 강제한다.
+한쪽 AZ가 장애나도 반대쪽에서 서비스 유지.
+
+```yaml
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: DoNotSchedule  # 레플리카 ≥ 2인 서비스
+    labelSelector:
+      matchLabels:
+        app: <service-name>
+```
+
+| 정책 | 적용 서비스 (Prod) | 이유 |
+|------|-------------------|------|
+| **DoNotSchedule** | gateway, ticket, queue, payment, auth, stats, community | 레플리카 ≥ 2 → AZ 균등 분산 강제 |
+| **ScheduleAnyway** | catalog | 레플리카 1개 → 분산 불가, 향후 스케일업 대비 |
+
+> Staging도 동일 구조 적용. 레플리카 ≥ 2인 서비스(gateway, ticket, queue)는 DoNotSchedule, 나머지는 ScheduleAnyway.
+
+### 3.3 서비스 간 호출 관계
 
 ```mermaid
 graph TD
     ALB["ALB :443"]
 
     ALB --> GW["gateway-service<br/>(API 라우터)"]
-    ALB --> FE["frontend<br/>(Next.js SSR)"]
-
     GW --> AUTH["auth"]
     GW --> TK["ticket"]
     GW --> PM["payment"]
@@ -333,7 +408,7 @@ graph TD
     style GW fill:#fff3e0,stroke:#e65100,stroke-width:2px
 ```
 
-### 3.3 서비스별 역할
+### 3.4 서비스별 역할
 
 | 서비스 | 역할 | 의존 서비스 |
 |--------|------|-------------|
@@ -345,9 +420,10 @@ graph TD
 | **queue** | Tier 2 대기열 (입장/퇴장/상태), SQS 연동 | Redis, SQS |
 | **catalog** | 읽기 전용 이벤트/아티스트 조회 | PostgreSQL (ticket_db 공유), auth |
 | **community** | 커뮤니티/리뷰 | PostgreSQL (community_db) |
-| **frontend** | Next.js SSR 웹 UI | gateway (SSR fetch) |
 
-### 3.4 Pod 보안
+> **Frontend (Next.js)**: EKS Pod로 실행 (`output: "standalone"`). ALB가 :3000 포트로 라우팅. SSR + CSR 혼합.
+
+### 3.5 Pod 보안
 
 모든 서비스 공통:
 ```yaml
@@ -359,7 +435,7 @@ securityContext:
     drop: [ALL]
 ```
 
-### 3.5 프로브 설정
+### 3.6 프로브 설정
 
 모든 Spring 서비스:
 ```yaml
@@ -368,7 +444,7 @@ readinessProbe:    /actuator/health/readiness   (10초 간격)
 livenessProbe:     /actuator/health/liveness    (20초 간격)
 ```
 
-### 3.6 PodDisruptionBudget (Prod)
+### 3.7 PodDisruptionBudget (Prod)
 
 모든 8개 백엔드 서비스: `minAvailable: 1`
 
@@ -390,7 +466,6 @@ default-deny-all:
 | 대상 서비스 | 포트 | 허용 출발지 |
 |------------|------|-------------|
 | gateway-service | 3001 | 모든 소스 (ALB) |
-| frontend | 3000 | 모든 소스 |
 | auth-service | 3005 | gateway, catalog |
 | ticket-service | 3002 | gateway, payment, catalog |
 | payment-service | 3003 | gateway |
@@ -433,6 +508,7 @@ tier:backend Pod → AWS Managed Service 접근:
 | 인스턴스 | db.t4g.micro | db.t4g.micro |
 | 스토리지 | 50 GB gp3 (최대 100GB) | 20 GB gp3 |
 | Multi-AZ | 활성화 | 비활성화 |
+| Read Replica | 1개 (읽기 분산) | 없음 |
 | 삭제 보호 | 활성화 | 비활성화 |
 | 백업 보관 | 7일 | 7일 |
 | 서브넷 | DB 서브넷 (격리) | DB 서브넷 |
@@ -443,6 +519,12 @@ tier:backend Pod → AWS Managed Service 접근:
 - `payment_db` — 결제
 - `stats_db` — 통계
 - `community_db` — 커뮤니티, 리뷰
+
+**Read Replica** (Prod만):
+- Primary와 동일 인스턴스 클래스 (기본값, 별도 지정 가능)
+- 읽기 전용 쿼리 분산 (stats-service, catalog-service 등)
+- Primary의 서브넷 그룹/엔진 설정 자동 상속
+- Performance Insights, Enhanced Monitoring 동일 적용
 
 **RDS Proxy**:
 - App 서브넷에 위치 (EKS 노드와 같은 서브넷)
@@ -461,7 +543,7 @@ tier:backend Pod → AWS Managed Service 접근:
 | 항목 | Prod | Staging |
 |------|------|---------|
 | 엔진 | Redis 7.1 | Redis 7.1 |
-| 노드 타입 | cache.t4g.micro | cache.t4g.micro |
+| 노드 타입 | cache.r6g.large (13GB) | cache.t4g.small (1.5GB) |
 | 노드 수 | 2 (Primary + Replica) | 1 |
 | Auto-Failover | 활성화 | 비활성화 |
 | Multi-AZ | 활성화 | 비활성화 |
@@ -511,11 +593,17 @@ tier:backend Pod → AWS Managed Service 접근:
 | 삭제 보호 | 활성화 (Prod) |
 
 **리스너**:
-- HTTPS :443 → gateway-service Target Group (:3001)
+- HTTPS :443 → 경로 기반 라우팅 (2개 Target Group)
 - HTTP :80 → HTTPS 리다이렉트 (301)
 - SSL Policy: TLS 1.3
 
-**Target Group**:
+**Target Group (2개)**:
+
+| Target Group | 포트 | 경로 | 용도 |
+|-------------|------|------|------|
+| gateway-service | :3001 | `/api/*` | API 라우팅 |
+| frontend | :3000 | `/*` (기본) | Next.js 페이지 서빙 |
+
 - 타입: IP (EKS Pod IP)
 - Health Check: GET /health (2회 성공, 3회 실패)
 - Stickiness: Cookie 기반 (24시간)
@@ -551,6 +639,25 @@ tier:backend Pod → AWS Managed Service 접근:
 | `/vwr-api/*` | API GW | 0초 | CF Function (prefix strip) |
 
 **보안 헤더**: HSTS, X-Content-Type-Options, X-Frame-Options, X-XSS-Protection, Referrer-Policy
+
+**WAF (Web Application Firewall)**:
+
+| 항목 | 값 |
+|------|-----|
+| Scope | CLOUDFRONT (us-east-1) |
+| 연결 | CloudFront Distribution에 `web_acl_id`로 부착 |
+| Terraform | `terraform/modules/waf/` |
+
+| 우선순위 | 규칙 | 설명 |
+|----------|------|------|
+| 1 | **Rate Limit** | IP당 5분 2,000건 초과 시 BLOCK |
+| 2 | **AWSManagedRulesCommonRuleSet** | OWASP Top 10 공통 공격 패턴 차단 |
+| 3 | **AWSManagedRulesKnownBadInputsRuleSet** | 알려진 악성 입력 (Log4j 등) 차단 |
+| 4 | **AWSManagedRulesSQLiRuleSet** | SQL Injection 탐지 및 차단 |
+
+- Default Action: **Allow** (규칙에 매칭되지 않으면 통과)
+- CloudWatch 메트릭: 모든 규칙별 개별 메트릭 활성화
+- Sampled Requests: 활성화 (디버깅/분석용)
 
 ### 5.6 SQS FIFO
 
@@ -660,7 +767,7 @@ tier:backend Pod → AWS Managed Service 접근:
 
 ```mermaid
 graph TD
-    L1["Layer 1: CloudFront<br/>TLS 1.2+ | 보안 헤더 | 지역 제한"]
+    L1["Layer 1: CloudFront + WAF<br/>TLS 1.2+ | 보안 헤더 | WAF (Rate Limit, SQLi, XSS)"]
     L2["Layer 2: Lambda@Edge<br/>VWR Token 검증 (Tier 1 + Tier 2)"]
     L3["Layer 3: ALB<br/>CloudFront만 허용 (Prefix List) | HTTPS"]
     L4["Layer 4: Gateway Filters<br/>JWT 인증 | Rate Limiting | Entry Token 검증"]
@@ -698,29 +805,28 @@ graph TD
 
 ```mermaid
 graph TD
-    USER["사용자"] --> CF["CloudFront"]
+    USER["사용자<br/>이벤트 페이지에서<br/>'예매하기' 클릭"] --> MODAL["VWR 모달 (브라우저 내)"]
 
-    CF -->|"VWR 활성 이벤트?"| VWR_REDIRECT["/vwr/{eventId}<br/>리다이렉트"]
-    VWR_REDIRECT --> T1["Tier 1 VWR 페이지 (S3)<br/>DynamoDB 기반 CDN 레벨 대기열"]
-    T1 -->|"입장 시"| COOKIE["urr-vwr-token 쿠키 발급"]
+    MODAL -->|"VWR API 호출<br/>(서버리스)"| APIGW["API Gateway<br/>/vwr-api/*"]
+    APIGW --> LAMBDA["Lambda VWR API"]
+    LAMBDA --> DYNAMO["DynamoDB<br/>대기 번호 발급/조회"]
 
-    CF --> EDGE["Lambda@Edge 검증"]
-    COOKIE -.->|"쿠키 전달"| EDGE
+    MODAL -->|"입장 허가 시"| COOKIE["urr-vwr-token<br/>쿠키 발급"]
 
-    EDGE -->|"좌석/예매 API?"| ENTRY["urr-entry-token 필요"]
-    ENTRY --> T2["Tier 2 Queue 페이지 (Next.js)<br/>Redis 기반 서비스 레벨 대기열"]
+    COOKIE --> T2["Tier 2 Queue 페이지<br/>(Next.js /queue/{eventId})<br/>Redis 기반 서비스 레벨 대기열"]
     T2 -->|"입장 시"| TOKEN["x-queue-entry-token 발급"]
 
-    EDGE --> GW_FILTER["Gateway Filter 검증"]
-    TOKEN -.->|"헤더 전달"| GW_FILTER
-
+    TOKEN -.->|"헤더 전달"| GW_FILTER["Gateway Filter 검증"]
     GW_FILTER --> TICKET["ticket-service<br/>(좌석 선택, 예매)"]
 
-    style T1 fill:#e8f4fd,stroke:#1a73e8
+    ADVANCER["Lambda Counter Advancer<br/>(1분 간격)"] -->|"batch 500"| DYNAMO
+
+    style MODAL fill:#e8f4fd,stroke:#1a73e8
     style T2 fill:#fff3e0,stroke:#e65100
-    style EDGE fill:#e3f2fd,stroke:#0d47a1
+    style APIGW fill:#e3f2fd,stroke:#0d47a1
     style GW_FILTER fill:#f3e5f5,stroke:#6a1b9a
     style TICKET fill:#e8f5e9,stroke:#2e7d32
+    style DYNAMO fill:#fce4ec,stroke:#c62828
 ```
 
 ### 6.3 보안 그룹 매트릭스
@@ -749,6 +855,7 @@ graph TD
 | EKS Node Role | EC2 (Worker) | EKSWorkerNodePolicy, CNI, ECR ReadOnly, SSM |
 | VPC CNI IRSA | aws-node SA | AmazonEKS_CNI_Policy |
 | EBS CSI IRSA | ebs-csi SA | AmazonEBSCSIDriverPolicy |
+| Karpenter IRSA | karpenter SA (kube-system) | EC2 Fleet/Instance 관리, iam:PassRole, eks:DescribeCluster |
 | RDS Proxy Role | RDS Proxy | SecretsManager GetSecretValue |
 | RDS Monitoring Role | RDS | EnhancedMonitoringRole |
 | Lambda Worker Role | Lambda | LambdaBasicExecution, VPCAccess, SQS |
@@ -839,15 +946,16 @@ GitHub Actions `rollback.yml`:
 | 항목 | Kind (로컬) | Staging | Prod |
 |------|------------|---------|------|
 | **네임스페이스** | urr-spring | urr-staging | urr-spring |
-| **노드** | Kind 2노드 | EKS t3.small × 1~3 (SPOT) | EKS t3.medium × 2~5 (ON_DEMAND) |
-| **DB** | 단일 PostgreSQL Pod | RDS Single-AZ (20GB) | RDS Multi-AZ (50GB) + Proxy |
-| **Redis** | Dragonfly Pod | ElastiCache 1노드 | ElastiCache 2노드 (Failover) |
+| **노드** | Kind 2노드 | EKS t3.small × 1~3 (SPOT) | EKS t3.medium × 2~5 (ON_DEMAND) + Karpenter 자동확장 |
+| **DB** | 단일 PostgreSQL Pod | RDS Single-AZ (20GB) | RDS Multi-AZ (50GB) + Proxy + Read Replica |
+| **Redis** | Dragonfly Pod | ElastiCache t4g.small (1.5GB) 1노드 | ElastiCache r6g.large (13GB) 2노드 (Failover) |
 | **Kafka** | 3-broker StatefulSet | MSK 2-broker (20GB) | MSK 2-broker (50GB) |
 | **총 레플리카** | 각 1개 (9 Pod) | 각 1~2개 (~12 Pod) | 최소 20 Pod (HPA: ~44) |
 | **Rollout** | 없음 | 없음 | Blue-Green (4개 서비스) |
 | **HPA** | 없음 | 없음 | 4개 서비스 (70% CPU) |
 | **PDB** | 없음 | 없음 | 8개 서비스 (minAvailable: 1) |
-| **모니터링** | K8s 내부 Prometheus | K8s Prometheus | kube-prometheus-stack + CloudWatch |
+| **AZ 분산** | 없음 | topologySpread (3서비스 강제) | topologySpread (8서비스 강제) |
+| **모니터링** | K8s 내부 Prometheus | K8s Prometheus + AMP/AMG | kube-prometheus-stack + AMP/AMG + CloudWatch |
 | **추적** | Zipkin (메모리) | Zipkin (메모리) | Zipkin (ES) + X-Ray (Lambda) |
 | **샘플링** | 100% | 100% | 10% |
 | **CDN** | 없음 | 없음 | CloudFront + Lambda@Edge |
@@ -871,6 +979,32 @@ Terraform 배포 시 자동 생성:
 
 **알림 경로**: CloudWatch Alarm → SNS Topic → 이메일/Slack
 
+### 10.1 AMP + AMG (외부 모니터링)
+
+EKS 장애 시에도 메트릭을 보존하기 위해 **Amazon Managed Prometheus (AMP)** + **Amazon Managed Grafana (AMG)**를 외부 모니터링으로 운영한다.
+
+```mermaid
+graph LR
+    PROM["EKS 내부<br/>Prometheus"] -->|"remote_write<br/>(SigV4 IRSA)"| AMP["AMP<br/>Managed Prometheus"]
+    AMP --> AMG["AMG<br/>Managed Grafana"]
+    CW["CloudWatch<br/>AWS 서비스 메트릭"] --> AMG
+
+    style PROM fill:#fff3e0,stroke:#e65100
+    style AMP fill:#e8f4fd,stroke:#1a73e8
+    style AMG fill:#e8f5e9,stroke:#2e7d32
+    style CW fill:#e3f2fd,stroke:#0d47a1
+```
+
+| 항목 | 값 |
+|------|-----|
+| AMP | Prometheus 호환 TSDB (서버리스) |
+| AMG | Grafana 호환 대시보드 (AWS SSO 인증) |
+| 연동 방식 | Prometheus `remoteWrite` → AMP (SigV4) |
+| IRSA | `kube-prometheus-stack-prometheus` SA → `aps:RemoteWrite` |
+| 데이터 흐름 | EKS Prometheus 수집 → AMP 전송 → AMG 조회 |
+
+**EKS 장애 시**: EKS 내부 Prometheus/Grafana는 중단되지만, AMP에 이미 전송된 메트릭 데이터는 보존되고 AMG에서 계속 조회 가능.
+
 ---
 
 ## 11. Terraform 모듈 구조
@@ -880,27 +1014,38 @@ terraform/
 ├── modules/
 │   ├── vpc/              # VPC, 서브넷, NAT, IGW, 라우트 테이블
 │   ├── vpc-endpoints/    # 11개 VPC 엔드포인트
-│   ├── eks/              # EKS 클러스터, 노드 그룹, Addon, IRSA
-│   ├── rds/              # RDS PostgreSQL, Proxy, 파라미터 그룹
-│   ├── elasticache/      # ElastiCache Redis, 서브넷 그룹
+│   ├── eks/              # EKS 클러스터, 노드 그룹, Addon, IRSA (Karpenter 포함)
+│   ├── rds/              # RDS PostgreSQL, Proxy, Read Replica, 파라미터 그룹
+│   ├── elasticache/      # ElastiCache Redis, 서브넷 그룹 (노드 타입 환경별 분리)
 │   ├── msk/              # MSK Kafka, 구성, CloudWatch
 │   ├── alb/              # ALB, 리스너, 타겟 그룹
 │   ├── cloudfront/       # CloudFront, Lambda@Edge, CF Functions
+│   ├── waf/              # WAFv2 Web ACL (CLOUDFRONT scope, us-east-1)
+│   ├── route53/          # Route53 Hosted Zone, A Record → CloudFront
+│   ├── ecr/              # ECR 리포지토리 9개 (서비스별), Lifecycle Policy
 │   ├── s3/               # S3 버킷, 정책, 수명 주기
 │   ├── sqs/              # SQS FIFO, DLQ, CloudWatch 알람
 │   ├── lambda-vwr/       # VWR API Lambda, Counter Advancer
 │   ├── lambda-worker/    # SQS Consumer Lambda, VPC 배치
-│   └── dynamodb-vwr/     # VWR DynamoDB 테이블, GSI, TTL
+│   ├── dynamodb-vwr/     # VWR DynamoDB 테이블, GSI, TTL
+│   └── monitoring/       # AMP + AMG + Prometheus IRSA
 │
 ├── environments/
 │   ├── prod/
-│   │   ├── main.tf           # 13개 모듈 호출
+│   │   ├── main.tf           # 20개 모듈 호출
 │   │   ├── variables.tf      # 환경 변수 정의
 │   │   └── terraform.tfvars.example
 │   └── staging/
 │       ├── main.tf
 │       ├── variables.tf
 │       └── terraform.tfvars.example
+```
+
+**Karpenter 매니페스트**:
+```
+k8s/karpenter/
+├── karpenter-values.yaml   # Helm chart values (IRSA, 클러스터 설정)
+└── nodepool.yaml           # NodePool + EC2NodeClass (인스턴스/리소스 정책)
 ```
 
 **State 관리**: S3 Backend + DynamoDB Lock (환경별 분리)

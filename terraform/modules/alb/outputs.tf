@@ -38,3 +38,13 @@ output "gateway_service_target_group_name" {
   description = "Name of gateway service target group (for K8s TargetGroupBinding)"
   value       = aws_lb_target_group.gateway_service.name
 }
+
+output "frontend_target_group_arn" {
+  description = "ARN of frontend target group"
+  value       = aws_lb_target_group.frontend.arn
+}
+
+output "frontend_target_group_name" {
+  description = "Name of frontend target group (for K8s TargetGroupBinding)"
+  value       = aws_lb_target_group.frontend.name
+}
