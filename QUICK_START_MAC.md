@@ -1,37 +1,51 @@
-# URR Spring - Quick Start (Windows)
-
-`C:\Users\USER\URR` 기준.
+# URR Spring - Quick Start (macOS / Linux)
 
 ---
 
 ## 방법 A: Kind (Kubernetes 로컬) - 권장
 
-전체 스택(Frontend + Backend + DB + Monitoring)을 Kind 클러스터에 배포. 기존 프로젝트와 동일한 방식.
+전체 스택(Frontend + Backend + DB + Monitoring)을 Kind 클러스터에 배포.
+
+### Prerequisites
+
+```bash
+# Homebrew (macOS)
+brew install kind kubectl docker
+
+# Or install kind manually
+curl -Lo ~/bin/kind https://kind.sigs.k8s.io/dl/v0.27.0/kind-darwin-amd64
+chmod +x ~/bin/kind
+```
+
+JDK 21+, Node.js 20+ 필요.
 
 ### 한 줄 실행
 
-```powershell
-.\scripts\spring-kind-dev.ps1
+```bash
+cd /path/to/URR
+chmod +x scripts/*.sh
+
+./scripts/spring-kind-dev.sh
 ```
 
 ### 옵션
 
-```powershell
-.\scripts\spring-kind-dev.ps1 -RecreateCluster   # 클러스터 재생성
-.\scripts\spring-kind-dev.ps1 -SkipBuild          # 이미지 빌드 건너뛰기
+```bash
+./scripts/spring-kind-dev.sh --recreate-cluster   # 클러스터 재생성
+./scripts/spring-kind-dev.sh --skip-build          # 이미지 빌드 건너뛰기
 ```
 
 ### 단계별 실행
 
-```powershell
+```bash
 # 1. 전체 스택 배포 (빌드 + K8s 배포)
-.\scripts\spring-kind-up.ps1
+./scripts/spring-kind-up.sh
 
 # 2. 개별 서비스 포트 포워딩 (필요 시)
-.\scripts\start-port-forwards.ps1
+./scripts/start-port-forwards.sh
 
 # 3. 헬스체크
-.\scripts\spring-kind-smoke.ps1
+./scripts/spring-kind-smoke.sh
 ```
 
 ### 접속 (Kind NodePort)
@@ -48,9 +62,9 @@ Grafana 로그인: admin / admin
 
 ### 종료
 
-```powershell
-.\scripts\spring-kind-down.ps1              # 네임스페이스만 삭제
-.\scripts\spring-kind-down.ps1 -DeleteCluster  # 클러스터 전체 삭제
+```bash
+./scripts/spring-kind-down.sh              # 네임스페이스만 삭제
+./scripts/spring-kind-down.sh --delete-cluster  # 클러스터 전체 삭제
 ```
 
 ---
@@ -59,27 +73,25 @@ Grafana 로그인: admin / admin
 
 DB/Redis/Kafka/Zipkin은 Docker, Spring 서비스는 로컬 Gradle로 실행. 코드 수정 시 빠른 반영 가능.
 
-> `start-all.ps1`이 로컬 개발용 시크릿(JWT_SECRET, INTERNAL_API_TOKEN 등)을 자동으로 환경변수에 설정합니다. 별도 `.env` 파일은 필요 없습니다.
-
 ### 한 줄 실행
 
-```powershell
-.\scripts\start-all.ps1 -Build -WithFrontend
+```bash
+./scripts/start-all.sh --build --with-frontend
 ```
 
 ### 옵션
 
-```powershell
-.\scripts\start-all.ps1                     # 백엔드만 (빌드 없이)
-.\scripts\start-all.ps1 -Build              # 빌드 후 실행
-.\scripts\start-all.ps1 -WithFrontend       # 프론트엔드 포함
-.\scripts\start-all.ps1 -Build -WithFrontend # 빌드 + 프론트엔드
+```bash
+./scripts/start-all.sh                     # 백엔드만 (빌드 없이)
+./scripts/start-all.sh --build             # 빌드 후 실행
+./scripts/start-all.sh --with-frontend     # 프론트엔드 포함
+./scripts/start-all.sh --build --with-frontend # 빌드 + 프론트엔드
 ```
 
 ### 종료
 
-```powershell
-.\scripts\stop-all.ps1
+```bash
+./scripts/stop-all.sh
 ```
 
 ---
@@ -100,8 +112,6 @@ DB/Redis/Kafka/Zipkin은 Docker, Spring 서비스는 로컬 Gradle로 실행. �
 | Catalog Service | 3009 | 이벤트/아티스트/관리자 |
 | Management (전 서비스) | 9090 | Actuator/Prometheus 메트릭 |
 
-> **참고**: `/actuator/*` 엔드포인트(health, prometheus, info)는 management port **9090**에서만 접근 가능. 앱 포트의 `/health` 엔드포인트는 정상 동작.
-
 Docker Compose 인프라 포트 (로컬 개발):
 
 | 서비스 | 포트 | 설명 |
@@ -119,9 +129,9 @@ Docker Compose 인프라 포트 (로컬 개발):
 
 ## 검증
 
-```powershell
+```bash
 # 스모크 테스트
-.\scripts\spring-kind-smoke.ps1
+./scripts/spring-kind-smoke.sh
 
 # 수동 확인
 curl http://localhost:3000          # Frontend
@@ -137,23 +147,23 @@ curl http://localhost:9411          # Zipkin UI (분산 추적)
 
 | 스크립트 | 설명 |
 |----------|------|
-| `scripts\spring-kind-dev.ps1` | Kind 전체 스택 올인원 |
-| `scripts\spring-kind-up.ps1` | Kind 클러스터 배포 |
-| `scripts\spring-kind-down.ps1` | Kind 정리 |
-| `scripts\spring-kind-build-load.ps1` | Docker 이미지 빌드/로드 (Frontend 포함) |
-| `scripts\spring-kind-smoke.ps1` | Kind 헬스체크 |
-| `scripts\start-port-forwards.ps1` | Kind 포트 포워딩 (Frontend 포함) |
-| `scripts\start-all.ps1` | 로컬 개발 실행 (Docker Compose + Gradle) |
-| `scripts\stop-all.ps1` | 로컬 개발 종료 |
-| `scripts\cleanup.ps1` | 전체 초기화 |
+| `scripts/spring-kind-dev.sh` | Kind 전체 스택 올인원 |
+| `scripts/spring-kind-up.sh` | Kind 클러스터 배포 |
+| `scripts/spring-kind-down.sh` | Kind 정리 |
+| `scripts/spring-kind-build-load.sh` | Docker 이미지 빌드/로드 |
+| `scripts/spring-kind-smoke.sh` | Kind 헬스체크 |
+| `scripts/start-port-forwards.sh` | Kind 포트 포워딩 |
+| `scripts/start-all.sh` | 로컬 개발 실행 (Docker Compose + Gradle) |
+| `scripts/stop-all.sh` | 로컬 개발 종료 |
+| `scripts/cleanup.sh` | 전체 초기화 |
 
 ---
 
 ## 전체 초기화 (Cleanup)
 
-```powershell
-.\scripts\cleanup.ps1          # 대화형
-.\scripts\cleanup.ps1 -Force   # 전부 삭제
+```bash
+./scripts/cleanup.sh          # 대화형
+./scripts/cleanup.sh --force  # 전부 삭제
 ```
 
 ---
@@ -162,13 +172,13 @@ curl http://localhost:9411          # Zipkin UI (분산 추적)
 
 ### 포트 충돌
 
-```powershell
-netstat -ano | findstr :3001
+```bash
+lsof -i :3001
 ```
 
 ### Kind Pod 상태
 
-```powershell
+```bash
 kubectl get pods -n urr-spring
 kubectl logs -n urr-spring deployment/gateway-service --tail=50
 kubectl logs -n urr-spring deployment/frontend --tail=50
@@ -177,9 +187,9 @@ kubectl rollout restart deployment/auth-service -n urr-spring
 
 ### Docker 컨테이너 상태 (로컬 개발)
 
-```powershell
-docker compose -f services-spring\docker-compose.databases.yml ps
-docker compose -f services-spring\docker-compose.databases.yml logs auth-db
-docker compose -f services-spring\docker-compose.databases.yml logs kafka
-docker compose -f services-spring\docker-compose.databases.yml logs zipkin
+```bash
+docker compose -f services-spring/docker-compose.databases.yml ps
+docker compose -f services-spring/docker-compose.databases.yml logs auth-db
+docker compose -f services-spring/docker-compose.databases.yml logs kafka
+docker compose -f services-spring/docker-compose.databases.yml logs zipkin
 ```
