@@ -75,6 +75,8 @@ public class TicketInternalClient {
                 .toBodilessEntity();
     }
 
+    @CircuitBreaker(name = "internalService", fallbackMethod = "confirmTransferFallback")
+    @Retry(name = "internalService")
     public void confirmTransfer(UUID transferId, String buyerId, String paymentMethod) {
         restClient.post()
                 .uri(uriBuilder -> uriBuilder.path("/internal/transfers/{id}/complete").build(transferId))
@@ -84,6 +86,8 @@ public class TicketInternalClient {
                 .toBodilessEntity();
     }
 
+    @CircuitBreaker(name = "internalService", fallbackMethod = "activateMembershipFallback")
+    @Retry(name = "internalService")
     public void activateMembership(UUID membershipId) {
         restClient.post()
                 .uri(uriBuilder -> uriBuilder.path("/internal/memberships/{id}/activate").build(membershipId))
@@ -95,7 +99,8 @@ public class TicketInternalClient {
     @SuppressWarnings("unused")
     private void confirmReservationFallback(UUID reservationId, String paymentMethod, Throwable t) {
         log.error("Circuit breaker: confirmReservation failed for reservation {}: {}", reservationId, t.getMessage());
-        // Don't throw — Kafka event will handle eventual consistency
+        throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
+            "Ticket service unavailable for confirmation: " + t.getMessage());
     }
 
     @SuppressWarnings("unused")
@@ -114,5 +119,19 @@ public class TicketInternalClient {
     private Map<String, Object> validateMembershipFallback(UUID membershipId, String userId, Throwable t) {
         log.error("Circuit breaker: validateMembership failed for membership {}: {}", membershipId, t.getMessage());
         throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Ticket service unavailable: " + t.getMessage());
+    }
+
+    @SuppressWarnings("unused")
+    private void confirmTransferFallback(UUID transferId, String buyerId, String paymentMethod, Throwable t) {
+        log.error("Circuit breaker: confirmTransfer failed for transfer {}: {}", transferId, t.getMessage());
+        throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
+            "Ticket service unavailable for transfer confirmation: " + t.getMessage());
+    }
+
+    @SuppressWarnings("unused")
+    private void activateMembershipFallback(UUID membershipId, Throwable t) {
+        log.error("Circuit breaker: activateMembership failed for membership {}: {}", membershipId, t.getMessage());
+        throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
+            "Ticket service unavailable for membership activation: " + t.getMessage());
     }
 }

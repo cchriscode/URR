@@ -12,6 +12,9 @@ spring:
         spring.json.trusted.packages: "com.urr.paymentservice.messaging.event,com.urr.ticketservice.messaging.event,java.util,java.lang"
         spring.json.use.type.headers: false
         spring.json.value.default.type: java.util.LinkedHashMap
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
   datasource:
     url: ${STATS_DB_URL:jdbc:postgresql://localhost:5436/stats_db}
     username: ${STATS_DB_USERNAME:urr_user}

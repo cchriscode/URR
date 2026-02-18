@@ -81,6 +81,9 @@ event:
 internal:
   auth-service-url: ${AUTH_SERVICE_URL:http://localhost:3005}
 
+seat-lock:
+  ttl-seconds: ${SEAT_LOCK_TTL_SECONDS:420}
+
 kafka:
   topic:
     replication-factor: ${KAFKA_TOPIC_REPLICATION_FACTOR:1}

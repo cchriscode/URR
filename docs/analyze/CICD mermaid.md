@@ -1,4 +1,4 @@
-flowchart LR
+```flowchart LR
   %% Tiketi CI/CD Pipeline (GitHub Actions + ArgoCD)
 
   subgraph S[Source Stage]
@@ -71,3 +71,4 @@ flowchart LR
   D6 -.-> RB2
   D7 -.-> RB1
   D7 -.-> RB2
+```

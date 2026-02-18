@@ -27,7 +27,7 @@ public class SeatLockService {
         DefaultRedisScript<List> seatLockAcquireScript,
         DefaultRedisScript<Long> seatLockReleaseScript,
         DefaultRedisScript<Long> paymentVerifyScript,
-        @Value("${SEAT_LOCK_TTL_SECONDS:300}") int seatLockTtlSeconds
+        @Value("${seat-lock.ttl-seconds:420}") int seatLockTtlSeconds
     ) {
         this.redisTemplate = redisTemplate;
         this.seatLockAcquireScript = seatLockAcquireScript;
