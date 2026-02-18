@@ -53,51 +53,49 @@ public class PaymentEventConsumer {
 
     @KafkaListener(topics = "payment-events", groupId = "ticket-service-group")
     public void handlePaymentEvent(Map<String, Object> rawEvent) {
-        try {
-            // Convert Map to typed PaymentEvent for type safety
-            PaymentEvent event = objectMapper.convertValue(rawEvent, PaymentEvent.class);
+        // Convert Map to typed PaymentEvent for type safety
+        PaymentEvent event = objectMapper.convertValue(rawEvent, PaymentEvent.class);
 
-            // Build a deduplication key from the event
-            String eventKey = buildEventKey(event);
-            if (eventKey != null && isAlreadyProcessed(eventKey)) {
-                log.info("Skipping already-processed event: {}", eventKey);
-                return;
+        // Build a deduplication key from the event
+        String eventKey = buildEventKey(event);
+        if (eventKey != null && isAlreadyProcessed(eventKey)) {
+            log.info("Skipping already-processed event: {}", eventKey);
+            return;
+        }
+
+        // C3: Check explicit type field first, fallback to duck-typing for backward compatibility
+        String type = event.type();
+        if ("PAYMENT_REFUNDED".equals(type)) {
+            handleRefund(event);
+        } else if ("PAYMENT_CONFIRMED".equals(type)) {
+            String paymentType = event.paymentType();
+            switch (paymentType != null ? paymentType : "reservation") {
+                case "transfer" -> handleTransferPayment(event);
+                case "membership" -> handleMembershipPayment(event);
+                default -> handleReservationPayment(event);
             }
+        } else {
+            // Fallback: duck-typing for backward compatibility with events missing type field
+            String paymentType = event.paymentType();
+            boolean isRefund = event.reason() != null;
 
-            // C3: Check explicit type field first, fallback to duck-typing for backward compatibility
-            String type = event.type();
-            if ("PAYMENT_REFUNDED".equals(type)) {
+            if (isRefund) {
                 handleRefund(event);
-            } else if ("PAYMENT_CONFIRMED".equals(type)) {
-                String paymentType = event.paymentType();
+            } else {
                 switch (paymentType != null ? paymentType : "reservation") {
                     case "transfer" -> handleTransferPayment(event);
                     case "membership" -> handleMembershipPayment(event);
                     default -> handleReservationPayment(event);
                 }
-            } else {
-                // Fallback: duck-typing for backward compatibility with events missing type field
-                String paymentType = event.paymentType();
-                boolean isRefund = event.reason() != null;
-
-                if (isRefund) {
-                    handleRefund(event);
-                } else {
-                    switch (paymentType != null ? paymentType : "reservation") {
-                        case "transfer" -> handleTransferPayment(event);
-                        case "membership" -> handleMembershipPayment(event);
-                        default -> handleReservationPayment(event);
-                    }
-                }
             }
-
-            // Mark as processed after successful handling
-            if (eventKey != null) {
-                markProcessed(eventKey);
-            }
-        } catch (Exception e) {
-            log.error("Failed to process payment event: {}", e.getMessage(), e);
         }
+
+        // Mark as processed after successful handling
+        if (eventKey != null) {
+            markProcessed(eventKey);
+        }
+        // NOTE: Exceptions are no longer caught here — they propagate to
+        // DefaultErrorHandler which retries (3x exponential backoff) then routes to DLQ.
     }
 
     private void handleReservationPayment(PaymentEvent event) {

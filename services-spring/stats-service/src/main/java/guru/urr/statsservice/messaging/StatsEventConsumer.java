@@ -24,144 +24,128 @@ public class StatsEventConsumer {
 
     @KafkaListener(topics = "payment-events", groupId = "stats-service-group")
     public void handlePaymentEvent(Map<String, Object> event) {
-        try {
-            String eventKey = buildEventKey(event);
-            if (eventKey != null && isDuplicate(eventKey)) {
-                log.info("Stats: skipping duplicate payment event: {}", eventKey);
-                return;
+        String eventKey = buildEventKey(event);
+        if (eventKey != null && isDuplicate(eventKey)) {
+            log.info("Stats: skipping duplicate payment event: {}", eventKey);
+            return;
+        }
+
+        // C3: Check explicit type field first, fallback to duck-typing
+        String type = str(event.get("type"));
+        int amount = integer(event.get("amount"));
+
+        if ("PAYMENT_REFUNDED".equals(type)) {
+            log.info("Stats: recording payment refund amount={}", amount);
+            statsWriteService.recordPaymentRefunded(amount);
+        } else if ("PAYMENT_CONFIRMED".equals(type)) {
+            String paymentType = str(event.get("paymentType"));
+            if ("transfer".equals(paymentType)) {
+                log.info("Stats: recording transfer payment amount={}", amount);
+                statsWriteService.recordTransferCompleted(amount);
             }
-
-            // C3: Check explicit type field first, fallback to duck-typing
-            String type = str(event.get("type"));
-            int amount = integer(event.get("amount"));
-
-            if ("PAYMENT_REFUNDED".equals(type)) {
+        } else {
+            // Fallback: duck-typing for backward compatibility
+            boolean isRefund = event.containsKey("reason");
+            if (isRefund) {
                 log.info("Stats: recording payment refund amount={}", amount);
                 statsWriteService.recordPaymentRefunded(amount);
-            } else if ("PAYMENT_CONFIRMED".equals(type)) {
+            } else {
                 String paymentType = str(event.get("paymentType"));
                 if ("transfer".equals(paymentType)) {
                     log.info("Stats: recording transfer payment amount={}", amount);
                     statsWriteService.recordTransferCompleted(amount);
                 }
-            } else {
-                // Fallback: duck-typing for backward compatibility
-                boolean isRefund = event.containsKey("reason");
-                if (isRefund) {
-                    log.info("Stats: recording payment refund amount={}", amount);
-                    statsWriteService.recordPaymentRefunded(amount);
-                } else {
-                    String paymentType = str(event.get("paymentType"));
-                    if ("transfer".equals(paymentType)) {
-                        log.info("Stats: recording transfer payment amount={}", amount);
-                        statsWriteService.recordTransferCompleted(amount);
-                    }
-                }
             }
+        }
 
-            if (eventKey != null) {
-                markProcessed(eventKey);
-            }
-        } catch (Exception e) {
-            log.error("Stats: failed to process payment event: {}", e.getMessage(), e);
+        if (eventKey != null) {
+            markProcessed(eventKey);
         }
     }
 
     @KafkaListener(topics = "reservation-events", groupId = "stats-service-group")
     public void handleReservationEvent(Map<String, Object> event) {
-        try {
-            String eventKey = buildEventKey(event);
-            if (eventKey != null && isDuplicate(eventKey)) {
-                log.info("Stats: skipping duplicate reservation event: {}", eventKey);
-                return;
-            }
+        String eventKey = buildEventKey(event);
+        if (eventKey != null && isDuplicate(eventKey)) {
+            log.info("Stats: skipping duplicate reservation event: {}", eventKey);
+            return;
+        }
 
-            UUID eventId = uuid(event.get("eventId"));
-            int amount = integer(event.get("totalAmount"));
+        UUID eventId = uuid(event.get("eventId"));
+        int amount = integer(event.get("totalAmount"));
 
-            // C3: Check explicit type field first, fallback to duck-typing
-            String type = str(event.get("type"));
+        // C3: Check explicit type field first, fallback to duck-typing
+        String type = str(event.get("type"));
 
-            if ("RESERVATION_CONFIRMED".equals(type)) {
+        if ("RESERVATION_CONFIRMED".equals(type)) {
+            log.info("Stats: recording reservation confirmed eventId={} amount={}", eventId, amount);
+            statsWriteService.recordReservationConfirmed(eventId, amount);
+        } else if ("RESERVATION_CANCELLED".equals(type)) {
+            log.info("Stats: recording reservation cancelled eventId={}", eventId);
+            statsWriteService.recordReservationCancelled(eventId);
+        } else if ("RESERVATION_CREATED".equals(type)) {
+            log.info("Stats: recording reservation created eventId={}", eventId);
+            statsWriteService.recordReservationCreated(eventId);
+        } else {
+            // Fallback: duck-typing for backward compatibility
+            if (event.containsKey("paymentMethod") && !event.containsKey("reason")) {
                 log.info("Stats: recording reservation confirmed eventId={} amount={}", eventId, amount);
                 statsWriteService.recordReservationConfirmed(eventId, amount);
-            } else if ("RESERVATION_CANCELLED".equals(type)) {
+            } else if (event.containsKey("reason")) {
                 log.info("Stats: recording reservation cancelled eventId={}", eventId);
                 statsWriteService.recordReservationCancelled(eventId);
-            } else if ("RESERVATION_CREATED".equals(type)) {
+            } else {
                 log.info("Stats: recording reservation created eventId={}", eventId);
                 statsWriteService.recordReservationCreated(eventId);
-            } else {
-                // Fallback: duck-typing for backward compatibility
-                if (event.containsKey("paymentMethod") && !event.containsKey("reason")) {
-                    log.info("Stats: recording reservation confirmed eventId={} amount={}", eventId, amount);
-                    statsWriteService.recordReservationConfirmed(eventId, amount);
-                } else if (event.containsKey("reason")) {
-                    log.info("Stats: recording reservation cancelled eventId={}", eventId);
-                    statsWriteService.recordReservationCancelled(eventId);
-                } else {
-                    log.info("Stats: recording reservation created eventId={}", eventId);
-                    statsWriteService.recordReservationCreated(eventId);
-                }
             }
+        }
 
-            if (eventKey != null) {
-                markProcessed(eventKey);
-            }
-        } catch (Exception e) {
-            log.error("Stats: failed to process reservation event: {}", e.getMessage(), e);
+        if (eventKey != null) {
+            markProcessed(eventKey);
         }
     }
 
     @KafkaListener(topics = "membership-events", groupId = "stats-service-group")
     public void handleMembershipEvent(Map<String, Object> event) {
-        try {
-            String eventKey = buildEventKey(event);
-            if (eventKey != null && isDuplicate(eventKey)) {
-                log.info("Stats: skipping duplicate membership event: {}", eventKey);
-                return;
-            }
+        String eventKey = buildEventKey(event);
+        if (eventKey != null && isDuplicate(eventKey)) {
+            log.info("Stats: skipping duplicate membership event: {}", eventKey);
+            return;
+        }
 
-            log.info("Stats: recording membership activated");
-            statsWriteService.recordMembershipActivated();
+        log.info("Stats: recording membership activated");
+        statsWriteService.recordMembershipActivated();
 
-            if (eventKey != null) {
-                markProcessed(eventKey);
-            }
-        } catch (Exception e) {
-            log.error("Stats: failed to process membership event: {}", e.getMessage(), e);
+        if (eventKey != null) {
+            markProcessed(eventKey);
         }
     }
 
     @KafkaListener(topics = "transfer-events", groupId = "stats-service-group")
     public void handleTransferEvent(Map<String, Object> event) {
-        try {
-            String eventKey = buildEventKey(event);
-            if (eventKey != null && isDuplicate(eventKey)) {
-                log.info("Stats: skipping duplicate transfer event: {}", eventKey);
-                return;
-            }
+        String eventKey = buildEventKey(event);
+        if (eventKey != null && isDuplicate(eventKey)) {
+            log.info("Stats: skipping duplicate transfer event: {}", eventKey);
+            return;
+        }
 
-            String type = str(event.get("type"));
-            log.info("Received transfer event: type={}", type);
+        String type = str(event.get("type"));
+        log.info("Received transfer event: type={}", type);
 
-            if ("TRANSFER_COMPLETED".equals(type)) {
-                jdbcTemplate.update(
-                    "INSERT INTO daily_stats (stat_date, stat_type, stat_value) VALUES (CURRENT_DATE, 'transfer_completed', 1) " +
-                    "ON CONFLICT (stat_date, stat_type) DO UPDATE SET stat_value = daily_stats.stat_value + 1"
-                );
-            } else if ("TRANSFER_CANCELLED".equals(type)) {
-                jdbcTemplate.update(
-                    "INSERT INTO daily_stats (stat_date, stat_type, stat_value) VALUES (CURRENT_DATE, 'transfer_cancelled', 1) " +
-                    "ON CONFLICT (stat_date, stat_type) DO UPDATE SET stat_value = daily_stats.stat_value + 1"
-                );
-            }
+        if ("TRANSFER_COMPLETED".equals(type)) {
+            jdbcTemplate.update(
+                "INSERT INTO daily_stats (stat_date, stat_type, stat_value) VALUES (CURRENT_DATE, 'transfer_completed', 1) " +
+                "ON CONFLICT (stat_date, stat_type) DO UPDATE SET stat_value = daily_stats.stat_value + 1"
+            );
+        } else if ("TRANSFER_CANCELLED".equals(type)) {
+            jdbcTemplate.update(
+                "INSERT INTO daily_stats (stat_date, stat_type, stat_value) VALUES (CURRENT_DATE, 'transfer_cancelled', 1) " +
+                "ON CONFLICT (stat_date, stat_type) DO UPDATE SET stat_value = daily_stats.stat_value + 1"
+            );
+        }
 
-            if (eventKey != null) {
-                markProcessed(eventKey);
-            }
-        } catch (Exception e) {
-            log.error("Stats: failed to process transfer event: {}", e.getMessage(), e);
+        if (eventKey != null) {
+            markProcessed(eventKey);
         }
     }
 

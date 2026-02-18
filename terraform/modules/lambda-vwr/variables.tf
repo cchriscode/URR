@@ -28,7 +28,7 @@ variable "lambda_memory_size" {
 variable "reserved_concurrent_executions" {
   description = "Reserved concurrent executions for VWR API Lambda"
   type        = number
-  default     = 100
+  default     = 500
 }
 
 variable "dynamodb_counters_table_name" {

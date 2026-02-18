@@ -300,7 +300,7 @@ module "lambda_vwr" {
   name_prefix                    = var.name_prefix
   lambda_source_dir              = "${path.root}/../../lambda/vwr-api"
   counter_advancer_source_dir    = "${path.root}/../../lambda/vwr-counter-advancer"
-  reserved_concurrent_executions = 100
+  reserved_concurrent_executions = 500
   counter_advance_batch_size     = 500
 
   dynamodb_counters_table_name = module.dynamodb_vwr.counters_table_name
