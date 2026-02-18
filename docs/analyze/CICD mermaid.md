@@ -1,4 +1,5 @@
-```flowchart LR
+```mermaid
+flowchart LR
   %% Tiketi CI/CD Pipeline (GitHub Actions + ArgoCD)
 
   subgraph S[Source Stage]
