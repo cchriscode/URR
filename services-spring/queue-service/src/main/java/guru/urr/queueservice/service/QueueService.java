@@ -411,7 +411,8 @@ public class QueueService {
     private void touchQueueUser(UUID eventId, String userId) {
         try {
             redisTemplate.opsForZSet().add(queueSeenKey(eventId), userId, System.currentTimeMillis());
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            log.warn("Failed to touch queue heartbeat for user {} on event {}: {}", userId, eventId, e.getMessage());
         }
     }
 
@@ -420,7 +421,8 @@ public class QueueService {
             redisTemplate.opsForZSet().add(activeSeenKey(eventId), userId, System.currentTimeMillis());
             long newExpiry = System.currentTimeMillis() + (activeTtlSeconds * 1000L);
             redisTemplate.opsForZSet().add(activeKey(eventId), userId, newExpiry);
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            log.warn("Failed to refresh active session for user {} on event {}: {}", userId, eventId, e.getMessage());
         }
     }
 

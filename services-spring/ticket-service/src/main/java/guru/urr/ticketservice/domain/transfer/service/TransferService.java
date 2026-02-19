@@ -1,5 +1,6 @@
 package guru.urr.ticketservice.domain.transfer.service;
 
+import guru.urr.ticketservice.domain.membership.service.MembershipService;
 import java.sql.Timestamp;
 import java.time.OffsetDateTime;
 import java.util.HashMap;
@@ -263,8 +264,8 @@ public class TransferService {
     }
 
     private String computeEffectiveTier(int points) {
-        if (points >= 1500) return "DIAMOND";
-        if (points >= 500) return "GOLD";
+        if (points >= MembershipService.DIAMOND_THRESHOLD) return "DIAMOND";
+        if (points >= MembershipService.GOLD_THRESHOLD) return "GOLD";
         return "SILVER";
     }
 }

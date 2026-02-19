@@ -171,7 +171,7 @@ public class StatsEventConsumer {
                 "SELECT COUNT(*) FROM processed_events WHERE event_key = ?", Integer.class, eventKey);
             return count != null && count > 0;
         } catch (Exception e) {
-            log.warn("Stats: deduplication check failed for key {}: {}", eventKey, e.getMessage());
+            log.error("Stats: deduplication check failed, event may be processed as duplicate. key={}", eventKey, e);
             return false;
         }
     }

@@ -20,8 +20,8 @@ public class MembershipService {
 
     private static final Logger log = LoggerFactory.getLogger(MembershipService.class);
 
-    private static final int GOLD_THRESHOLD = 500;
-    private static final int DIAMOND_THRESHOLD = 1500;
+    public static final int GOLD_THRESHOLD = 500;
+    public static final int DIAMOND_THRESHOLD = 1500;
     private static final int JOIN_BONUS_POINTS = 200;
 
     private final JdbcTemplate jdbcTemplate;
