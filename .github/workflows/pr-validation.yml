@@ -9,7 +9,7 @@ jobs:
     name: Detect Changes
     runs-on: ubuntu-latest
     outputs:
-      services: ${{ steps.filter.outputs.changes }}
+      services: ${{ steps.services.outputs.list }}
       frontend: ${{ steps.filter.outputs.frontend }}
     steps:
       - name: Checkout code
@@ -38,6 +38,11 @@ jobs:
               - 'services-spring/community-service/**'
             frontend:
               - 'apps/web/**'
+
+      - name: Filter backend services
+        id: services
+        run: |
+          echo "list=$(echo '${{ steps.filter.outputs.changes }}' | jq -c '[.[] | select(. != "frontend")]')" >> $GITHUB_OUTPUT
 
   test-services:
     name: Test ${{ matrix.service }}

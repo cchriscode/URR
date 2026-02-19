@@ -52,8 +52,11 @@ class NewsServiceTest {
         insertedRow.put("created_at", "2026-02-12T00:00:00");
         insertedRow.put("updated_at", "2026-02-12T00:00:00");
 
-        when(jdbcTemplate.queryForList(contains("INSERT INTO news"), any(), any(), any(), any(), anyBoolean()))
-                .thenReturn(List.of(insertedRow));
+        doReturn(List.of(insertedRow))
+                .when(jdbcTemplate).queryForList(
+                        contains("INSERT INTO news"),
+                        eq("Test Title"), eq("Test Content"), eq("Author Name"),
+                        eq(authorId), eq(false));
 
         Map<String, Object> result = newsService.create(request, user);
 
