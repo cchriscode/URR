@@ -1,8 +1,8 @@
 package guru.urr.ticketservice.domain.membership.controller;
 
 import guru.urr.ticketservice.domain.membership.dto.MembershipSubscribeRequest;
-import guru.urr.ticketservice.shared.security.AuthUser;
-import guru.urr.ticketservice.shared.security.JwtTokenParser;
+import guru.urr.common.security.AuthUser;
+import guru.urr.common.security.JwtTokenParser;
 import guru.urr.ticketservice.domain.membership.service.MembershipService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;

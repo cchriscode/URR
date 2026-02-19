@@ -113,7 +113,14 @@ public class VwrEntryTokenFilter extends OncePerRequestFilter {
     }
 
     private boolean isProtectedPath(String path) {
-        return path.startsWith("/api/seats/") || path.startsWith("/api/reservations");
+        if (path.startsWith("/api/seats/")) {
+            return true;
+        }
+        if (path.startsWith("/api/reservations")) {
+            // Allow reading own reservations without queue token
+            return !path.startsWith("/api/reservations/my");
+        }
+        return false;
     }
 
     private void sendForbiddenResponse(HttpServletResponse response) throws IOException {

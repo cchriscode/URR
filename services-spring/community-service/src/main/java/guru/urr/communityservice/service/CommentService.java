@@ -2,7 +2,7 @@ package guru.urr.communityservice.service;
 
 import guru.urr.communityservice.dto.CommentCreateRequest;
 import guru.urr.communityservice.shared.client.TicketInternalClient;
-import guru.urr.communityservice.shared.security.AuthUser;
+import guru.urr.common.security.AuthUser;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -29,6 +29,7 @@ public class CommentService {
         this.ticketInternalClient = ticketInternalClient;
     }
 
+    @Transactional(readOnly = true)
     public Map<String, Object> listByPost(UUID postId, Integer page, Integer limit) {
         int safePage = (page == null || page < 1) ? 1 : page;
         int safeLimit = (limit == null || limit < 1) ? 20 : Math.min(limit, 100);

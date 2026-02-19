@@ -1,7 +1,7 @@
 package guru.urr.queueservice.controller;
 
-import guru.urr.queueservice.shared.security.AuthUser;
-import guru.urr.queueservice.shared.security.JwtTokenParser;
+import guru.urr.common.security.AuthUser;
+import guru.urr.common.security.JwtTokenParser;
 import guru.urr.queueservice.service.QueueService;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;

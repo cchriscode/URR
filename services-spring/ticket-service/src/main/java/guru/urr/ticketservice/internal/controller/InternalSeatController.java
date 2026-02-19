@@ -4,12 +4,13 @@ import guru.urr.ticketservice.domain.seat.service.SeatGeneratorService;
 import guru.urr.ticketservice.domain.seat.service.SeatLockService;
 import guru.urr.ticketservice.domain.seat.service.SeatLockService.SeatLockResult;
 import guru.urr.ticketservice.internal.dto.InternalSeatReserveRequest;
-import guru.urr.ticketservice.shared.security.InternalTokenValidator;
+import guru.urr.common.security.InternalTokenValidator;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -60,7 +61,7 @@ public class InternalSeatController {
 
         return allSuccess
                 ? ResponseEntity.ok(response)
-                : ResponseEntity.status(409).body(response);
+                : ResponseEntity.status(HttpStatus.CONFLICT).body(response);
     }
 
     @PostMapping("/generate/{eventId}/{layoutId}")

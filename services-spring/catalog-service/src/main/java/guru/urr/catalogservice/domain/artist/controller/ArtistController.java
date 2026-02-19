@@ -1,6 +1,6 @@
 package guru.urr.catalogservice.domain.artist.controller;
 
-import guru.urr.catalogservice.shared.security.JwtTokenParser;
+import guru.urr.common.security.JwtTokenParser;
 import guru.urr.catalogservice.domain.artist.service.ArtistService;
 import guru.urr.catalogservice.domain.artist.service.SpotifyService;
 import jakarta.servlet.http.HttpServletRequest;

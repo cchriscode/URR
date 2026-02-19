@@ -1,20 +1,20 @@
 FROM eclipse-temurin:21-jdk AS build
-WORKDIR /workspace
+WORKDIR /workspace/auth-service
 
-COPY gradlew gradlew.bat ./
-COPY gradle gradle
+COPY auth-service/gradlew auth-service/gradlew.bat ./
+COPY auth-service/gradle gradle
 RUN sed -i 's/\r$//' gradlew && chmod +x gradlew
 
-COPY settings.gradle build.gradle ./
+COPY auth-service/settings.gradle auth-service/build.gradle ./
 RUN ./gradlew --no-daemon dependencies || true
 
-COPY src src
+COPY auth-service/src src
 RUN ./gradlew --no-daemon bootJar -x test
 
 FROM eclipse-temurin:21-jre
 WORKDIR /app
 
-COPY --from=build /workspace/build/libs/*.jar app.jar
+COPY --from=build /workspace/auth-service/build/libs/*.jar app.jar
 
 RUN addgroup --system --gid 1001 app && adduser --system --uid 1001 --ingroup app app
 USER app

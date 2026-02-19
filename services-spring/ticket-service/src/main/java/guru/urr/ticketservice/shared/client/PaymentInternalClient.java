@@ -17,6 +17,8 @@ import org.springframework.web.client.RestClient;
 public class PaymentInternalClient {
 
     private static final Logger log = LoggerFactory.getLogger(PaymentInternalClient.class);
+    private static final int CONNECT_TIMEOUT_SECONDS = 5;
+    private static final int READ_TIMEOUT_SECONDS = 10;
 
     private final RestClient restClient;
     private final String internalToken;
@@ -26,8 +28,8 @@ public class PaymentInternalClient {
         @Value("${INTERNAL_API_TOKEN}") String internalToken
     ) {
         var requestFactory = ClientHttpRequestFactories.get(ClientHttpRequestFactorySettings.DEFAULTS
-                .withConnectTimeout(Duration.ofSeconds(5))
-                .withReadTimeout(Duration.ofSeconds(10)));
+                .withConnectTimeout(Duration.ofSeconds(CONNECT_TIMEOUT_SECONDS))
+                .withReadTimeout(Duration.ofSeconds(READ_TIMEOUT_SECONDS)));
         this.restClient = RestClient.builder().baseUrl(paymentServiceUrl).requestFactory(requestFactory).build();
         this.internalToken = internalToken;
     }

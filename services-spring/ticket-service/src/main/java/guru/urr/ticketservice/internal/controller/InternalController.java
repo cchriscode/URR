@@ -1,6 +1,6 @@
 package guru.urr.ticketservice.internal.controller;
 
-import guru.urr.ticketservice.shared.security.InternalTokenValidator;
+import guru.urr.common.security.InternalTokenValidator;
 import guru.urr.ticketservice.scheduling.MaintenanceService;
 import java.util.Map;
 import org.springframework.web.bind.annotation.PostMapping;

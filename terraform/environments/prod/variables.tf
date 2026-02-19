@@ -133,7 +133,7 @@ variable "msk_broker_ebs_volume_size" {
 variable "elasticache_node_type" {
   description = "ElastiCache Redis node type"
   type        = string
-  default     = "cache.r6g.large"
+  default     = "cache.t4g.medium"
 }
 
 # ═════════════════════════════════════════════════════════════════════════════

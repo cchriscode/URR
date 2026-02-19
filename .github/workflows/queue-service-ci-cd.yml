@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'services-spring/queue-service/**'
+      - 'services-spring/urr-common/**'
       - '.github/workflows/queue-service-ci-cd.yml'
   workflow_dispatch:
     inputs:

@@ -14,6 +14,9 @@ import org.springframework.stereotype.Service;
 public class AdmissionWorkerService {
 
     private static final Logger log = LoggerFactory.getLogger(AdmissionWorkerService.class);
+    private static final int CLEANUP_BATCH_SIZE = 1000;
+    private static final int CLEANUP_BATCH_DELAY_MS = 100;
+    private static final int ADMISSION_LOCK_TIMEOUT_SECONDS = 4;
 
     private final StringRedisTemplate redisTemplate;
     private final DefaultRedisScript<List> admissionScript;
@@ -50,7 +53,7 @@ public class AdmissionWorkerService {
         try {
             activeEvents = redisTemplate.opsForSet().members("queue:active-events");
         } catch (Exception ex) {
-            log.debug("Failed to get active events set: {}", ex.getMessage());
+            log.error("Failed to get active events from Redis, skipping admission cycle", ex);
             return;
         }
 
@@ -67,7 +70,7 @@ public class AdmissionWorkerService {
 
             try {
                 acquired = redisTemplate.opsForValue().setIfAbsent(lockKey, "1",
-                    java.time.Duration.ofSeconds(4));
+                    java.time.Duration.ofSeconds(ADMISSION_LOCK_TIMEOUT_SECONDS));
 
                 if (acquired == null || !acquired) {
                     log.debug("Skipping event {} - lock held by another worker", eventId);
@@ -106,13 +109,13 @@ public class AdmissionWorkerService {
                     }
                 }
             } catch (Exception ex) {
-                log.warn("Admission failed for event {}: {}", eventId, ex.getMessage());
+                log.error("Admission script failed for event {}", eventId, ex);
             } finally {
                 if (acquired != null && acquired) {
                     try {
                         redisTemplate.delete(lockKey);
                     } catch (Exception ex) {
-                        log.debug("Failed to release lock for event {}: {}", eventId, ex.getMessage());
+                        log.error("Failed to release admission lock for event {}, may block future admissions", eventId, ex);
                     }
                 }
             }
@@ -125,6 +128,7 @@ public class AdmissionWorkerService {
         try {
             activeEvents = redisTemplate.opsForSet().members("queue:active-events");
         } catch (Exception ex) {
+            log.error("Failed to get active events from Redis for cleanup", ex);
             return;
         }
 
@@ -149,21 +153,22 @@ public class AdmissionWorkerService {
                             "{" + eventId + "}:queue"
                         ),
                         String.valueOf(cutoff),
-                        String.valueOf(1000)
+                        String.valueOf(CLEANUP_BATCH_SIZE)
                     );
 
                     int removed = (result != null && !result.isEmpty())
                         ? ((Number) result.get(0)).intValue() : 0;
                     totalRemoved += removed;
-                    hasMore = removed == 1000;
+                    hasMore = removed == CLEANUP_BATCH_SIZE;
 
                     if (hasMore) {
-                        Thread.sleep(100);
+                        Thread.sleep(CLEANUP_BATCH_DELAY_MS);
                     }
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     hasMore = false;
                 } catch (Exception ex) {
+                    log.warn("Stale user cleanup failed for event {}", eventId, ex);
                     hasMore = false;
                 }
             }
@@ -179,7 +184,7 @@ public class AdmissionWorkerService {
                     log.debug("Cleaned up {} stale entries from active:seen for event {}", activeSeenRemoved, eventId);
                 }
             } catch (Exception ex) {
-                log.debug("active:seen cleanup failed for event {}: {}", eventId, ex.getMessage());
+                log.warn("Active-seen cleanup failed for event {}", eventId, ex);
             }
         }
     }

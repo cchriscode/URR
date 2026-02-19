@@ -19,6 +19,7 @@ spring:
     url: ${STATS_DB_URL:jdbc:postgresql://localhost:5436/stats_db}
     username: ${STATS_DB_USERNAME:urr_user}
     password: ${STATS_DB_PASSWORD:urr_password}
+    replica-url: ${STATS_DB_REPLICA_URL:}
   jpa:
     hibernate:
       ddl-auto: validate

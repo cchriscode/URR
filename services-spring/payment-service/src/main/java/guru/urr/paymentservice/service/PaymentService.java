@@ -6,13 +6,11 @@ import guru.urr.paymentservice.dto.ConfirmPaymentRequest;
 import guru.urr.paymentservice.dto.PreparePaymentRequest;
 import guru.urr.paymentservice.dto.ProcessPaymentRequest;
 import guru.urr.paymentservice.messaging.PaymentEventProducer;
-import guru.urr.paymentservice.messaging.event.PaymentConfirmedEvent;
 import guru.urr.paymentservice.messaging.event.PaymentRefundedEvent;
 import java.time.Instant;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.time.OffsetDateTime;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -31,17 +29,20 @@ public class PaymentService {
     private final JdbcTemplate jdbcTemplate;
     private final TicketInternalClient ticketInternalClient;
     private final PaymentEventProducer paymentEventProducer;
+    private final PaymentTypeDispatcher paymentTypeDispatcher;
     private final String tossClientKey;
 
     public PaymentService(
         JdbcTemplate jdbcTemplate,
         TicketInternalClient ticketInternalClient,
         PaymentEventProducer paymentEventProducer,
+        PaymentTypeDispatcher paymentTypeDispatcher,
         @Value("${TOSS_CLIENT_KEY:test_ck_dummy}") String tossClientKey
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.ticketInternalClient = ticketInternalClient;
         this.paymentEventProducer = paymentEventProducer;
+        this.paymentTypeDispatcher = paymentTypeDispatcher;
         this.tossClientKey = tossClientKey;
     }
 
@@ -158,7 +159,7 @@ public class PaymentService {
             """, request.paymentKey(), now, payment.get("id"));
 
         // Complete based on type
-        completeByType(paymentType, payment, userId, "toss");
+        paymentTypeDispatcher.completeByType(paymentType, payment, userId, "toss");
 
         return Map.of(
             "success", true,
@@ -170,25 +171,6 @@ public class PaymentService {
                 "approvedAt", now.toString()
             )
         );
-    }
-
-    public Map<String, Object> findByOrder(String userId, String orderId) {
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
-            SELECT id, order_id, payment_key, amount, method, status, toss_status, toss_approved_at, created_at, updated_at, reservation_id, user_id, payment_type, reference_id
-            FROM payments
-            WHERE order_id = ?
-            """, orderId);
-
-        if (rows.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Payment not found");
-        }
-
-        Map<String, Object> payment = rows.getFirst();
-        if (!String.valueOf(payment.get("user_id")).equals(userId) && payment.get("user_id") != null) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
-        }
-
-        return Map.of("payment", payment);
     }
 
     @Transactional
@@ -225,26 +207,6 @@ public class PaymentService {
             "reservation", ((Number) payment.get("amount")).intValue(), reason, Instant.now()));
 
         return Map.of("success", true, "message", "Payment cancelled successfully", "refundAmount", payment.get("amount"));
-    }
-
-    public Map<String, Object> myPayments(String userId, int limit, int offset) {
-        List<Map<String, Object>> payments = jdbcTemplate.queryForList("""
-            SELECT id, order_id, payment_key, amount, method, status, toss_approved_at, created_at, reservation_id, payment_type, reference_id
-            FROM payments
-            WHERE user_id = CAST(? AS UUID)
-            ORDER BY created_at DESC
-            LIMIT ? OFFSET ?
-            """, userId, limit, offset);
-
-        Integer total = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM payments WHERE user_id = CAST(? AS UUID)", Integer.class, userId);
-        int safeTotal = total != null ? total : 0;
-
-        Map<String, Object> pagination = new HashMap<>();
-        pagination.put("total", safeTotal);
-        pagination.put("limit", limit);
-        pagination.put("offset", offset);
-
-        return Map.of("payments", payments, "pagination", pagination);
     }
 
     @Transactional
@@ -326,7 +288,7 @@ public class PaymentService {
             "reference_id", referenceId != null ? referenceId.toString() : "",
             "payment_type", paymentType
         );
-        completeByType(paymentType, paymentMap, userId, request.paymentMethod());
+        paymentTypeDispatcher.completeByType(paymentType, paymentMap, userId, request.paymentMethod());
 
         return Map.of(
             "success", true,
@@ -338,41 +300,6 @@ public class PaymentService {
                 "method", request.paymentMethod()
             )
         );
-    }
-
-    private void completeByType(String paymentType, Map<String, Object> payment, String userId, String paymentMethod) {
-        UUID reservationId = asUuidNullable(payment.get("reservation_id"));
-        UUID referenceId = asUuidNullable(payment.get("reference_id"));
-        UUID paymentId = asUuidNullable(payment.get("id"));
-
-        int amount = 0;
-        Object amountObj = payment.get("amount");
-        if (amountObj instanceof Number n) amount = n.intValue();
-
-        String orderId = payment.get("order_id") != null ? String.valueOf(payment.get("order_id")) : null;
-
-        // Synchronous confirmation via internal API (primary path)
-        try {
-            switch (paymentType) {
-                case "transfer" -> {
-                    if (referenceId != null) ticketInternalClient.confirmTransfer(referenceId, userId, paymentMethod);
-                }
-                case "membership" -> {
-                    if (referenceId != null) ticketInternalClient.activateMembership(referenceId);
-                }
-                default -> {
-                    if (reservationId != null) ticketInternalClient.confirmReservation(reservationId, paymentMethod);
-                }
-            }
-        } catch (Exception e) {
-            log.warn("Synchronous confirmation failed for {} {}, falling back to Kafka: {}",
-                paymentType, reservationId != null ? reservationId : referenceId, e.getMessage());
-        }
-
-        // Kafka event (secondary: stats, notifications, eventual consistency fallback)
-        paymentEventProducer.publish(new PaymentConfirmedEvent(
-            paymentId, orderId, userId, reservationId, referenceId,
-            paymentType, amount, paymentMethod, Instant.now()));
     }
 
     private Object firstPresent(Map<String, Object> map, String... keys) {

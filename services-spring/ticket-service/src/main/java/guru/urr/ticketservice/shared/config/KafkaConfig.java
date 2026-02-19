@@ -18,6 +18,9 @@ import org.springframework.util.backoff.ExponentialBackOff;
 public class KafkaConfig {
 
     private static final Logger log = LoggerFactory.getLogger(KafkaConfig.class);
+    private static final long KAFKA_BACKOFF_INITIAL_MS = 1000L;
+    private static final double KAFKA_BACKOFF_MULTIPLIER = 2.0;
+    private static final long KAFKA_BACKOFF_MAX_ELAPSED_MS = 10_000L;
 
     @Value("${kafka.topic.replication-factor:1}")
     private int replicationFactor;
@@ -60,8 +63,8 @@ public class KafkaConfig {
                 return new TopicPartition(record.topic() + "-dlq", record.partition());
             });
 
-        ExponentialBackOff backOff = new ExponentialBackOff(1000L, 2.0);
-        backOff.setMaxElapsedTime(10000L); // 3 retries: 1s + 2s + 4s = 7s, cap at 10s
+        ExponentialBackOff backOff = new ExponentialBackOff(KAFKA_BACKOFF_INITIAL_MS, KAFKA_BACKOFF_MULTIPLIER);
+        backOff.setMaxElapsedTime(KAFKA_BACKOFF_MAX_ELAPSED_MS); // 3 retries: 1s + 2s + 4s = 7s, cap at 10s
 
         return new DefaultErrorHandler(recoverer, backOff);
     }

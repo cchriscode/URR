@@ -4,8 +4,9 @@ import guru.urr.paymentservice.dto.CancelPaymentRequest;
 import guru.urr.paymentservice.dto.ConfirmPaymentRequest;
 import guru.urr.paymentservice.dto.PreparePaymentRequest;
 import guru.urr.paymentservice.dto.ProcessPaymentRequest;
-import guru.urr.paymentservice.security.AuthUser;
-import guru.urr.paymentservice.security.JwtTokenParser;
+import guru.urr.common.security.AuthUser;
+import guru.urr.common.security.JwtTokenParser;
+import guru.urr.paymentservice.service.PaymentQueryService;
 import guru.urr.paymentservice.service.PaymentService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -23,10 +24,14 @@ import org.springframework.web.bind.annotation.RestController;
 public class PaymentController {
 
     private final PaymentService paymentService;
+    private final PaymentQueryService paymentQueryService;
     private final JwtTokenParser jwtTokenParser;
 
-    public PaymentController(PaymentService paymentService, JwtTokenParser jwtTokenParser) {
+    public PaymentController(PaymentService paymentService,
+                             PaymentQueryService paymentQueryService,
+                             JwtTokenParser jwtTokenParser) {
         this.paymentService = paymentService;
+        this.paymentQueryService = paymentQueryService;
         this.jwtTokenParser = jwtTokenParser;
     }
 
@@ -54,7 +59,7 @@ public class PaymentController {
         HttpServletRequest httpRequest
     ) {
         AuthUser user = jwtTokenParser.requireUser(httpRequest);
-        return paymentService.findByOrder(user.userId(), orderId);
+        return paymentQueryService.findByOrder(user.userId(), orderId);
     }
 
     @PostMapping("/{paymentKey}/cancel")
@@ -76,7 +81,7 @@ public class PaymentController {
         AuthUser user = jwtTokenParser.requireUser(httpRequest);
         int safeLimit = Math.min(Math.max(limit, 1), 100);
         int safeOffset = Math.max(offset, 0);
-        return paymentService.myPayments(user.userId(), safeLimit, safeOffset);
+        return paymentQueryService.myPayments(user.userId(), safeLimit, safeOffset);
     }
 
     @PostMapping("/process")

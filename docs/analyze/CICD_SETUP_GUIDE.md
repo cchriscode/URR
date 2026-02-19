@@ -24,7 +24,8 @@
    - 5.2 Git Repository 연결
    - 5.3 Application 배포
 6. [Discord Webhook 설정](#6-discord-webhook-설정)
-7. [설정 검증 체크리스트](#7-설정-검증-체크리스트)
+7. [Docker 빌드 구조 및 urr-common 의존성](#7-docker-빌드-구조-및-urr-common-의존성)
+8. [설정 검증 체크리스트](#8-설정-검증-체크리스트)
 
 ---
 
@@ -488,7 +489,35 @@ Discord 서버 → 채널 설정(톱니바퀴) → 연동(Integrations) → 웹�
 
 ---
 
-## 7. 설정 검증 체크리스트
+## 7. Docker 빌드 구조 및 urr-common 의존성
+
+CI/CD 파이프라인의 Docker 빌드 동작 방식을 이해하기 위한 핵심 사항이다.
+
+### 7.1 Build Context
+
+`reusable-spring-ci-cd.yml`의 Docker build context가 `context: services-spring`으로 설정되어 있다 (라인 171). 레포 루트(`.`)가 아니므로, 모든 Dockerfile의 `COPY`/`ADD` 경로는 `services-spring/` 디렉토리 기준 상대경로이다.
+
+### 7.2 urr-common 의존성
+
+urr-common을 사용하는 6개 서비스(catalog, community, payment, queue, stats, ticket)의 Dockerfile은 빌드 첫 단계에서 공유 라이브러리를 복사한다:
+
+```dockerfile
+COPY urr-common /workspace/urr-common
+```
+
+auth-service와 gateway-service는 urr-common에 의존하지 않으므로 이 단계가 없다.
+
+### 7.3 Path Triggers
+
+urr-common 변경 시 6개 의존 서비스가 자동 재빌드된다. 각 서비스의 CI/CD 워크플로우에 `services-spring/urr-common/**` 경로 트리거가 포함되어 있다. auth-service와 gateway-service는 이 트리거가 없다.
+
+### 7.4 `.dockerignore`
+
+`services-spring/.dockerignore`가 빌드 아티팩트(`**/build/`, `**/.gradle/` 등)를 제외하여 빌드 컨텍스트 크기를 최소화한다.
+
+---
+
+## 8. 설정 검증 체크리스트
 
 모든 설정을 마친 후 아래 항목을 순서대로 확인합니다.
 

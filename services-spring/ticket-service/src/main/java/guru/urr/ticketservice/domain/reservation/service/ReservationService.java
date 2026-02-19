@@ -3,7 +3,6 @@ package guru.urr.ticketservice.domain.reservation.service;
 import guru.urr.ticketservice.domain.reservation.dto.CreateReservationRequest;
 import guru.urr.ticketservice.domain.reservation.dto.ReservationItemRequest;
 import guru.urr.ticketservice.domain.reservation.dto.SeatReserveRequest;
-import guru.urr.ticketservice.domain.membership.service.MembershipService;
 import guru.urr.ticketservice.domain.seat.service.SeatLockService;
 import guru.urr.ticketservice.shared.client.PaymentInternalClient;
 import guru.urr.ticketservice.messaging.TicketEventProducer;
@@ -33,20 +32,19 @@ public class ReservationService {
 
     private static final Logger log = LoggerFactory.getLogger(ReservationService.class);
     private static final int MAX_SEATS_PER_RESERVATION = 1;
+    private static final int RESERVATION_EXPIRY_MINUTES = 5;
 
     private final JdbcTemplate jdbcTemplate;
     private final NamedParameterJdbcTemplate namedParameterJdbcTemplate;
-    private final MembershipService membershipService;
     private final SeatLockService seatLockService;
     private final TicketEventProducer ticketEventProducer;
     private final BusinessMetrics metrics;
 
     public ReservationService(JdbcTemplate jdbcTemplate, NamedParameterJdbcTemplate namedParameterJdbcTemplate,
-                              MembershipService membershipService, SeatLockService seatLockService,
+                              SeatLockService seatLockService,
                               TicketEventProducer ticketEventProducer, BusinessMetrics metrics) {
         this.jdbcTemplate = jdbcTemplate;
         this.namedParameterJdbcTemplate = namedParameterJdbcTemplate;
-        this.membershipService = membershipService;
         this.seatLockService = seatLockService;
         this.ticketEventProducer = ticketEventProducer;
         this.metrics = metrics;
@@ -133,7 +131,7 @@ public class ReservationService {
         }
 
         int totalAmount = seats.stream().mapToInt(s -> ((Number) s.get("price")).intValue()).sum();
-        OffsetDateTime expiresAt = OffsetDateTime.now().plusMinutes(5);
+        OffsetDateTime expiresAt = OffsetDateTime.now().plusMinutes(RESERVATION_EXPIRY_MINUTES);
         String reservationNumber = "TK" + System.currentTimeMillis() + "-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
 
         UUID reservationId = jdbcTemplate.queryForObject("""
@@ -231,7 +229,7 @@ public class ReservationService {
         }
 
         String reservationNumber = "R" + System.currentTimeMillis() + "-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
-        OffsetDateTime expiresAt = OffsetDateTime.now().plusMinutes(5);
+        OffsetDateTime expiresAt = OffsetDateTime.now().plusMinutes(RESERVATION_EXPIRY_MINUTES);
 
         UUID reservationId = jdbcTemplate.queryForObject("""
             INSERT INTO reservations (user_id, event_id, reservation_number, total_amount, status, payment_status, expires_at, idempotency_key)
@@ -386,97 +384,6 @@ public class ReservationService {
         }
 
         return reservation;
-    }
-
-    @Transactional
-    public void confirmReservationPayment(UUID reservationId, String paymentMethod) {
-        // Get reservation + event info for Redis lock verification
-        List<Map<String, Object>> resRows = jdbcTemplate.queryForList(
-            "SELECT r.user_id, r.event_id, e.artist_id FROM reservations r JOIN events e ON r.event_id = e.id WHERE r.id = ?",
-            reservationId);
-
-        if (!resRows.isEmpty()) {
-            String userId = String.valueOf(resRows.getFirst().get("user_id"));
-            UUID eventId = (UUID) resRows.getFirst().get("event_id");
-
-            // Verify fencing tokens via Redis for each seat
-            List<Map<String, Object>> items = jdbcTemplate.queryForList(
-                "SELECT ri.seat_id, s.fencing_token FROM reservation_items ri LEFT JOIN seats s ON ri.seat_id = s.id WHERE ri.reservation_id = ?",
-                reservationId);
-
-            for (Map<String, Object> item : items) {
-                Object seatIdObj = item.get("seat_id");
-                Object tokenObj = item.get("fencing_token");
-                if (seatIdObj != null && tokenObj != null) {
-                    UUID seatId = (UUID) seatIdObj;
-                    long token = ((Number) tokenObj).longValue();
-                    if (token > 0 && !seatLockService.verifyForPayment(eventId, seatId, userId, token)) {
-                        throw new ResponseStatusException(HttpStatus.CONFLICT, "Seat lock expired or stolen. Please try again.");
-                    }
-                }
-            }
-        }
-
-        int updated = jdbcTemplate.update("""
-            UPDATE reservations
-            SET status = 'confirmed',
-                payment_status = 'completed',
-                payment_method = ?,
-                updated_at = NOW()
-            WHERE id = ?
-              AND status = 'pending'
-            """, paymentMethod, reservationId);
-
-        if (updated == 0) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Reservation cannot be confirmed");
-        }
-
-        // Update seats to reserved and clean up Redis locks
-        List<Map<String, Object>> seatItems = jdbcTemplate.queryForList(
-            "SELECT seat_id FROM reservation_items WHERE reservation_id = ? AND seat_id IS NOT NULL", reservationId);
-
-        UUID eventId = resRows.isEmpty() ? null : (UUID) resRows.getFirst().get("event_id");
-
-        for (Map<String, Object> item : seatItems) {
-            UUID seatId = (UUID) item.get("seat_id");
-            jdbcTemplate.update("UPDATE seats SET status = 'reserved', updated_at = NOW() WHERE id = ?", seatId);
-            // Clean up Redis seat lock
-            if (eventId != null) {
-                seatLockService.cleanupLock(eventId, seatId);
-            }
-        }
-
-        // Award membership points for ticket purchase
-        try {
-            if (!resRows.isEmpty() && resRows.getFirst().get("artist_id") != null) {
-                UUID artistId = (UUID) resRows.getFirst().get("artist_id");
-                String userId = String.valueOf(resRows.getFirst().get("user_id"));
-                membershipService.awardPointsForArtist(userId, artistId, "TICKET_PURCHASE", 100,
-                    "Points for ticket purchase", reservationId);
-            }
-        } catch (Exception e) {
-            log.warn("Failed to award membership points for reservation {}: {}", reservationId, e.getMessage());
-        }
-    }
-
-    @Transactional
-    public void markReservationRefunded(UUID reservationId) {
-        jdbcTemplate.update("""
-            UPDATE reservations
-            SET status = 'cancelled',
-                payment_status = 'refunded',
-                updated_at = NOW()
-            WHERE id = ?
-            """, reservationId);
-
-        jdbcTemplate.update("""
-            UPDATE seats
-            SET status = 'available', updated_at = NOW()
-            WHERE id IN (
-                SELECT seat_id FROM reservation_items
-                WHERE reservation_id = ? AND seat_id IS NOT NULL
-            )
-            """, reservationId);
     }
 
     @Transactional

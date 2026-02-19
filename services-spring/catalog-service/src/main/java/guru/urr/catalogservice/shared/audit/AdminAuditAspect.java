@@ -1,12 +1,13 @@
 package guru.urr.catalogservice.shared.audit;
 
-import guru.urr.catalogservice.shared.security.AuthUser;
-import guru.urr.catalogservice.shared.security.JwtTokenParser;
+import guru.urr.common.security.AuthUser;
+import guru.urr.common.security.JwtTokenParser;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.UUID;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
+import org.springframework.http.HttpStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -38,15 +39,15 @@ public class AdminAuditAspect {
                 adminUserId = UUID.fromString(admin.userId());
             }
         } catch (Exception e) {
-            // If we can't parse the headers, still proceed with the request
+            log.debug("Failed to parse admin headers for audit: {}", e.getMessage());
         }
 
         Object result;
-        int responseStatus = 200;
+        int responseStatus = HttpStatus.OK.value();
         try {
             result = joinPoint.proceed();
         } catch (Exception e) {
-            responseStatus = 500;
+            responseStatus = HttpStatus.INTERNAL_SERVER_ERROR.value();
             logAudit(adminUserId, auditLog.action(), auditLog.resourceType(), resourceId, responseStatus);
             throw e;
         }

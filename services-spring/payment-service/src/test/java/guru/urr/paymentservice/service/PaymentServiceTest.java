@@ -9,7 +9,6 @@ import guru.urr.paymentservice.dto.ConfirmPaymentRequest;
 import guru.urr.paymentservice.dto.PreparePaymentRequest;
 import guru.urr.paymentservice.dto.ProcessPaymentRequest;
 import guru.urr.paymentservice.messaging.PaymentEventProducer;
-import guru.urr.paymentservice.messaging.event.PaymentConfirmedEvent;
 import guru.urr.paymentservice.messaging.event.PaymentRefundedEvent;
 import java.util.Collections;
 import java.util.HashMap;
@@ -30,12 +29,13 @@ class PaymentServiceTest {
     @Mock private JdbcTemplate jdbcTemplate;
     @Mock private TicketInternalClient ticketInternalClient;
     @Mock private PaymentEventProducer paymentEventProducer;
+    @Mock private PaymentTypeDispatcher paymentTypeDispatcher;
 
     private PaymentService paymentService;
 
     @BeforeEach
     void setUp() {
-        paymentService = new PaymentService(jdbcTemplate, ticketInternalClient, paymentEventProducer, "test_ck_dummy");
+        paymentService = new PaymentService(jdbcTemplate, ticketInternalClient, paymentEventProducer, paymentTypeDispatcher, "test_ck_dummy");
     }
 
     @Test
@@ -99,7 +99,7 @@ class PaymentServiceTest {
         Map<String, Object> result = paymentService.confirm(userId, request);
 
         assertTrue((Boolean) result.get("success"));
-        verify(paymentEventProducer).publish(any(PaymentConfirmedEvent.class));
+        verify(paymentTypeDispatcher).completeByType(eq("reservation"), any(), eq(userId), eq("toss"));
     }
 
     @Test
@@ -138,7 +138,7 @@ class PaymentServiceTest {
 
         when(jdbcTemplate.queryForList(contains("SELECT id, reservation_id"), any(Object[].class)))
             .thenReturn(List.of(payment));
-        when(jdbcTemplate.update(contains("UPDATE payments"), any(), any())).thenReturn(1);
+        when(jdbcTemplate.update(contains("UPDATE payments"), any(String.class), any())).thenReturn(1);
 
         Map<String, Object> result = paymentService.cancel(userId, "pk_test_123", null);
 
@@ -162,6 +162,6 @@ class PaymentServiceTest {
         Map<String, Object> result = paymentService.process(userId, request);
 
         assertTrue((Boolean) result.get("success"));
-        verify(paymentEventProducer).publish(any(PaymentConfirmedEvent.class));
+        verify(paymentTypeDispatcher).completeByType(eq("transfer"), any(), eq(userId), eq("card"));
     }
 }

@@ -6,7 +6,7 @@ import static org.mockito.Mockito.*;
 
 import guru.urr.communityservice.dto.NewsCreateRequest;
 import guru.urr.communityservice.shared.client.TicketInternalClient;
-import guru.urr.communityservice.shared.security.AuthUser;
+import guru.urr.common.security.AuthUser;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;

@@ -5,8 +5,10 @@ import guru.urr.catalogservice.domain.admin.dto.AdminReservationStatusRequest;
 import guru.urr.catalogservice.domain.admin.dto.AdminTicketTypeRequest;
 import guru.urr.catalogservice.domain.admin.dto.AdminTicketUpdateRequest;
 import guru.urr.catalogservice.shared.audit.AuditLog;
-import guru.urr.catalogservice.shared.security.AuthUser;
-import guru.urr.catalogservice.shared.security.JwtTokenParser;
+import guru.urr.common.security.AuthUser;
+import guru.urr.common.security.JwtTokenParser;
+import guru.urr.catalogservice.domain.admin.service.AdminDashboardService;
+import guru.urr.catalogservice.domain.admin.service.AdminSeatService;
 import guru.urr.catalogservice.domain.admin.service.AdminService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -30,23 +32,30 @@ import org.springframework.web.bind.annotation.RestController;
 public class AdminController {
 
     private final AdminService adminService;
+    private final AdminSeatService adminSeatService;
+    private final AdminDashboardService adminDashboardService;
     private final JwtTokenParser jwtTokenParser;
 
-    public AdminController(AdminService adminService, JwtTokenParser jwtTokenParser) {
+    public AdminController(AdminService adminService,
+                           AdminSeatService adminSeatService,
+                           AdminDashboardService adminDashboardService,
+                           JwtTokenParser jwtTokenParser) {
         this.adminService = adminService;
+        this.adminSeatService = adminSeatService;
+        this.adminDashboardService = adminDashboardService;
         this.jwtTokenParser = jwtTokenParser;
     }
 
     @GetMapping({"/dashboard", "/dashboard/stats"})
     public Map<String, Object> dashboard(HttpServletRequest request) {
         jwtTokenParser.requireAdmin(request);
-        return adminService.dashboardStats();
+        return adminDashboardService.dashboardStats();
     }
 
     @GetMapping("/seat-layouts")
     public Map<String, Object> seatLayouts(HttpServletRequest request) {
         jwtTokenParser.requireAdmin(request);
-        return adminService.seatLayouts();
+        return adminSeatService.seatLayouts();
     }
 
     @AuditLog(action = "CREATE_EVENT", resourceType = "event")
@@ -97,7 +106,7 @@ public class AdminController {
         HttpServletRequest request
     ) {
         jwtTokenParser.requireAdmin(request);
-        return adminService.generateSeats(id);
+        return adminSeatService.generateSeats(id);
     }
 
     @AuditLog(action = "DELETE_SEATS", resourceType = "event")
@@ -107,7 +116,7 @@ public class AdminController {
         HttpServletRequest request
     ) {
         jwtTokenParser.requireAdmin(request);
-        return adminService.deleteSeats(id);
+        return adminSeatService.deleteSeats(id);
     }
 
     @AuditLog(action = "CREATE_TICKET_TYPE", resourceType = "ticket_type")
@@ -118,7 +127,7 @@ public class AdminController {
         @Valid @RequestBody AdminTicketTypeRequest body
     ) {
         jwtTokenParser.requireAdmin(request);
-        return ResponseEntity.status(HttpStatus.CREATED).body(adminService.createTicketType(eventId, body));
+        return ResponseEntity.status(HttpStatus.CREATED).body(adminDashboardService.createTicketType(eventId, body));
     }
 
     @AuditLog(action = "UPDATE_TICKET_TYPE", resourceType = "ticket_type")
@@ -129,7 +138,7 @@ public class AdminController {
         @Valid @RequestBody AdminTicketUpdateRequest body
     ) {
         jwtTokenParser.requireAdmin(request);
-        return adminService.updateTicketType(id, body);
+        return adminDashboardService.updateTicketType(id, body);
     }
 
     @GetMapping("/reservations")
@@ -140,7 +149,7 @@ public class AdminController {
         @RequestParam(required = false) String status
     ) {
         jwtTokenParser.requireAdmin(request);
-        return adminService.listReservations(page, limit, status);
+        return adminDashboardService.listReservations(page, limit, status);
     }
 
     @AuditLog(action = "UPDATE_RESERVATION_STATUS", resourceType = "reservation")
@@ -151,6 +160,6 @@ public class AdminController {
         @RequestBody AdminReservationStatusRequest body
     ) {
         jwtTokenParser.requireAdmin(request);
-        return adminService.updateReservationStatus(id, body);
+        return adminDashboardService.updateReservationStatus(id, body);
     }
 }

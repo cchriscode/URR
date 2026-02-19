@@ -1,7 +1,8 @@
 package guru.urr.ticketservice.internal.controller;
 
-import guru.urr.ticketservice.shared.security.InternalTokenValidator;
+import guru.urr.common.security.InternalTokenValidator;
 import guru.urr.ticketservice.domain.membership.service.MembershipService;
+import guru.urr.ticketservice.domain.reservation.service.ReservationPaymentHandler;
 import guru.urr.ticketservice.domain.reservation.service.ReservationService;
 import guru.urr.ticketservice.domain.transfer.service.TransferService;
 import java.util.Map;
@@ -21,17 +22,20 @@ public class InternalReservationController {
 
     private final InternalTokenValidator internalTokenValidator;
     private final ReservationService reservationService;
+    private final ReservationPaymentHandler reservationPaymentHandler;
     private final TransferService transferService;
     private final MembershipService membershipService;
 
     public InternalReservationController(
         InternalTokenValidator internalTokenValidator,
         ReservationService reservationService,
+        ReservationPaymentHandler reservationPaymentHandler,
         TransferService transferService,
         MembershipService membershipService
     ) {
         this.internalTokenValidator = internalTokenValidator;
         this.reservationService = reservationService;
+        this.reservationPaymentHandler = reservationPaymentHandler;
         this.transferService = transferService;
         this.membershipService = membershipService;
     }
@@ -56,7 +60,7 @@ public class InternalReservationController {
     ) {
         internalTokenValidator.requireValidToken(authorization);
         String paymentMethod = payload != null && payload.get("paymentMethod") != null ? String.valueOf(payload.get("paymentMethod")) : "toss";
-        reservationService.confirmReservationPayment(id, paymentMethod);
+        reservationPaymentHandler.confirmReservationPayment(id, paymentMethod);
         return Map.of("ok", true);
     }
 
@@ -66,7 +70,7 @@ public class InternalReservationController {
         @RequestHeader(value = "Authorization", required = false) String authorization
     ) {
         internalTokenValidator.requireValidToken(authorization);
-        reservationService.markReservationRefunded(id);
+        reservationPaymentHandler.markReservationRefunded(id);
         return Map.of("ok", true);
     }
 

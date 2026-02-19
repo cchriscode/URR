@@ -13,7 +13,7 @@ interface EventDetailPageClientProps {
 
 export default function EventDetailPageClient({ initialEvent }: EventDetailPageClientProps) {
   const params = useParams<{ id: string }>();
-  const { data: event = initialEvent, isLoading } = useEventDetail(params.id);
+  const { data: event = initialEvent, isLoading } = useEventDetail(params.id, initialEvent);
 
   if (isLoading && !initialEvent) {
     return (

@@ -2,7 +2,7 @@ package guru.urr.ticketservice.internal.controller;
 
 import guru.urr.ticketservice.domain.membership.service.MembershipService;
 import guru.urr.ticketservice.internal.dto.AwardPointsRequest;
-import guru.urr.ticketservice.shared.security.InternalTokenValidator;
+import guru.urr.common.security.InternalTokenValidator;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

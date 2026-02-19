@@ -1,7 +1,7 @@
 package guru.urr.catalogservice.internal.controller;
 
 import guru.urr.catalogservice.domain.event.service.EventReadService;
-import guru.urr.catalogservice.shared.security.InternalTokenValidator;
+import guru.urr.common.security.InternalTokenValidator;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.web.bind.annotation.*;

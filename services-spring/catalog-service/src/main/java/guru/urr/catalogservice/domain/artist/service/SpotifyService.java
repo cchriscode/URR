@@ -21,6 +21,7 @@ import java.io.IOException;
 public class SpotifyService {
 
     private static final Logger log = LoggerFactory.getLogger(SpotifyService.class);
+    private static final long SPOTIFY_API_THROTTLE_MS = 100;
 
     private final JdbcTemplate jdbcTemplate;
     private final String clientId;
@@ -88,7 +89,7 @@ public class SpotifyService {
                         }
                     }
 
-                    Thread.sleep(100);
+                    Thread.sleep(SPOTIFY_API_THROTTLE_MS);
                 } catch (SpotifyWebApiException | ParseException e) {
                     log.warn("Spotify search failed for '{}': {}", name, e.getMessage());
                 } catch (InterruptedException e) {

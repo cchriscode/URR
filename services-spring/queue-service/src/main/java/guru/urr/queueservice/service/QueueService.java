@@ -2,20 +2,17 @@ package guru.urr.queueservice.service;
 
 import guru.urr.queueservice.shared.client.TicketInternalClient;
 import guru.urr.queueservice.shared.metrics.QueueMetrics;
-import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.security.Keys;
-import java.nio.charset.StandardCharsets;
-import java.util.Date;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
-import javax.crypto.SecretKey;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -26,35 +23,48 @@ public class QueueService {
     private final StringRedisTemplate redisTemplate;
     private final TicketInternalClient ticketInternalClient;
     private final SqsPublisher sqsPublisher;
+    private final DefaultRedisScript<List> queueCheckScript;
     private final int defaultThreshold;
     private final int activeTtlSeconds;
-    private final SecretKey entryTokenKey;
-    private final int entryTokenTtlSeconds;
+    private final EntryTokenGenerator entryTokenGenerator;
     private final QueueMetrics queueMetrics;
 
     // Throughput tracking for wait estimation
     private final AtomicLong recentAdmissions = new AtomicLong(0);
     private final AtomicLong throughputWindowStart = new AtomicLong(System.currentTimeMillis());
     private static final long THROUGHPUT_WINDOW_MS = 60_000; // 1-minute window
+    private static final int DEFAULT_THROUGHPUT_PER_SECOND = 50;
+    private static final int MINIMUM_WAIT_SECONDS = 5;
+    private static final long THROUGHPUT_MIN_DATA_MS = 5000;
+    private static final int POLL_SECONDS_DEFAULT = 3;
+    private static final int POLL_SECONDS_NEAR = 1;
+    private static final int POLL_SECONDS_MEDIUM = 5;
+    private static final int POLL_SECONDS_FAR = 10;
+    private static final int POLL_SECONDS_VERY_FAR = 30;
+    private static final int POLL_SECONDS_DISTANT = 60;
+    private static final int POSITION_THRESHOLD_NEAR = 1_000;
+    private static final int POSITION_THRESHOLD_MEDIUM = 5_000;
+    private static final int POSITION_THRESHOLD_FAR = 10_000;
+    private static final int POSITION_THRESHOLD_VERY_FAR = 100_000;
 
     public QueueService(
         StringRedisTemplate redisTemplate,
         TicketInternalClient ticketInternalClient,
         SqsPublisher sqsPublisher,
+        DefaultRedisScript<List> queueCheckScript,
         QueueMetrics queueMetrics,
+        EntryTokenGenerator entryTokenGenerator,
         @Value("${QUEUE_THRESHOLD:1000}") int threshold,
-        @Value("${QUEUE_ACTIVE_TTL_SECONDS:600}") int activeTtlSeconds,
-        @Value("${queue.entry-token.secret}") String entryTokenSecret,
-        @Value("${queue.entry-token.ttl-seconds:600}") int entryTokenTtlSeconds
+        @Value("${QUEUE_ACTIVE_TTL_SECONDS:600}") int activeTtlSeconds
     ) {
         this.redisTemplate = redisTemplate;
         this.ticketInternalClient = ticketInternalClient;
         this.sqsPublisher = sqsPublisher;
+        this.queueCheckScript = queueCheckScript;
         this.queueMetrics = queueMetrics;
+        this.entryTokenGenerator = entryTokenGenerator;
         this.defaultThreshold = threshold;
         this.activeTtlSeconds = activeTtlSeconds;
-        this.entryTokenKey = Keys.hmacShaKeyFor(entryTokenSecret.getBytes(StandardCharsets.UTF_8));
-        this.entryTokenTtlSeconds = entryTokenTtlSeconds;
     }
 
     public Map<String, Object> check(UUID eventId, String userId) {
@@ -64,47 +74,53 @@ public class QueueService {
     public Map<String, Object> check(UUID eventId, String userId, Integer vwrPosition) {
         Map<String, Object> eventInfo = ticketInternalClient.getEventQueueInfo(eventId);
 
-        if (isInQueue(eventId, userId)) {
-            touchQueueUser(eventId, userId);
-            int position = getQueuePosition(eventId, userId);
-            int queueSize = getQueueSize(eventId);
-            return buildQueuedResponse(position, queueSize, eventInfo, eventId);
+        // Single Lua call: [inQueue, inActive, position, queueSize, activeCount, threshold]
+        long[] state = executeQueueCheck(eventId, userId);
+        boolean inQueue = state[0] == 1;
+        boolean inActive = state[1] == 1;
+        int position = (int) state[2];
+        int queueSize = (int) state[3];
+        int activeCount = (int) state[4];
+        int threshold = (int) state[5];
+
+        if (inQueue) {
+            return buildQueuedResponse(position, queueSize, eventInfo, activeCount, threshold);
         }
 
-        if (isActiveUser(eventId, userId)) {
-            touchActiveUser(eventId, userId);
-            return buildActiveResponse(eventInfo, eventId, userId);
+        if (inActive) {
+            return buildActiveResponse(eventInfo, eventId, userId, activeCount, threshold);
         }
 
-        int currentUsers = getCurrentUsers(eventId);
-        int queueSize = getQueueSize(eventId);
-
-        if (queueSize > 0 || currentUsers >= getThreshold(eventId)) {
-            // If user has VWR position, use it as priority score for better queue placement
+        if (queueSize > 0 || activeCount >= threshold) {
             double score = vwrPosition != null ? (double) vwrPosition : System.currentTimeMillis();
             addToQueue(eventId, userId, score);
             trackActiveEvent(eventId);
             queueMetrics.recordQueueJoined();
-            int position = getQueuePosition(eventId, userId);
+            position = getQueuePosition(eventId, userId);
             queueSize = getQueueSize(eventId);
-            return buildQueuedResponse(position, queueSize, eventInfo, eventId);
+            return buildQueuedResponse(position, queueSize, eventInfo, activeCount, threshold);
         }
 
         addActiveUser(eventId, userId);
         trackActiveEvent(eventId);
         queueMetrics.recordQueueAdmitted();
-        return buildActiveResponse(eventInfo, eventId, userId);
+        return buildActiveResponse(eventInfo, eventId, userId, activeCount, threshold);
     }
 
     public Map<String, Object> status(UUID eventId, String userId) {
-        if (isInQueue(eventId, userId)) {
-            touchQueueUser(eventId, userId);
-            int position = getQueuePosition(eventId, userId);
-            int queueSize = getQueueSize(eventId);
+        // Single Lua call: [inQueue, inActive, position, queueSize, activeCount, threshold]
+        long[] state = executeQueueCheck(eventId, userId);
+        boolean inQueue = state[0] == 1;
+        boolean inActive = state[1] == 1;
+        int position = (int) state[2];
+        int queueSize = (int) state[3];
+        int activeCount = (int) state[4];
+
+        if (inQueue) {
             Map<String, Object> result = new HashMap<>();
             result.put("status", "queued");
             result.put("queued", true);
-            result.put("currentUsers", getCurrentUsers(eventId));
+            result.put("currentUsers", activeCount);
             result.put("position", position);
             result.put("peopleAhead", Math.max(0, position - 1));
             result.put("peopleBehind", Math.max(0, queueSize - position));
@@ -114,14 +130,13 @@ public class QueueService {
             return result;
         }
 
-        if (isActiveUser(eventId, userId)) {
-            touchActiveUser(eventId, userId);
-            String entryToken = generateEntryToken(eventId.toString(), userId);
+        if (inActive) {
+            String entryToken = entryTokenGenerator.generate(eventId.toString(), userId);
             Map<String, Object> result = new HashMap<>();
             result.put("status", "active");
             result.put("queued", false);
-            result.put("currentUsers", getCurrentUsers(eventId));
-            result.put("nextPoll", 3);
+            result.put("currentUsers", activeCount);
+            result.put("nextPoll", POLL_SECONDS_DEFAULT);
             result.put("message", "Entry allowed");
             result.put("entryToken", entryToken);
             return result;
@@ -130,8 +145,8 @@ public class QueueService {
         Map<String, Object> result = new HashMap<>();
         result.put("status", "not_in_queue");
         result.put("queued", false);
-        result.put("currentUsers", getCurrentUsers(eventId));
-        result.put("nextPoll", 3);
+        result.put("currentUsers", activeCount);
+        result.put("nextPoll", POLL_SECONDS_DEFAULT);
         result.put("message", "Not in queue");
         return result;
     }
@@ -188,7 +203,8 @@ public class QueueService {
     // -- Response builders --
 
     private Map<String, Object> buildQueuedResponse(int position, int queueSize,
-                                                     Map<String, Object> eventInfo, UUID eventId) {
+                                                     Map<String, Object> eventInfo,
+                                                     int activeCount, int threshold) {
         Map<String, Object> result = new HashMap<>();
         result.put("queued", true);
         result.put("status", "queued");
@@ -197,21 +213,22 @@ public class QueueService {
         result.put("peopleBehind", Math.max(0, queueSize - position));
         result.put("estimatedWait", estimateWait(position));
         result.put("nextPoll", calculateNextPoll(position));
-        result.put("threshold", getThreshold(eventId));
-        result.put("currentUsers", getCurrentUsers(eventId));
+        result.put("threshold", threshold);
+        result.put("currentUsers", activeCount);
         result.put("eventInfo", eventInfo);
         return result;
     }
 
-    private Map<String, Object> buildActiveResponse(Map<String, Object> eventInfo, UUID eventId, String userId) {
-        String entryToken = generateEntryToken(eventId.toString(), userId);
+    private Map<String, Object> buildActiveResponse(Map<String, Object> eventInfo, UUID eventId,
+                                                     String userId, int activeCount, int threshold) {
+        String entryToken = entryTokenGenerator.generate(eventId.toString(), userId);
 
         Map<String, Object> result = new HashMap<>();
         result.put("queued", false);
         result.put("status", "active");
-        result.put("currentUsers", getCurrentUsers(eventId));
-        result.put("threshold", getThreshold(eventId));
-        result.put("nextPoll", 3);
+        result.put("currentUsers", activeCount);
+        result.put("threshold", threshold);
+        result.put("nextPoll", POLL_SECONDS_DEFAULT);
         result.put("eventInfo", eventInfo);
         result.put("entryToken", entryToken);
 
@@ -221,29 +238,47 @@ public class QueueService {
         return result;
     }
 
-    private String generateEntryToken(String eventId, String userId) {
-        long nowMs = System.currentTimeMillis();
-        Date issuedAt = new Date(nowMs);
-        Date expiration = new Date(nowMs + (entryTokenTtlSeconds * 1000L));
+    // -- Lua script execution --
 
-        return Jwts.builder()
-            .subject(eventId)
-            .claim("uid", userId)
-            .issuedAt(issuedAt)
-            .expiration(expiration)
-            .signWith(entryTokenKey)
-            .compact();
+    @SuppressWarnings("unchecked")
+    private long[] executeQueueCheck(UUID eventId, String userId) {
+        List<String> keys = Arrays.asList(
+            queueKey(eventId),
+            activeKey(eventId),
+            queueSeenKey(eventId),
+            activeSeenKey(eventId),
+            "{" + eventId + "}:threshold"
+        );
+        long now = System.currentTimeMillis();
+        long activeTtlMs = activeTtlSeconds * 1000L;
+
+        List<Long> result = redisTemplate.execute(
+            queueCheckScript,
+            keys,
+            userId,
+            String.valueOf(now),
+            String.valueOf(defaultThreshold),
+            String.valueOf(activeTtlMs)
+        );
+
+        if (result == null || result.size() < 6) {
+            return new long[]{0, 0, 0, 0, 0, defaultThreshold};
+        }
+        return new long[]{
+            result.get(0), result.get(1), result.get(2),
+            result.get(3), result.get(4), result.get(5)
+        };
     }
 
     // -- Dynamic polling interval --
 
     private int calculateNextPoll(int position) {
-        if (position <= 0) return 3;
-        if (position <= 1000) return 1;
-        if (position <= 5000) return 5;
-        if (position <= 10000) return 10;
-        if (position <= 100000) return 30;
-        return 60;
+        if (position <= 0) return POLL_SECONDS_DEFAULT;
+        if (position <= POSITION_THRESHOLD_NEAR) return POLL_SECONDS_NEAR;
+        if (position <= POSITION_THRESHOLD_MEDIUM) return POLL_SECONDS_MEDIUM;
+        if (position <= POSITION_THRESHOLD_FAR) return POLL_SECONDS_FAR;
+        if (position <= POSITION_THRESHOLD_VERY_FAR) return POLL_SECONDS_VERY_FAR;
+        return POLL_SECONDS_DISTANT;
     }
 
     // -- Throughput-based wait estimation --
@@ -255,15 +290,15 @@ public class QueueService {
         long elapsed = now - throughputWindowStart.get();
         long admissions = recentAdmissions.get();
 
-        if (elapsed < 5000 || admissions <= 0) {
-            // Before throughput data is available, assume ~50 users/second processing rate
+        if (elapsed < THROUGHPUT_MIN_DATA_MS || admissions <= 0) {
+            // Before throughput data is available, assume default processing rate
             // and cap at a reasonable maximum to avoid alarming overestimates
-            return Math.max(position / 50, 5);
+            return Math.max(position / DEFAULT_THROUGHPUT_PER_SECOND, MINIMUM_WAIT_SECONDS);
         }
 
         double throughputPerSecond = (admissions * 1000.0) / elapsed;
         if (throughputPerSecond <= 0) {
-            return Math.max(position / 50, 5);
+            return Math.max(position / DEFAULT_THROUGHPUT_PER_SECOND, MINIMUM_WAIT_SECONDS);
         }
         return (int) Math.ceil(position / throughputPerSecond);
     }
@@ -273,7 +308,8 @@ public class QueueService {
     private void trackActiveEvent(UUID eventId) {
         try {
             redisTemplate.opsForSet().add("queue:active-events", eventId.toString());
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            log.debug("Failed to track active event {}: {}", eventId, e.getMessage());
         }
     }
 
@@ -367,7 +403,8 @@ public class QueueService {
     private void touchQueueUser(UUID eventId, String userId) {
         try {
             redisTemplate.opsForZSet().add(queueSeenKey(eventId), userId, System.currentTimeMillis());
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            log.warn("Failed to touch queue heartbeat for user {} on event {}: {}", userId, eventId, e.getMessage());
         }
     }
 
@@ -376,7 +413,8 @@ public class QueueService {
             redisTemplate.opsForZSet().add(activeSeenKey(eventId), userId, System.currentTimeMillis());
             long newExpiry = System.currentTimeMillis() + (activeTtlSeconds * 1000L);
             redisTemplate.opsForZSet().add(activeKey(eventId), userId, newExpiry);
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            log.warn("Failed to refresh active session for user {} on event {}: {}", userId, eventId, e.getMessage());
         }
     }
 

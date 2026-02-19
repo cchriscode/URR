@@ -1,7 +1,10 @@
 package guru.urr.statsservice.controller;
 
-import guru.urr.statsservice.security.JwtTokenParser;
-import guru.urr.statsservice.service.StatsQueryService;
+import guru.urr.common.security.JwtTokenParser;
+import guru.urr.statsservice.service.DashboardStatsService;
+import guru.urr.statsservice.service.EventStatsService;
+import guru.urr.statsservice.service.OperationalStatsService;
+import guru.urr.statsservice.service.UserStatsService;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;
 import java.util.UUID;
@@ -15,18 +18,28 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/stats")
 public class StatsController {
 
-    private final StatsQueryService statsQueryService;
+    private final DashboardStatsService dashboardStatsService;
+    private final EventStatsService eventStatsService;
+    private final UserStatsService userStatsService;
+    private final OperationalStatsService operationalStatsService;
     private final JwtTokenParser jwtTokenParser;
 
-    public StatsController(StatsQueryService statsQueryService, JwtTokenParser jwtTokenParser) {
-        this.statsQueryService = statsQueryService;
+    public StatsController(DashboardStatsService dashboardStatsService,
+                           EventStatsService eventStatsService,
+                           UserStatsService userStatsService,
+                           OperationalStatsService operationalStatsService,
+                           JwtTokenParser jwtTokenParser) {
+        this.dashboardStatsService = dashboardStatsService;
+        this.eventStatsService = eventStatsService;
+        this.userStatsService = userStatsService;
+        this.operationalStatsService = operationalStatsService;
         this.jwtTokenParser = jwtTokenParser;
     }
 
     @GetMapping("/overview")
     public Map<String, Object> overview(HttpServletRequest request) {
         jwtTokenParser.requireAdmin(request);
-        return ok(statsQueryService.overview());
+        return ok(dashboardStatsService.overview());
     }
 
     @GetMapping("/daily")
@@ -35,7 +48,7 @@ public class StatsController {
         @RequestParam(defaultValue = "30") int days
     ) {
         jwtTokenParser.requireAdmin(request);
-        return ok(statsQueryService.daily(days));
+        return ok(dashboardStatsService.daily(days));
     }
 
     @GetMapping("/events")
@@ -45,7 +58,7 @@ public class StatsController {
         @RequestParam(defaultValue = "revenue") String sortBy
     ) {
         jwtTokenParser.requireAdmin(request);
-        return ok(statsQueryService.events(limit, sortBy));
+        return ok(eventStatsService.events(limit, sortBy));
     }
 
     @GetMapping("/events/{eventId}")
@@ -54,13 +67,13 @@ public class StatsController {
         HttpServletRequest request
     ) {
         jwtTokenParser.requireAdmin(request);
-        return ok(statsQueryService.eventById(eventId));
+        return ok(eventStatsService.eventById(eventId));
     }
 
     @GetMapping("/payments")
     public Map<String, Object> payments(HttpServletRequest request) {
         jwtTokenParser.requireAdmin(request);
-        return ok(statsQueryService.payments());
+        return ok(operationalStatsService.payments());
     }
 
     @GetMapping("/revenue")
@@ -70,7 +83,7 @@ public class StatsController {
         @RequestParam(defaultValue = "30") int days
     ) {
         jwtTokenParser.requireAdmin(request);
-        return ok(statsQueryService.revenue(period, days));
+        return ok(operationalStatsService.revenue(period, days));
     }
 
     @GetMapping("/users")
@@ -79,7 +92,7 @@ public class StatsController {
         @RequestParam(defaultValue = "30") int days
     ) {
         jwtTokenParser.requireAdmin(request);
-        return ok(statsQueryService.users(days));
+        return ok(userStatsService.users(days));
     }
 
     @GetMapping("/hourly-traffic")
@@ -88,7 +101,7 @@ public class StatsController {
         @RequestParam(defaultValue = "7") int days
     ) {
         jwtTokenParser.requireAdmin(request);
-        return ok(statsQueryService.hourlyTraffic(days));
+        return ok(operationalStatsService.hourlyTraffic(days));
     }
 
     @GetMapping("/conversion")
@@ -97,7 +110,7 @@ public class StatsController {
         @RequestParam(defaultValue = "30") int days
     ) {
         jwtTokenParser.requireAdmin(request);
-        return ok(statsQueryService.conversion(days));
+        return ok(userStatsService.conversion(days));
     }
 
     @GetMapping("/cancellations")
@@ -106,13 +119,13 @@ public class StatsController {
         @RequestParam(defaultValue = "30") int days
     ) {
         jwtTokenParser.requireAdmin(request);
-        return ok(statsQueryService.cancellations(days));
+        return ok(eventStatsService.cancellations(days));
     }
 
     @GetMapping("/realtime")
     public Map<String, Object> realtime(HttpServletRequest request) {
         jwtTokenParser.requireAdmin(request);
-        return ok(statsQueryService.realtime());
+        return ok(operationalStatsService.realtime());
     }
 
     @GetMapping("/seat-preferences")
@@ -121,7 +134,7 @@ public class StatsController {
         @RequestParam(required = false) UUID eventId
     ) {
         jwtTokenParser.requireAdmin(request);
-        return ok(statsQueryService.seatPreferences(eventId));
+        return ok(eventStatsService.seatPreferences(eventId));
     }
 
     @GetMapping("/user-behavior")
@@ -130,13 +143,13 @@ public class StatsController {
         @RequestParam(defaultValue = "30") int days
     ) {
         jwtTokenParser.requireAdmin(request);
-        return ok(statsQueryService.userBehavior(days));
+        return ok(userStatsService.userBehavior(days));
     }
 
     @GetMapping("/performance")
     public Map<String, Object> performance(HttpServletRequest request) {
         jwtTokenParser.requireAdmin(request);
-        return ok(statsQueryService.performance());
+        return ok(operationalStatsService.performance());
     }
 
     private Map<String, Object> ok(Object data) {

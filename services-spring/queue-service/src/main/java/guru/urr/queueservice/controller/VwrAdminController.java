@@ -1,6 +1,6 @@
 package guru.urr.queueservice.controller;
 
-import guru.urr.queueservice.shared.security.JwtTokenParser;
+import guru.urr.common.security.JwtTokenParser;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;
 import java.util.UUID;
@@ -29,6 +29,8 @@ import software.amazon.awssdk.services.dynamodb.model.UpdateItemRequest;
 @RequestMapping("/api/admin/vwr")
 @ConditionalOnProperty(name = "vwr.dynamodb.enabled", havingValue = "true")
 public class VwrAdminController {
+
+    private static final int DEFAULT_ADVANCE_BATCH_SIZE = 500;
 
     private final JwtTokenParser jwtTokenParser;
     private final DynamoDbClient dynamoDbClient;
@@ -151,7 +153,7 @@ public class VwrAdminController {
             return Map.of("error", "VWR DynamoDB not configured");
         }
 
-        int batchSize = 500;
+        int batchSize = DEFAULT_ADVANCE_BATCH_SIZE;
         if (body != null && body.containsKey("batchSize")) {
             batchSize = ((Number) body.get("batchSize")).intValue();
         }

@@ -15,6 +15,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.annotation.Order;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -154,7 +155,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
     }
 
     private void sendRateLimitResponse(HttpServletResponse response) throws IOException {
-        response.setStatus(429);
+        response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         response.getWriter().write(
                 "{\"error\":\"Rate limit exceeded\",\"retryAfter\":" + RETRY_AFTER_SECONDS + "}"

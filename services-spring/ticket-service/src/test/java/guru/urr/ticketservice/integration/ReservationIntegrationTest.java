@@ -126,7 +126,7 @@ class ReservationIntegrationTest {
             VALUES (?, ?, ?, ?, 80000, 'confirmed')
             """, UUID.randomUUID(), userId, eventId, "RES-B-" + System.currentTimeMillis());
 
-        Map<String, Object> result = reservationService.myReservations(userId.toString(), 1, 20);
+        Map<String, Object> result = reservationService.getMyReservations(userId.toString());
 
         assertNotNull(result.get("reservations"));
         @SuppressWarnings("unchecked")

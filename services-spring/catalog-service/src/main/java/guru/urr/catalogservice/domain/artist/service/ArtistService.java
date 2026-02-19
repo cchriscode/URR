@@ -1,6 +1,6 @@
 package guru.urr.catalogservice.domain.artist.service;
 
-import guru.urr.catalogservice.shared.util.PreSaleSchedule;
+import guru.urr.common.util.PreSaleSchedule;
 import java.time.OffsetDateTime;
 import java.util.HashMap;
 import java.util.List;

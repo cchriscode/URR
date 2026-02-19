@@ -171,7 +171,7 @@ public class StatsEventConsumer {
                 "SELECT COUNT(*) FROM processed_events WHERE event_key = ?", Integer.class, eventKey);
             return count != null && count > 0;
         } catch (Exception e) {
-            log.warn("Stats: deduplication check failed for key {}: {}", eventKey, e.getMessage());
+            log.error("Stats: deduplication check failed, event may be processed as duplicate. key={}", eventKey, e);
             return false;
         }
     }
@@ -193,7 +193,7 @@ public class StatsEventConsumer {
     private UUID uuid(Object value) {
         if (value == null) return null;
         if (value instanceof String s && !s.isBlank()) {
-            try { return UUID.fromString(s); } catch (Exception e) { return null; }
+            try { return UUID.fromString(s); } catch (IllegalArgumentException e) { log.warn("Invalid UUID format in event: {}", s); return null; }
         }
         return null;
     }
@@ -201,7 +201,7 @@ public class StatsEventConsumer {
     private int integer(Object value) {
         if (value instanceof Number n) return n.intValue();
         if (value instanceof String s) {
-            try { return Integer.parseInt(s); } catch (Exception e) { return 0; }
+            try { return Integer.parseInt(s); } catch (NumberFormatException e) { log.warn("Invalid integer in event, defaulting to 0: {}", s); return 0; }
         }
         return 0;
     }

@@ -6,6 +6,7 @@ import { reservationsApi, transfersApi } from "@/lib/api-client";
 import { useMyReservations } from "@/hooks/use-reservations";
 import { useCountdown, formatCountdownShort } from "@/hooks/use-countdown";
 import { formatEventDate } from "@/lib/format";
+import { statusBadge } from "@/lib/status-badge";
 
 interface Reservation {
   id: string;
@@ -16,21 +17,6 @@ interface Reservation {
   total_amount?: number;
   created_at?: string;
   expires_at?: string;
-}
-
-function statusBadge(status?: string) {
-  switch (status) {
-    case "confirmed":
-    case "completed":
-      return { text: "확정", cls: "bg-sky-50 text-sky-600" };
-    case "pending":
-    case "waiting":
-      return { text: "대기", cls: "bg-amber-50 text-amber-600" };
-    case "cancelled":
-      return { text: "취소", cls: "bg-red-50 text-red-500" };
-    default:
-      return { text: status ?? "대기", cls: "bg-slate-100 text-slate-500" };
-  }
 }
 
 function ReservationRow({
