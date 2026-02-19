@@ -3,7 +3,7 @@ package guru.urr.communityservice.service;
 import guru.urr.communityservice.dto.NewsCreateRequest;
 import guru.urr.communityservice.dto.NewsUpdateRequest;
 import guru.urr.communityservice.shared.client.TicketInternalClient;
-import guru.urr.communityservice.shared.security.AuthUser;
+import guru.urr.common.security.AuthUser;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -20,6 +20,7 @@ import org.springframework.web.server.ResponseStatusException;
 public class NewsService {
 
     private static final Logger log = LoggerFactory.getLogger(NewsService.class);
+    private static final int NEWS_POINTS = 30;
 
     private final JdbcTemplate jdbcTemplate;
     private final TicketInternalClient ticketInternalClient;
@@ -85,10 +86,10 @@ public class NewsService {
 
         try {
             ticketInternalClient.awardMembershipPoints(
-                authorId.toString(), "NEWS_CREATION", 30,
+                authorId.toString(), "NEWS_CREATION", NEWS_POINTS,
                 "News post created: " + request.title(), (UUID) row.get("id"));
         } catch (Exception e) {
-            log.warn("Failed to award membership points for news creation: {}", e.getMessage());
+            log.warn("Failed to award {} membership points for news creation by user {}: {}", NEWS_POINTS, authorId, e.getMessage());
         }
 
         return Map.of("news", row);

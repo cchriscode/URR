@@ -22,6 +22,8 @@ import org.springframework.web.client.RestClient;
 public class AuthInternalClient {
 
     private static final Logger log = LoggerFactory.getLogger(AuthInternalClient.class);
+    private static final int CONNECT_TIMEOUT_SECONDS = 5;
+    private static final int READ_TIMEOUT_SECONDS = 10;
 
     private final RestClient restClient;
     private final String internalApiToken;
@@ -31,8 +33,8 @@ public class AuthInternalClient {
         @Value("${internal.api-token}") String internalApiToken
     ) {
         var requestFactory = ClientHttpRequestFactories.get(ClientHttpRequestFactorySettings.DEFAULTS
-                .withConnectTimeout(Duration.ofSeconds(5))
-                .withReadTimeout(Duration.ofSeconds(10)));
+                .withConnectTimeout(Duration.ofSeconds(CONNECT_TIMEOUT_SECONDS))
+                .withReadTimeout(Duration.ofSeconds(READ_TIMEOUT_SECONDS)));
         this.restClient = RestClient.builder().baseUrl(authServiceUrl).requestFactory(requestFactory).build();
         this.internalApiToken = internalApiToken;
     }

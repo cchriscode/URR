@@ -1,6 +1,8 @@
 package guru.urr.catalogservice.domain.admin.service;
 
 import java.nio.charset.StandardCharsets;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Set;
@@ -17,7 +19,9 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 @Service
 public class ImageUploadService {
 
+    private static final Logger log = LoggerFactory.getLogger(ImageUploadService.class);
     private static final Set<String> ALLOWED_TYPES = Set.of("image/jpeg", "image/png", "image/webp", "image/gif");
+    private static final long MAX_IMAGE_SIZE_BYTES = 5L * 1024 * 1024;
 
     private final String awsRegion;
     private final String bucket;
@@ -37,7 +41,7 @@ public class ImageUploadService {
         if (image == null || image.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Image file is required");
         }
-        if (image.getSize() > 5L * 1024 * 1024) {
+        if (image.getSize() > MAX_IMAGE_SIZE_BYTES) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Image size must be under 5MB");
         }
 
@@ -66,6 +70,7 @@ public class ImageUploadService {
 
             s3Client.putObject(request, RequestBody.fromBytes(image.getBytes()));
         } catch (Exception ex) {
+            log.error("S3 upload failed: {}", ex.getMessage(), ex);
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Image upload failed");
         }
 

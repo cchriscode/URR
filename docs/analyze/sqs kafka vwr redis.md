@@ -1179,5 +1179,5 @@ sequenceDiagram
 | 전달 보장 | Lua 스크립트 원자성 | Fire-and-Forget (앱 레벨에서 실패 무시, Redis 폴백) | At-Least-Once (멱등성으로 중복 방어) |
 | 순서 보장 | ZSet score (타임스탬프 순) | FIFO MessageGroupId (이벤트 단위) | Partition Key (엔티티 ID 단위) |
 | 중복 방어 | ZADD는 같은 멤버면 score만 갱신 | FIFO MessageDeduplicationId (SQS 레벨) | processed_events 테이블 (애플리케이션 레벨) |
-| 장애 격리 | Redis 장애 → 대기열 불가 (핵심 의존) | SQS 장애 → 대기열 정상 (보조 채널) | Consumer 장애 → 미소비 메시지 쌓임 → 재시작 시 재개 |
+| 장애 격리 | Redis 장애 → 대기열 불가 (핵심 의존). queue-service의 `QueueExceptionHandler` (`@Order(1)`, `services-spring/queue-service/src/main/java/guru/urr/queueservice/shared/exception/QueueExceptionHandler.java`)가 `RedisConnectionFailureException`을 잡아 503을 반환한다. 그 외 범용 예외는 urr-common의 `GlobalExceptionHandler`가 처리한다. | SQS 장애 → 대기열 정상 (보조 채널) | Consumer 장애 → 미소비 메시지 쌓임 → 재시작 시 재개 |
 | 팬아웃 | 없음 (단일 서비스 사용) | 없음 (단일 Lambda 소비) | 있음 (ticket-service-group + stats-service-group 독립 소비) |

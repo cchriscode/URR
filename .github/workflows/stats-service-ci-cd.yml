@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'services-spring/stats-service/**'
+      - 'services-spring/urr-common/**'
       - '.github/workflows/stats-service-ci-cd.yml'
   workflow_dispatch:
     inputs:

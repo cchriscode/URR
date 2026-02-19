@@ -1,0 +1,9 @@
+**/build/
+**/.gradle/
+**/bin/
+**/out/
+**/.idea/
+**/.vscode/
+**/*.iml
+**/test-results/
+**/reports/

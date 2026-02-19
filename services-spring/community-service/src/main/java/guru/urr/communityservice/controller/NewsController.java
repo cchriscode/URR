@@ -2,8 +2,8 @@ package guru.urr.communityservice.controller;
 
 import guru.urr.communityservice.dto.NewsCreateRequest;
 import guru.urr.communityservice.dto.NewsUpdateRequest;
-import guru.urr.communityservice.shared.security.AuthUser;
-import guru.urr.communityservice.shared.security.JwtTokenParser;
+import guru.urr.common.security.AuthUser;
+import guru.urr.common.security.JwtTokenParser;
 import guru.urr.communityservice.service.NewsService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;

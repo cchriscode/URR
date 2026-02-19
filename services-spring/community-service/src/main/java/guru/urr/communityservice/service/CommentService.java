@@ -2,7 +2,7 @@ package guru.urr.communityservice.service;
 
 import guru.urr.communityservice.dto.CommentCreateRequest;
 import guru.urr.communityservice.shared.client.TicketInternalClient;
-import guru.urr.communityservice.shared.security.AuthUser;
+import guru.urr.common.security.AuthUser;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;

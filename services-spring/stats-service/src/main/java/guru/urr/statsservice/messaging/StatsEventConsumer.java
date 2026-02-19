@@ -193,7 +193,7 @@ public class StatsEventConsumer {
     private UUID uuid(Object value) {
         if (value == null) return null;
         if (value instanceof String s && !s.isBlank()) {
-            try { return UUID.fromString(s); } catch (Exception e) { return null; }
+            try { return UUID.fromString(s); } catch (IllegalArgumentException e) { log.warn("Invalid UUID format in event: {}", s); return null; }
         }
         return null;
     }
@@ -201,7 +201,7 @@ public class StatsEventConsumer {
     private int integer(Object value) {
         if (value instanceof Number n) return n.intValue();
         if (value instanceof String s) {
-            try { return Integer.parseInt(s); } catch (Exception e) { return 0; }
+            try { return Integer.parseInt(s); } catch (NumberFormatException e) { log.warn("Invalid integer in event, defaulting to 0: {}", s); return 0; }
         }
         return 0;
     }

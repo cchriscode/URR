@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'services-spring/payment-service/**'
+      - 'services-spring/urr-common/**'
       - '.github/workflows/payment-service-ci-cd.yml'
   workflow_dispatch:
     inputs:

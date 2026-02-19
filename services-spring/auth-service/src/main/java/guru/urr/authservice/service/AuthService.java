@@ -75,12 +75,8 @@ public class AuthService {
         user.setPhone(request.phone());
 
         UserEntity saved = userRepository.save(user);
-        String token = jwtService.generateToken(saved);
-        UUID familyId = UUID.randomUUID();
-        String refreshToken = jwtService.generateRefreshToken(saved, familyId);
-        storeRefreshToken(saved.getId(), refreshToken, familyId);
-
-        return new AuthResponse("Registration completed", token, refreshToken, UserPayload.from(saved));
+        AuthTokenPair tokens = issueTokenPair(saved, UUID.randomUUID());
+        return new AuthResponse("Registration completed", tokens.accessToken(), tokens.refreshToken(), UserPayload.from(saved));
     }
 
     @Transactional(readOnly = true)
@@ -103,11 +99,8 @@ public class AuthService {
             throw new ApiException("Invalid email or password");
         }
 
-        String token = jwtService.generateToken(user);
-        UUID familyId = UUID.randomUUID();
-        String refreshToken = jwtService.generateRefreshToken(user, familyId);
-        storeRefreshToken(user.getId(), refreshToken, familyId);
-        return new AuthResponse("Login successful", token, refreshToken, UserPayload.from(user));
+        AuthTokenPair tokens = issueTokenPair(user, UUID.randomUUID());
+        return new AuthResponse("Login successful", tokens.accessToken(), tokens.refreshToken(), UserPayload.from(user));
     }
 
     @Transactional
@@ -145,11 +138,8 @@ public class AuthService {
             .orElseThrow(() -> new ApiException("User not found"));
 
         UUID familyId = storedToken != null ? storedToken.getFamilyId() : UUID.randomUUID();
-        String newAccessToken = jwtService.generateToken(user);
-        String newRefreshToken = jwtService.generateRefreshToken(user, familyId);
-        storeRefreshToken(user.getId(), newRefreshToken, familyId);
-
-        return new AuthResponse("Token refreshed", newAccessToken, newRefreshToken, UserPayload.from(user));
+        AuthTokenPair tokens = issueTokenPair(user, familyId);
+        return new AuthResponse("Token refreshed", tokens.accessToken(), tokens.refreshToken(), UserPayload.from(user));
     }
 
     @Transactional(readOnly = true)
@@ -237,10 +227,7 @@ public class AuthService {
             user = userRepository.save(user);
         }
 
-        String token = jwtService.generateToken(user);
-        UUID familyId = UUID.randomUUID();
-        String refreshToken = jwtService.generateRefreshToken(user, familyId);
-        storeRefreshToken(user.getId(), refreshToken, familyId);
+        AuthTokenPair tokens = issueTokenPair(user, UUID.randomUUID());
 
         Map<String, Object> userPayload = new LinkedHashMap<>();
         userPayload.put("id", user.getId().toString());
@@ -252,8 +239,8 @@ public class AuthService {
 
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("message", "Google login successful");
-        response.put("token", token);
-        response.put("refreshToken", refreshToken);
+        response.put("token", tokens.accessToken());
+        response.put("refreshToken", tokens.refreshToken());
         response.put("user", userPayload);
         return response;
     }
@@ -296,6 +283,15 @@ public class AuthService {
         refreshTokenRepository.save(entity);
     }
 
+    private record AuthTokenPair(String accessToken, String refreshToken) {}
+
+    private AuthTokenPair issueTokenPair(UserEntity user, UUID familyId) {
+        String accessToken = jwtService.generateToken(user);
+        String refreshToken = jwtService.generateRefreshToken(user, familyId);
+        storeRefreshToken(user.getId(), refreshToken, familyId);
+        return new AuthTokenPair(accessToken, refreshToken);
+    }
+
     private String extractToken(String bearerToken) {
         if (bearerToken == null || !bearerToken.startsWith("Bearer ")) {
             throw new ApiException("No token provided");
@@ -303,7 +299,4 @@ public class AuthService {
         return bearerToken.substring(7);
     }
 
-    private String toStringValue(Object value) {
-        return value == null ? null : String.valueOf(value);
-    }
 }

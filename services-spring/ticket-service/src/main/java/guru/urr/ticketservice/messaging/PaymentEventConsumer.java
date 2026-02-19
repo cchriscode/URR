@@ -7,7 +7,7 @@ import guru.urr.ticketservice.messaging.event.ReservationCancelledEvent;
 import guru.urr.ticketservice.messaging.event.ReservationConfirmedEvent;
 import guru.urr.ticketservice.messaging.event.TransferCompletedEvent;
 import guru.urr.ticketservice.domain.membership.service.MembershipService;
-import guru.urr.ticketservice.domain.reservation.service.ReservationService;
+import guru.urr.ticketservice.domain.reservation.service.ReservationPaymentHandler;
 import guru.urr.ticketservice.domain.transfer.service.TransferService;
 import guru.urr.ticketservice.shared.metrics.BusinessMetrics;
 import java.time.Instant;
@@ -27,7 +27,7 @@ public class PaymentEventConsumer {
     private static final Logger log = LoggerFactory.getLogger(PaymentEventConsumer.class);
     private static final String CONSUMER_GROUP = "ticket-service-group";
 
-    private final ReservationService reservationService;
+    private final ReservationPaymentHandler reservationPaymentHandler;
     private final TransferService transferService;
     private final MembershipService membershipService;
     private final TicketEventProducer ticketEventProducer;
@@ -35,14 +35,14 @@ public class PaymentEventConsumer {
     private final BusinessMetrics metrics;
     private final ObjectMapper objectMapper;
 
-    public PaymentEventConsumer(ReservationService reservationService,
+    public PaymentEventConsumer(ReservationPaymentHandler reservationPaymentHandler,
                                 TransferService transferService,
                                 MembershipService membershipService,
                                 TicketEventProducer ticketEventProducer,
                                 JdbcTemplate jdbcTemplate,
                                 BusinessMetrics metrics,
                                 ObjectMapper objectMapper) {
-        this.reservationService = reservationService;
+        this.reservationPaymentHandler = reservationPaymentHandler;
         this.transferService = transferService;
         this.membershipService = membershipService;
         this.ticketEventProducer = ticketEventProducer;
@@ -110,7 +110,7 @@ public class PaymentEventConsumer {
         }
 
         log.info("Processing reservation payment: reservationId={}", reservationId);
-        reservationService.confirmReservationPayment(reservationId, paymentMethod);
+        reservationPaymentHandler.confirmReservationPayment(reservationId, paymentMethod);
         metrics.recordReservationConfirmed();
         metrics.recordPaymentProcessed();
 
@@ -149,7 +149,7 @@ public class PaymentEventConsumer {
                 sellerId = sellerIdObj != null ? String.valueOf(sellerIdObj) : null;
             }
         } catch (Exception e) {
-            log.warn("Failed to look up transfer details for {}: {}", referenceId, e.getMessage());
+            log.warn("Failed to look up transfer details for {}", referenceId, e);
         }
 
         ticketEventProducer.publishTransferCompleted(new TransferCompletedEvent(
@@ -184,7 +184,7 @@ public class PaymentEventConsumer {
         }
 
         log.info("Processing refund: reservationId={}", reservationId);
-        reservationService.markReservationRefunded(reservationId);
+        reservationPaymentHandler.markReservationRefunded(reservationId);
         metrics.recordReservationCancelled();
 
         // Look up eventId for the cancelled reservation
@@ -219,7 +219,7 @@ public class PaymentEventConsumer {
                 Integer.class, eventKey, CONSUMER_GROUP);
             return count != null && count > 0;
         } catch (Exception e) {
-            log.warn("Failed to check processed_events: {}", e.getMessage());
+            log.error("Dedup check failed, event may be processed as duplicate: {}", e.getMessage(), e);
             return false;
         }
     }
@@ -232,7 +232,7 @@ public class PaymentEventConsumer {
         } catch (DuplicateKeyException ignored) {
             // Already processed by a concurrent consumer
         } catch (Exception e) {
-            log.warn("Failed to mark event as processed: {}", e.getMessage());
+            log.error("Failed to mark event as processed, may cause duplicate processing", e);
         }
     }
 
@@ -247,7 +247,7 @@ public class PaymentEventConsumer {
                 return (UUID) rows.getFirst().get("event_id");
             }
         } catch (Exception e) {
-            log.warn("Failed to look up eventId for reservation {}: {}", reservationId, e.getMessage());
+            log.warn("Failed to look up eventId for reservation {}", reservationId, e);
         }
         return null;
     }
@@ -255,7 +255,7 @@ public class PaymentEventConsumer {
     private UUID uuid(Object value) {
         if (value == null) return null;
         if (value instanceof String s && !s.isBlank()) {
-            try { return UUID.fromString(s); } catch (Exception e) { return null; }
+            try { return UUID.fromString(s); } catch (IllegalArgumentException e) { log.warn("Invalid UUID in payment event: {}", s); return null; }
         }
         return null;
     }

@@ -6,7 +6,6 @@ import static org.mockito.Mockito.*;
 
 import guru.urr.catalogservice.domain.admin.dto.AdminEventRequest;
 import guru.urr.catalogservice.domain.admin.dto.AdminTicketTypeRequest;
-import guru.urr.catalogservice.shared.client.AuthInternalClient;
 import guru.urr.catalogservice.shared.client.TicketInternalClient;
 import java.time.OffsetDateTime;
 import java.util.Collections;
@@ -27,13 +26,12 @@ class AdminServiceTest {
 
     @Mock private JdbcTemplate jdbcTemplate;
     @Mock private TicketInternalClient ticketInternalClient;
-    @Mock private AuthInternalClient authInternalClient;
 
     private AdminService adminService;
 
     @BeforeEach
     void setUp() {
-        adminService = new AdminService(jdbcTemplate, ticketInternalClient, authInternalClient);
+        adminService = new AdminService(jdbcTemplate, ticketInternalClient);
     }
 
     @Test
@@ -161,23 +159,4 @@ class AdminServiceTest {
                 () -> adminService.cancelEvent(eventId));
     }
 
-    @Test
-    void dashboardStats_success() {
-        when(jdbcTemplate.queryForObject(eq("SELECT COUNT(*) FROM events"), eq(Integer.class)))
-                .thenReturn(10);
-        when(ticketInternalClient.getReservationStats())
-                .thenReturn(Map.of("totalReservations", 50, "totalRevenue", 5000000, "todayReservations", 3));
-        when(ticketInternalClient.getRecentReservations())
-                .thenReturn(Collections.emptyList());
-
-        Map<String, Object> result = adminService.dashboardStats();
-
-        assertNotNull(result.get("stats"));
-        assertNotNull(result.get("recentReservations"));
-
-        @SuppressWarnings("unchecked")
-        Map<String, Object> stats = (Map<String, Object>) result.get("stats");
-        assertEquals(10, stats.get("totalEvents"));
-        assertEquals(50, stats.get("totalReservations"));
-    }
 }

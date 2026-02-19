@@ -1,6 +1,6 @@
 package guru.urr.ticketservice.scheduling;
 
-import guru.urr.ticketservice.domain.reservation.service.ReservationService;
+import guru.urr.ticketservice.domain.reservation.service.ReservationPaymentHandler;
 import guru.urr.ticketservice.shared.client.PaymentInternalClient;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -21,18 +21,18 @@ public class PaymentReconciliationScheduler {
 
     private final JdbcTemplate jdbcTemplate;
     private final PaymentInternalClient paymentInternalClient;
-    private final ReservationService reservationService;
+    private final ReservationPaymentHandler reservationPaymentHandler;
     private final KafkaTemplate<String, Object> kafkaTemplate;
     private final Counter reconciliationMismatchCounter;
 
     public PaymentReconciliationScheduler(JdbcTemplate jdbcTemplate,
                                            PaymentInternalClient paymentInternalClient,
-                                           ReservationService reservationService,
+                                           ReservationPaymentHandler reservationPaymentHandler,
                                            KafkaTemplate<String, Object> kafkaTemplate,
                                            MeterRegistry meterRegistry) {
         this.jdbcTemplate = jdbcTemplate;
         this.paymentInternalClient = paymentInternalClient;
-        this.reservationService = reservationService;
+        this.reservationPaymentHandler = reservationPaymentHandler;
         this.kafkaTemplate = kafkaTemplate;
         this.reconciliationMismatchCounter = Counter.builder("reconciliation.mismatch")
             .description("Payment-reservation mismatches detected during reconciliation")
@@ -92,7 +92,7 @@ public class PaymentReconciliationScheduler {
                         ));
 
                         log.info("Reconciliation: confirming reservation {} (payment confirmed in payment-service)", reservationId);
-                        reservationService.confirmReservationPayment(reservationId, method);
+                        reservationPaymentHandler.confirmReservationPayment(reservationId, method);
                     }
                 } catch (Exception e) {
                     log.warn("Reconciliation: failed to check reservation {}: {}", reservationId, e.getMessage());

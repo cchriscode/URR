@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'services-spring/community-service/**'
+      - 'services-spring/urr-common/**'
       - '.github/workflows/community-service-ci-cd.yml'
   workflow_dispatch:
     inputs:

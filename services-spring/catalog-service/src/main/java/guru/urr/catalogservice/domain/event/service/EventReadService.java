@@ -1,7 +1,7 @@
 package guru.urr.catalogservice.domain.event.service;
 
 import guru.urr.catalogservice.shared.client.TicketInternalClient;
-import guru.urr.catalogservice.shared.util.PreSaleSchedule;
+import guru.urr.common.util.PreSaleSchedule;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;

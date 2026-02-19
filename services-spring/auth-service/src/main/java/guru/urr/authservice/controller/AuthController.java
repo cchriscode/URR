@@ -14,6 +14,8 @@ import guru.urr.authservice.util.CookieHelper;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CookieValue;
@@ -28,6 +30,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/auth")
 public class AuthController {
 
+    private static final Logger log = LoggerFactory.getLogger(AuthController.class);
     private final AuthService authService;
     private final CookieHelper cookieHelper;
 
@@ -110,7 +113,7 @@ public class AuthController {
                 authService.revokeAllTokens(authorization);
             }
         } catch (Exception e) {
-            // Best effort — still clear cookies even if revocation fails
+            log.warn("Token revocation failed during logout: {}", e.getMessage());
         }
         cookieHelper.clearAuthCookies(response);
         return Map.of("message", "Logged out successfully");

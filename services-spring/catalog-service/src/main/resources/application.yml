@@ -48,7 +48,6 @@ logging:
 internal:
   auth-service-url: ${AUTH_SERVICE_URL:http://localhost:3005}
   ticket-service-url: ${TICKET_SERVICE_URL:http://localhost:3002}
-  api-token: ${INTERNAL_API_TOKEN}
 
 aws:
   region: ${AWS_REGION:}

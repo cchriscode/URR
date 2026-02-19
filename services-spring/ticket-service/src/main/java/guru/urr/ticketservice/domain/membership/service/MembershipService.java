@@ -24,6 +24,19 @@ public class MembershipService {
     public static final int DIAMOND_THRESHOLD = 1500;
     private static final int JOIN_BONUS_POINTS = 200;
 
+    public static final int DIAMOND_BOOKING_FEE = 1000;
+    public static final int GOLD_BOOKING_FEE = 2000;
+    public static final int SILVER_BOOKING_FEE = 3000;
+    public static final int DIAMOND_TRANSFER_FEE_PERCENT = 5;
+    public static final int GOLD_TRANSFER_FEE_PERCENT = 5;
+    public static final int SILVER_TRANSFER_FEE_PERCENT = 10;
+    public static final int DEFAULT_TRANSFER_FEE_PERCENT = 10;
+    private static final int MAX_POINT_HISTORY = 50;
+    private static final int MEMBERSHIP_VALIDITY_YEARS = 1;
+    private static final int DIAMOND_PRESALE_PHASE = 1;
+    private static final int GOLD_PRESALE_PHASE = 2;
+    private static final int SILVER_PRESALE_PHASE = 3;
+
     private final JdbcTemplate jdbcTemplate;
 
     public MembershipService(JdbcTemplate jdbcTemplate) {
@@ -87,7 +100,7 @@ public class MembershipService {
             return;
         }
 
-        OffsetDateTime expiresAt = OffsetDateTime.now().plusYears(1);
+        OffsetDateTime expiresAt = OffsetDateTime.now().plusYears(MEMBERSHIP_VALIDITY_YEARS);
         jdbcTemplate.update("""
             UPDATE artist_memberships
             SET status = 'active', expires_at = ?, joined_at = NOW(), updated_at = NOW()
@@ -169,8 +182,8 @@ public class MembershipService {
             FROM membership_point_logs
             WHERE membership_id = ?
             ORDER BY created_at DESC
-            LIMIT 50
-            """, membershipId);
+            LIMIT ?
+            """, membershipId, MAX_POINT_HISTORY);
 
         Map<String, Object> benefits = getBenefitsForTier(computeEffectiveTier(points));
 
@@ -253,25 +266,25 @@ public class MembershipService {
         Map<String, Object> benefits = new LinkedHashMap<>();
         switch (tier) {
             case "DIAMOND" -> {
-                benefits.put("preSalePhase", 1);
+                benefits.put("preSalePhase", DIAMOND_PRESALE_PHASE);
                 benefits.put("preSaleLabel", "선예매 1");
-                benefits.put("bookingFeeSurcharge", 1000);
+                benefits.put("bookingFeeSurcharge", DIAMOND_BOOKING_FEE);
                 benefits.put("transferAccess", true);
-                benefits.put("transferFeePercent", 5);
+                benefits.put("transferFeePercent", DIAMOND_TRANSFER_FEE_PERCENT);
             }
             case "GOLD" -> {
-                benefits.put("preSalePhase", 2);
+                benefits.put("preSalePhase", GOLD_PRESALE_PHASE);
                 benefits.put("preSaleLabel", "선예매 2");
-                benefits.put("bookingFeeSurcharge", 2000);
+                benefits.put("bookingFeeSurcharge", GOLD_BOOKING_FEE);
                 benefits.put("transferAccess", true);
-                benefits.put("transferFeePercent", 5);
+                benefits.put("transferFeePercent", GOLD_TRANSFER_FEE_PERCENT);
             }
             case "SILVER" -> {
-                benefits.put("preSalePhase", 3);
+                benefits.put("preSalePhase", SILVER_PRESALE_PHASE);
                 benefits.put("preSaleLabel", "선예매 3");
-                benefits.put("bookingFeeSurcharge", 3000);
+                benefits.put("bookingFeeSurcharge", SILVER_BOOKING_FEE);
                 benefits.put("transferAccess", true);
-                benefits.put("transferFeePercent", 10);
+                benefits.put("transferFeePercent", SILVER_TRANSFER_FEE_PERCENT);
             }
             default -> {
                 benefits.put("preSalePhase", null);

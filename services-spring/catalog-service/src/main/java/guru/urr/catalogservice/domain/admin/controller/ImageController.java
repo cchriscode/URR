@@ -1,7 +1,7 @@
 package guru.urr.catalogservice.domain.admin.controller;
 
 import guru.urr.catalogservice.domain.admin.service.ImageUploadService;
-import guru.urr.catalogservice.shared.security.JwtTokenParser;
+import guru.urr.common.security.JwtTokenParser;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;
 import org.springframework.web.bind.annotation.PostMapping;

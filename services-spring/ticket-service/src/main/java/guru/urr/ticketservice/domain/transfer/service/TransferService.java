@@ -62,7 +62,7 @@ public class TransferService {
         }
 
         // 3. Calculate fee
-        int feePercent = 10;
+        int feePercent = MembershipService.DEFAULT_TRANSFER_FEE_PERCENT;
         if (artistId != null) {
             List<Map<String, Object>> memberRows = jdbcTemplate.queryForList(
                 "SELECT id, tier, points, status FROM artist_memberships WHERE user_id = CAST(? AS UUID) AND artist_id = ? AND status = 'active'",
@@ -77,7 +77,9 @@ public class TransferService {
             if ("BRONZE".equals(effectiveTier)) {
                 throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Bronze tier cannot transfer tickets");
             }
-            feePercent = "SILVER".equals(effectiveTier) ? 10 : 5;
+            feePercent = "SILVER".equals(effectiveTier)
+                ? MembershipService.SILVER_TRANSFER_FEE_PERCENT
+                : MembershipService.DIAMOND_TRANSFER_FEE_PERCENT;
         }
 
         int originalPrice = ((Number) res.get("total_amount")).intValue();

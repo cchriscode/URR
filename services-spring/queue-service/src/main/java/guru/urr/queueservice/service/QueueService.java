@@ -2,17 +2,12 @@ package guru.urr.queueservice.service;
 
 import guru.urr.queueservice.shared.client.TicketInternalClient;
 import guru.urr.queueservice.shared.metrics.QueueMetrics;
-import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.security.Keys;
-import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
-import javax.crypto.SecretKey;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -31,14 +26,26 @@ public class QueueService {
     private final DefaultRedisScript<List> queueCheckScript;
     private final int defaultThreshold;
     private final int activeTtlSeconds;
-    private final SecretKey entryTokenKey;
-    private final int entryTokenTtlSeconds;
+    private final EntryTokenGenerator entryTokenGenerator;
     private final QueueMetrics queueMetrics;
 
     // Throughput tracking for wait estimation
     private final AtomicLong recentAdmissions = new AtomicLong(0);
     private final AtomicLong throughputWindowStart = new AtomicLong(System.currentTimeMillis());
     private static final long THROUGHPUT_WINDOW_MS = 60_000; // 1-minute window
+    private static final int DEFAULT_THROUGHPUT_PER_SECOND = 50;
+    private static final int MINIMUM_WAIT_SECONDS = 5;
+    private static final long THROUGHPUT_MIN_DATA_MS = 5000;
+    private static final int POLL_SECONDS_DEFAULT = 3;
+    private static final int POLL_SECONDS_NEAR = 1;
+    private static final int POLL_SECONDS_MEDIUM = 5;
+    private static final int POLL_SECONDS_FAR = 10;
+    private static final int POLL_SECONDS_VERY_FAR = 30;
+    private static final int POLL_SECONDS_DISTANT = 60;
+    private static final int POSITION_THRESHOLD_NEAR = 1_000;
+    private static final int POSITION_THRESHOLD_MEDIUM = 5_000;
+    private static final int POSITION_THRESHOLD_FAR = 10_000;
+    private static final int POSITION_THRESHOLD_VERY_FAR = 100_000;
 
     public QueueService(
         StringRedisTemplate redisTemplate,
@@ -46,20 +53,18 @@ public class QueueService {
         SqsPublisher sqsPublisher,
         DefaultRedisScript<List> queueCheckScript,
         QueueMetrics queueMetrics,
+        EntryTokenGenerator entryTokenGenerator,
         @Value("${QUEUE_THRESHOLD:1000}") int threshold,
-        @Value("${QUEUE_ACTIVE_TTL_SECONDS:600}") int activeTtlSeconds,
-        @Value("${queue.entry-token.secret}") String entryTokenSecret,
-        @Value("${queue.entry-token.ttl-seconds:600}") int entryTokenTtlSeconds
+        @Value("${QUEUE_ACTIVE_TTL_SECONDS:600}") int activeTtlSeconds
     ) {
         this.redisTemplate = redisTemplate;
         this.ticketInternalClient = ticketInternalClient;
         this.sqsPublisher = sqsPublisher;
         this.queueCheckScript = queueCheckScript;
         this.queueMetrics = queueMetrics;
+        this.entryTokenGenerator = entryTokenGenerator;
         this.defaultThreshold = threshold;
         this.activeTtlSeconds = activeTtlSeconds;
-        this.entryTokenKey = Keys.hmacShaKeyFor(entryTokenSecret.getBytes(StandardCharsets.UTF_8));
-        this.entryTokenTtlSeconds = entryTokenTtlSeconds;
     }
 
     public Map<String, Object> check(UUID eventId, String userId) {
@@ -126,12 +131,12 @@ public class QueueService {
         }
 
         if (inActive) {
-            String entryToken = generateEntryToken(eventId.toString(), userId);
+            String entryToken = entryTokenGenerator.generate(eventId.toString(), userId);
             Map<String, Object> result = new HashMap<>();
             result.put("status", "active");
             result.put("queued", false);
             result.put("currentUsers", activeCount);
-            result.put("nextPoll", 3);
+            result.put("nextPoll", POLL_SECONDS_DEFAULT);
             result.put("message", "Entry allowed");
             result.put("entryToken", entryToken);
             return result;
@@ -141,7 +146,7 @@ public class QueueService {
         result.put("status", "not_in_queue");
         result.put("queued", false);
         result.put("currentUsers", activeCount);
-        result.put("nextPoll", 3);
+        result.put("nextPoll", POLL_SECONDS_DEFAULT);
         result.put("message", "Not in queue");
         return result;
     }
@@ -216,14 +221,14 @@ public class QueueService {
 
     private Map<String, Object> buildActiveResponse(Map<String, Object> eventInfo, UUID eventId,
                                                      String userId, int activeCount, int threshold) {
-        String entryToken = generateEntryToken(eventId.toString(), userId);
+        String entryToken = entryTokenGenerator.generate(eventId.toString(), userId);
 
         Map<String, Object> result = new HashMap<>();
         result.put("queued", false);
         result.put("status", "active");
         result.put("currentUsers", activeCount);
         result.put("threshold", threshold);
-        result.put("nextPoll", 3);
+        result.put("nextPoll", POLL_SECONDS_DEFAULT);
         result.put("eventInfo", eventInfo);
         result.put("entryToken", entryToken);
 
@@ -265,29 +270,15 @@ public class QueueService {
         };
     }
 
-    private String generateEntryToken(String eventId, String userId) {
-        long nowMs = System.currentTimeMillis();
-        Date issuedAt = new Date(nowMs);
-        Date expiration = new Date(nowMs + (entryTokenTtlSeconds * 1000L));
-
-        return Jwts.builder()
-            .subject(eventId)
-            .claim("uid", userId)
-            .issuedAt(issuedAt)
-            .expiration(expiration)
-            .signWith(entryTokenKey)
-            .compact();
-    }
-
     // -- Dynamic polling interval --
 
     private int calculateNextPoll(int position) {
-        if (position <= 0) return 3;
-        if (position <= 1000) return 1;
-        if (position <= 5000) return 5;
-        if (position <= 10000) return 10;
-        if (position <= 100000) return 30;
-        return 60;
+        if (position <= 0) return POLL_SECONDS_DEFAULT;
+        if (position <= POSITION_THRESHOLD_NEAR) return POLL_SECONDS_NEAR;
+        if (position <= POSITION_THRESHOLD_MEDIUM) return POLL_SECONDS_MEDIUM;
+        if (position <= POSITION_THRESHOLD_FAR) return POLL_SECONDS_FAR;
+        if (position <= POSITION_THRESHOLD_VERY_FAR) return POLL_SECONDS_VERY_FAR;
+        return POLL_SECONDS_DISTANT;
     }
 
     // -- Throughput-based wait estimation --
@@ -299,15 +290,15 @@ public class QueueService {
         long elapsed = now - throughputWindowStart.get();
         long admissions = recentAdmissions.get();
 
-        if (elapsed < 5000 || admissions <= 0) {
-            // Before throughput data is available, assume ~50 users/second processing rate
+        if (elapsed < THROUGHPUT_MIN_DATA_MS || admissions <= 0) {
+            // Before throughput data is available, assume default processing rate
             // and cap at a reasonable maximum to avoid alarming overestimates
-            return Math.max(position / 50, 5);
+            return Math.max(position / DEFAULT_THROUGHPUT_PER_SECOND, MINIMUM_WAIT_SECONDS);
         }
 
         double throughputPerSecond = (admissions * 1000.0) / elapsed;
         if (throughputPerSecond <= 0) {
-            return Math.max(position / 50, 5);
+            return Math.max(position / DEFAULT_THROUGHPUT_PER_SECOND, MINIMUM_WAIT_SECONDS);
         }
         return (int) Math.ceil(position / throughputPerSecond);
     }
@@ -317,7 +308,8 @@ public class QueueService {
     private void trackActiveEvent(UUID eventId) {
         try {
             redisTemplate.opsForSet().add("queue:active-events", eventId.toString());
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            log.debug("Failed to track active event {}: {}", eventId, e.getMessage());
         }
     }
 

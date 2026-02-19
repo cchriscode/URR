@@ -1,6 +1,6 @@
 package guru.urr.paymentservice.controller;
 
-import guru.urr.paymentservice.security.InternalTokenValidator;
+import guru.urr.common.security.InternalTokenValidator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;

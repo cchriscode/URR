@@ -5,6 +5,7 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
 import org.apache.kafka.clients.admin.AdminClient;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.kafka.core.KafkaAdmin;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -47,6 +48,6 @@ public class OpsController {
 
         result.put("status", healthy ? "ok" : "degraded");
         result.put("dependencies", deps);
-        return healthy ? ResponseEntity.ok(result) : ResponseEntity.status(503).body(result);
+        return healthy ? ResponseEntity.ok(result) : ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(result);
     }
 }

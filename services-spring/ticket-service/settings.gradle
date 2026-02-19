@@ -1,1 +1,3 @@
 rootProject.name = 'ticket-service'
+
+includeBuild '../urr-common'

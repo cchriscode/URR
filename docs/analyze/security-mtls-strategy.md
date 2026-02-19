@@ -52,7 +52,7 @@ catalog-service  -->  auth-service       (user batch lookup)
 
 ### Current Security Controls
 
-**Bearer token authentication for internal APIs.** Services share a single `INTERNAL_API_TOKEN` secret (injected via `spring-kind-secret`). Each internal HTTP call includes an `Authorization: Bearer <token>` header. The `InternalTokenValidator` class performs timing-safe comparison against the shared secret.
+**Bearer token authentication for internal APIs.** Services share a single `INTERNAL_API_TOKEN` secret (injected via `spring-kind-secret`). Each internal HTTP call includes an `Authorization: Bearer <token>` header. The `InternalTokenValidator` has been **centralized** into `urr-common` as `InternalTokenValidatorAutoConfiguration` with `@ConditionalOnProperty(name = "INTERNAL_API_TOKEN")`. Individual service copies (catalog, ticket, payment) have been deleted. Only auth-service retains its own version (different API: boolean return + `X-Internal-Token` dual validation).
 
 Reference implementation in `payment-service`:
 ```java
@@ -483,7 +483,7 @@ spec:
 After mTLS and AuthorizationPolicy are verified in production:
 
 1. Remove `INTERNAL_API_TOKEN` from `secrets.env`.
-2. Remove `InternalTokenValidator` classes from each service.
+2. ~~Remove `InternalTokenValidator` classes from each service.~~ **DONE.** `InternalTokenValidator` has been centralized into `urr-common` as `InternalTokenValidatorAutoConfiguration` with `@ConditionalOnProperty(name = "INTERNAL_API_TOKEN")`. Individual service copies (catalog, ticket, payment) have been deleted. Only auth-service retains its own version (different API: boolean return + `X-Internal-Token` dual validation). Once mTLS is active, remove the centralized auto-configuration from `urr-common` and auth-service's version.
 3. Remove `Authorization: Bearer <internalToken>` headers from internal HTTP clients (e.g., `TicketInternalClient`).
 4. Remove the `INTERNAL_API_TOKEN` environment variable from deployment patches.
 
@@ -702,7 +702,9 @@ Use this checklist to track progress during implementation.
 
 [ ] Phase 6: Cleanup
     [ ] Remove INTERNAL_API_TOKEN from secrets.env
-    [ ] Remove InternalTokenValidator from all services
+    [x] Centralize InternalTokenValidator — DONE: centralized into urr-common as InternalTokenValidatorAutoConfiguration; individual copies (catalog, ticket, payment) deleted; auth-service retains own version
+    [ ] Remove centralized InternalTokenValidatorAutoConfiguration from urr-common (after mTLS active)
+    [ ] Remove auth-service's own InternalTokenValidator (after mTLS active)
     [ ] Remove bearer token headers from internal HTTP clients
     [ ] Redeploy all services without internal token config
 

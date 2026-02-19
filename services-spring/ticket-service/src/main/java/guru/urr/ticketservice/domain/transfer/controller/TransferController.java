@@ -1,7 +1,7 @@
 package guru.urr.ticketservice.domain.transfer.controller;
 
-import guru.urr.ticketservice.shared.security.AuthUser;
-import guru.urr.ticketservice.shared.security.JwtTokenParser;
+import guru.urr.common.security.AuthUser;
+import guru.urr.common.security.JwtTokenParser;
 import guru.urr.ticketservice.domain.transfer.service.TransferService;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;

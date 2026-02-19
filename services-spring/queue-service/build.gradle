@@ -19,6 +19,7 @@ repositories {
 }
 
 dependencies {
+	implementation 'com.urr:urr-common'
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
 	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
 	implementation 'org.springframework.boot:spring-boot-starter-web'

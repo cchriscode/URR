@@ -66,7 +66,7 @@ foreach ($service in $selectedServices) {
     $buildJobs += @{
         Name = $service.Name
         Image = $service.Image
-        Path = $servicePath
+        Path = Join-Path $repoRoot "services-spring"
         Dockerfile = $dockerfile
     }
 }

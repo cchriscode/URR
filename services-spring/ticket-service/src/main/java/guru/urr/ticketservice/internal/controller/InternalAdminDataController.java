@@ -1,6 +1,6 @@
 package guru.urr.ticketservice.internal.controller;
 
-import guru.urr.ticketservice.shared.security.InternalTokenValidator;
+import guru.urr.common.security.InternalTokenValidator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;

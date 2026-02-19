@@ -1,23 +1,20 @@
 FROM eclipse-temurin:21-jdk AS build
-WORKDIR /workspace
+WORKDIR /workspace/gateway-service
 
-# Layer 1: Gradle wrapper (rarely changes)
-COPY gradlew gradlew.bat ./
-COPY gradle gradle
+COPY gateway-service/gradlew gateway-service/gradlew.bat ./
+COPY gateway-service/gradle gradle
 RUN sed -i 's/\r$//' gradlew && chmod +x gradlew
 
-# Layer 2: Build config + dependency download (changes only when deps change)
-COPY settings.gradle build.gradle ./
+COPY gateway-service/settings.gradle gateway-service/build.gradle ./
 RUN ./gradlew --no-daemon dependencies || true
 
-# Layer 3: Source compile (changes on every code edit)
-COPY src src
+COPY gateway-service/src src
 RUN ./gradlew --no-daemon bootJar -x test
 
 FROM eclipse-temurin:21-jre
 WORKDIR /app
 
-COPY --from=build /workspace/build/libs/*.jar app.jar
+COPY --from=build /workspace/gateway-service/build/libs/*.jar app.jar
 
 RUN addgroup --system --gid 1001 app && adduser --system --uid 1001 --ingroup app app
 USER app

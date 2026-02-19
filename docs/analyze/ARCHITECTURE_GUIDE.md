@@ -835,6 +835,22 @@ Kafka 비동기 메시징:
 queue → SQS → Lambda (티켓 이벤트 비동기 처리)
 ```
 
+### urr-common 공유 라이브러리
+
+`services-spring/urr-common/` — 6개 서비스(catalog, community, payment, queue, stats, ticket)가 Gradle Composite Build(`includeBuild '../urr-common'`)로 의존하는 공유 라이브러리.
+
+**제공 컴포넌트:**
+- `JwtTokenParser` (`@Component`) — X-User-* 헤더에서 사용자 컨텍스트 추출, Admin 권한 검증
+- `GlobalExceptionHandler` (`@RestControllerAdvice`) — 범용 예외 처리 (ResponseStatusException, MethodArgumentNotValidException, 기타)
+- `InternalTokenValidatorAutoConfiguration` (`@ConditionalOnProperty(name = "INTERNAL_API_TOKEN")`) — 서비스 간 내부 토큰 검증 자동 등록
+- `DataSourceRoutingConfig` (`@ConditionalOnProperty(name = "spring.datasource.url")`) — Primary/Replica 읽기/쓰기 분리 라우팅
+- `AuthUser` (record) — 인증된 사용자 정보 값 객체
+- `PreSaleSchedule` — 멤버십 티어별 선예매 일정 계산 유틸리티
+
+**미사용 서비스:**
+- auth-service: 자체 InternalTokenValidator, GlobalExceptionHandler 보유 (API가 다름)
+- gateway-service: Spring Cloud Gateway 아키텍처, JWT 생성이 아닌 헤더 주입 역할
+
 ---
 
 ## 8. 데이터 계층 — DB, 캐시, 메시징
