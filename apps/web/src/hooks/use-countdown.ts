@@ -44,7 +44,9 @@ export function useCountdown(
   const { offset, ready } = useServerTime();
   const expiredRef = useRef(false);
   const onExpireRef = useRef(onExpire);
-  onExpireRef.current = onExpire;
+  useEffect(() => {
+    onExpireRef.current = onExpire;
+  });
 
   const getTimeLeft = useCallback((): CountdownTime => {
     if (!targetDate) return ZERO;
