@@ -11,9 +11,11 @@ import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 @Service
+@Transactional(readOnly = true)
 public class StatsQueryService {
 
     private final JdbcTemplate jdbcTemplate;
@@ -116,20 +118,7 @@ public class StatsQueryService {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Event not found");
         }
 
-        List<Map<String, Object>> dailyTrend = jdbcTemplate.queryForList("""
-            SELECT
-              date,
-              total_reservations AS reservations,
-              total_revenue AS revenue
-            FROM daily_stats
-            ORDER BY date ASC
-            LIMIT 30
-            """);
-
-        return Map.of(
-            "overview", rows.getFirst(),
-            "dailyTrend", dailyTrend
-        );
+        return Map.of("overview", rows.getFirst());
     }
 
     public List<Map<String, Object>> payments() {

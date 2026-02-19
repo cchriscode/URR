@@ -83,7 +83,7 @@ resource "aws_route_table_association" "public" {
 # ─────────────────────────────────────────────────────────────────────────────
 
 resource "aws_eip" "nat" {
-  count  = length(local.azs)
+  count  = var.single_nat_gateway ? 1 : length(local.azs)
   domain = "vpc"
 
   tags = {
@@ -94,7 +94,7 @@ resource "aws_eip" "nat" {
 }
 
 resource "aws_nat_gateway" "main" {
-  count = length(local.azs)
+  count = var.single_nat_gateway ? 1 : length(local.azs)
 
   allocation_id = aws_eip.nat[count.index].id
   subnet_id     = aws_subnet.public[count.index].id
@@ -137,7 +137,7 @@ resource "aws_route" "app_nat" {
 
   route_table_id         = aws_route_table.app[count.index].id
   destination_cidr_block = "0.0.0.0/0"
-  nat_gateway_id         = aws_nat_gateway.main[count.index].id
+  nat_gateway_id         = aws_nat_gateway.main[min(count.index, length(aws_nat_gateway.main) - 1)].id
 }
 
 resource "aws_route_table_association" "app" {
@@ -232,7 +232,7 @@ resource "aws_route" "streaming_nat" {
 
   route_table_id         = aws_route_table.streaming[count.index].id
   destination_cidr_block = "0.0.0.0/0"
-  nat_gateway_id         = aws_nat_gateway.main[count.index].id
+  nat_gateway_id         = aws_nat_gateway.main[min(count.index, length(aws_nat_gateway.main) - 1)].id
 }
 
 resource "aws_route_table_association" "streaming" {

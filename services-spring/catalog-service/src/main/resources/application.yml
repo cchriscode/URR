@@ -5,6 +5,7 @@ spring:
     url: ${CATALOG_DB_URL:jdbc:postgresql://localhost:5432/catalog_db}
     username: ${CATALOG_DB_USERNAME:urr_user}
     password: ${CATALOG_DB_PASSWORD:urr_password}
+    replica-url: ${CATALOG_DB_REPLICA_URL:}
   flyway:
     enabled: true
     baseline-on-migrate: true

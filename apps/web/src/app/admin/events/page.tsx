@@ -4,24 +4,8 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { AuthGuard } from "@/components/auth-guard";
 import { eventsApi, adminApi } from "@/lib/api-client";
+import { statusBadge } from "@/lib/status-badge";
 import type { EventSummary } from "@/lib/types";
-
-function statusBadge(status?: string) {
-  switch (status) {
-    case "on_sale":
-      return { text: "예매 중", cls: "bg-sky-50 text-sky-600" };
-    case "upcoming":
-      return { text: "오픈 예정", cls: "bg-amber-50 text-amber-600" };
-    case "ended":
-      return { text: "종료", cls: "bg-slate-100 text-slate-500" };
-    case "cancelled":
-      return { text: "취소", cls: "bg-red-50 text-red-500" };
-    case "sold_out":
-      return { text: "매진", cls: "bg-red-50 text-red-500" };
-    default:
-      return { text: status ?? "대기", cls: "bg-slate-100 text-slate-500" };
-  }
-}
 
 export default function AdminEventsPage() {
   const [events, setEvents] = useState<EventSummary[]>([]);

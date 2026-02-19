@@ -29,6 +29,7 @@ public class NewsService {
         this.ticketInternalClient = ticketInternalClient;
     }
 
+    @Transactional(readOnly = true)
     public Map<String, Object> list(Integer page, Integer limit) {
         int safePage = page == null || page < 1 ? 1 : page;
         int safeLimit = limit == null || limit < 1 ? 20 : Math.min(limit, 100);

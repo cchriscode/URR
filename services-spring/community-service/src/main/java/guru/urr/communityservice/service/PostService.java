@@ -30,6 +30,7 @@ public class PostService {
         this.ticketInternalClient = ticketInternalClient;
     }
 
+    @Transactional(readOnly = true)
     public Map<String, Object> list(UUID artistId, Integer page, Integer limit) {
         int safePage = (page == null || page < 1) ? 1 : page;
         int safeLimit = (limit == null || limit < 1) ? 20 : Math.min(limit, 100);
@@ -43,7 +44,8 @@ public class PostService {
         if (artistId != null) {
             countSql = "SELECT COUNT(*) FROM community_posts WHERE artist_id = ?";
             selectSql = """
-                SELECT * FROM community_posts
+                SELECT id, artist_id, author_id, author_name, title, views, comment_count, is_pinned, created_at, updated_at
+                FROM community_posts
                 WHERE artist_id = ?
                 ORDER BY is_pinned DESC, created_at DESC
                 LIMIT ? OFFSET ?
@@ -53,7 +55,8 @@ public class PostService {
         } else {
             countSql = "SELECT COUNT(*) FROM community_posts";
             selectSql = """
-                SELECT * FROM community_posts
+                SELECT id, artist_id, author_id, author_name, title, views, comment_count, is_pinned, created_at, updated_at
+                FROM community_posts
                 ORDER BY is_pinned DESC, created_at DESC
                 LIMIT ? OFFSET ?
                 """;

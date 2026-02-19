@@ -29,6 +29,7 @@ public class CommentService {
         this.ticketInternalClient = ticketInternalClient;
     }
 
+    @Transactional(readOnly = true)
     public Map<String, Object> listByPost(UUID postId, Integer page, Integer limit) {
         int safePage = (page == null || page < 1) ? 1 : page;
         int safeLimit = (limit == null || limit < 1) ? 20 : Math.min(limit, 100);

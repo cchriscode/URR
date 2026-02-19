@@ -3,17 +3,21 @@
 import { useQuery } from "@tanstack/react-query";
 import { eventsApi } from "@/lib/api-client";
 
-export function useEvents(params?: Record<string, string | number>) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function useEvents(params?: Record<string, string | number>, initialData?: any[]) {
   return useQuery({
     queryKey: ["events", params],
     queryFn: async () => {
       const res = await eventsApi.list(params);
       return res.data.events ?? res.data.data ?? [];
     },
+    initialData,
+    staleTime: initialData ? 55_000 : 0,
   });
 }
 
-export function useEventDetail(id: string | undefined) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function useEventDetail(id: string | undefined, initialData?: any) {
   return useQuery({
     queryKey: ["event", id],
     queryFn: async () => {
@@ -25,5 +29,7 @@ export function useEventDetail(id: string | undefined) {
       return ev;
     },
     enabled: !!id,
+    initialData: initialData ?? undefined,
+    staleTime: initialData ? 55_000 : 0,
   });
 }

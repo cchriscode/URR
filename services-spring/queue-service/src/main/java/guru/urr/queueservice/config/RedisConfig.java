@@ -19,6 +19,14 @@ public class RedisConfig {
     }
 
     @Bean
+    public DefaultRedisScript<List> queueCheckScript() {
+        DefaultRedisScript<List> script = new DefaultRedisScript<>();
+        script.setScriptSource(new ResourceScriptSource(new ClassPathResource("redis/queue_check.lua")));
+        script.setResultType(List.class);
+        return script;
+    }
+
+    @Bean
     public DefaultRedisScript<List> staleCleanupScript() {
         DefaultRedisScript<List> script = new DefaultRedisScript<>();
         script.setScriptSource(new ResourceScriptSource(new ClassPathResource("redis/stale_cleanup.lua")));

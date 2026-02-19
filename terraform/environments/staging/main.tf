@@ -36,9 +36,10 @@ module "iam" {
 module "vpc" {
   source = "../../modules/vpc"
 
-  name_prefix = var.name_prefix
-  vpc_cidr    = var.vpc_cidr
-  environment = var.environment
+  name_prefix        = var.name_prefix
+  vpc_cidr           = var.vpc_cidr
+  environment        = var.environment
+  single_nat_gateway = true
 }
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -115,7 +116,7 @@ module "rds" {
   instance_class       = var.rds_instance_class
   allocated_storage    = var.rds_allocated_storage
   multi_az             = false
-  enable_rds_proxy     = true
+  enable_rds_proxy     = false
   deletion_protection  = false
   enable_read_replica  = false
 }
@@ -269,11 +270,11 @@ module "lambda_worker" {
   vpc_id                      = module.vpc.vpc_id
   vpc_cidr                    = module.vpc.vpc_cidr
   subnet_ids                  = module.vpc.streaming_subnet_ids
-  rds_proxy_security_group_id = module.rds.rds_proxy_security_group_id
+  rds_proxy_security_group_id = module.rds.rds_security_group_id
   redis_security_group_id     = module.elasticache.security_group_id
 
   # Environment
-  db_proxy_endpoint = module.rds.rds_proxy_endpoint
+  db_proxy_endpoint = module.rds.db_instance_address
   redis_endpoint    = module.elasticache.primary_endpoint_address
   redis_auth_token  = module.secrets.redis_auth_token
   environment       = var.environment

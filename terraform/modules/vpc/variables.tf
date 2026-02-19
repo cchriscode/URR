@@ -13,3 +13,9 @@ variable "environment" {
   description = "Environment name (dev/staging/prod)"
   type        = string
 }
+
+variable "single_nat_gateway" {
+  description = "Use single NAT gateway instead of per-AZ (cost savings for non-prod)"
+  type        = bool
+  default     = false
+}

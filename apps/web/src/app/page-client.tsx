@@ -6,6 +6,7 @@ import { useState } from "react";
 import { useEvents } from "@/hooks/use-events";
 import { useCountdown, formatCountdown } from "@/hooks/use-countdown";
 import { formatEventDate, formatPrice } from "@/lib/format";
+import { statusBadge } from "@/lib/status-badge";
 import { Spinner } from "@/components/ui/Spinner";
 import type { EventSummary } from "@/lib/types";
 
@@ -16,23 +17,6 @@ const filters = [
   { value: "cancelled", label: "취소됨" },
   { value: "", label: "전체" },
 ];
-
-function statusBadge(status?: string) {
-  switch (status) {
-    case "on_sale":
-      return { text: "예매 중", cls: "bg-sky-50 text-sky-600" };
-    case "upcoming":
-      return { text: "오픈 예정", cls: "bg-amber-50 text-amber-600" };
-    case "ended":
-      return { text: "종료", cls: "bg-slate-100 text-slate-500" };
-    case "cancelled":
-      return { text: "취소", cls: "bg-red-50 text-red-500" };
-    case "sold_out":
-      return { text: "매진", cls: "bg-red-50 text-red-500" };
-    default:
-      return { text: status ?? "대기", cls: "bg-slate-100 text-slate-500" };
-  }
-}
 
 interface EventWithPrice extends EventSummary {
   min_price?: number;
@@ -123,7 +107,9 @@ export function HomePageClient({ initialEvents }: HomePageClientProps) {
   const params: Record<string, string | number> = { page: 1, limit: 12 };
   if (filter) params.status = filter;
 
-  const { data: events = initialEvents, isLoading, error, refetch } = useEvents(params);
+  // initialData only valid for the default "on_sale" filter (matches server-side ISR fetch)
+  const isDefaultFilter = filter === "on_sale";
+  const { data: events = [], isLoading, error, refetch } = useEvents(params, isDefaultFilter ? initialEvents : undefined);
 
   return (
     <div className="space-y-6">
