@@ -30,7 +30,7 @@ class VwrEntryTokenFilterTest {
 
     @BeforeEach
     void setUp() {
-        filter = new VwrEntryTokenFilter(SECRET, "", CF_SECRET);
+        filter = new VwrEntryTokenFilter(SECRET, CF_SECRET);
     }
 
     @Test
@@ -72,8 +72,8 @@ class VwrEntryTokenFilterTest {
     }
 
     @Test
-    void getSeats_skipsFilter_notProtectedMethod() throws Exception {
-        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/seats/123");
+    void deleteSeats_skipsFilter_notProtectedMethod() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("DELETE", "/api/seats/123");
         MockHttpServletResponse response = new MockHttpServletResponse();
 
         filter.doFilter(request, response, filterChain);
@@ -124,7 +124,7 @@ class VwrEntryTokenFilterTest {
     @Test
     void cloudFrontBypass_emptyCloudFrontSecret_jwtCheckProceedsNormally() throws Exception {
         // Create filter with empty cloudfront secret (disabled)
-        VwrEntryTokenFilter filterNoCloudFront = new VwrEntryTokenFilter(SECRET, "", "");
+        VwrEntryTokenFilter filterNoCloudFront = new VwrEntryTokenFilter(SECRET, "");
 
         MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/seats/reserve");
         request.addHeader("X-CloudFront-Verified", "some-value");
@@ -141,7 +141,7 @@ class VwrEntryTokenFilterTest {
     @Test
     void cloudFrontBypass_emptyCloudFrontSecret_validJwt_passesThrough() throws Exception {
         // Create filter with empty cloudfront secret (disabled)
-        VwrEntryTokenFilter filterNoCloudFront = new VwrEntryTokenFilter(SECRET, "", "");
+        VwrEntryTokenFilter filterNoCloudFront = new VwrEntryTokenFilter(SECRET, "");
 
         MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/seats/reserve");
         request.addHeader("X-CloudFront-Verified", "some-value");

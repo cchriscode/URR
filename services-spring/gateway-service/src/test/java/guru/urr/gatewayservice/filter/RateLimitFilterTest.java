@@ -27,7 +27,7 @@ class RateLimitFilterTest {
 
     @BeforeEach
     void setUp() {
-        filter = new RateLimitFilter(redisTemplate, rateLimitScript, 20, 60, 10, 100, "dGVzdC1zZWNyZXQtMTIzNDU2Nzg5MDEyMzQ1Njc4OTA=");
+        filter = new RateLimitFilter(redisTemplate, rateLimitScript, 20, 60, 10, 100);
     }
 
     @Test

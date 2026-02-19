@@ -10,6 +10,7 @@ import guru.urr.authservice.dto.AuthResponse;
 import guru.urr.authservice.dto.LoginRequest;
 import guru.urr.authservice.dto.RegisterRequest;
 import guru.urr.authservice.exception.ApiException;
+import guru.urr.authservice.repository.RefreshTokenRepository;
 import guru.urr.authservice.repository.UserRepository;
 import guru.urr.authservice.security.JwtService;
 import java.util.Optional;
@@ -25,6 +26,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 class AuthServiceTest {
 
     @Mock private UserRepository userRepository;
+    @Mock private RefreshTokenRepository refreshTokenRepository;
     @Mock private PasswordEncoder passwordEncoder;
     @Mock private JwtService jwtService;
 
@@ -32,7 +34,7 @@ class AuthServiceTest {
 
     @BeforeEach
     void setUp() {
-        authService = new AuthService(userRepository, passwordEncoder, jwtService, "");
+        authService = new AuthService(userRepository, refreshTokenRepository, passwordEncoder, jwtService, "");
     }
 
     @Test
@@ -50,11 +52,14 @@ class AuthServiceTest {
 
         when(userRepository.save(any(UserEntity.class))).thenReturn(savedUser);
         when(jwtService.generateToken(savedUser)).thenReturn("jwt-token");
+        when(jwtService.generateRefreshToken(eq(savedUser), any(UUID.class))).thenReturn("refresh-token");
+        when(jwtService.getRefreshTokenExpirationSeconds()).thenReturn(86400L);
 
         AuthResponse response = authService.register(request);
 
         assertEquals("Registration completed", response.message());
         assertEquals("jwt-token", response.token());
+        assertEquals("refresh-token", response.refreshToken());
         assertNotNull(response.user());
         verify(userRepository).save(any(UserEntity.class));
     }
@@ -84,11 +89,14 @@ class AuthServiceTest {
         when(userRepository.findByEmail("test@example.com")).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("password123", "$2a$encoded")).thenReturn(true);
         when(jwtService.generateToken(user)).thenReturn("jwt-token");
+        when(jwtService.generateRefreshToken(eq(user), any(UUID.class))).thenReturn("refresh-token");
+        when(jwtService.getRefreshTokenExpirationSeconds()).thenReturn(86400L);
 
         AuthResponse response = authService.login(request);
 
         assertEquals("Login successful", response.message());
         assertEquals("jwt-token", response.token());
+        assertEquals("refresh-token", response.refreshToken());
     }
 
     @Test

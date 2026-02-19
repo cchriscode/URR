@@ -75,7 +75,7 @@ out/
 
 # Spring Boot
 *.jar
-!gradle/wrapper/*.jar
+!**/gradle/wrapper/*.jar
 
 # Zip archives
 *.zip
