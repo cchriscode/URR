@@ -6,6 +6,7 @@ data:
   01-init-databases.sql: |
     CREATE DATABASE auth_db;
     CREATE DATABASE ticket_db;
+    CREATE DATABASE catalog_db;
     CREATE DATABASE payment_db;
     CREATE DATABASE stats_db;
     CREATE DATABASE community_db;

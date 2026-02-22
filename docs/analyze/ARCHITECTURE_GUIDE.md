@@ -280,7 +280,7 @@ Lambda@Edge는 `/api/*` 요청이 오면, 순서대로 두 가지 팔찌를 확�
 |--------|------|------|
 | **API Gateway (VWR API)** | 대기열 API 입구 | 번호표 발급 창구 |
 | **Lambda VWR API** | 대기 번호 발급/조회 실행 | 번호표 발급 직원 |
-| **Lambda Counter Advancer** | 1분마다 "500명 더 입장 허용" | 줄 앞에서 "다음 500분 들어오세요!" 하는 안내 직원 |
+| **Lambda Counter Advancer** | 10초마다 "500명 더 입장 허용" (1분 6사이클) | 줄 앞에서 "다음 500분 들어오세요!" 하는 안내 직원 |
 | **DynamoDB (counters)** | 이벤트별 현재 입장 허용 번호 저장 | 전광판 ("현재 3,000번까지 입장") |
 | **DynamoDB (positions)** | 각 사용자의 대기 번호 저장 | 번호표 장부 |
 
@@ -300,7 +300,7 @@ Lambda@Edge는 `/api/*` 요청이 오면, 순서대로 두 가지 팔찌를 확�
 ③ 입장 허가 → 모달이 닫히고 Tier 2 대기열 페이지로 자동 이동
 
 (백그라운드에서 1분마다)
-   → Lambda가 자동으로 "입장 허용 번호"를 500씩 올림
+   → Lambda가 자동으로 "입장 허용 번호"를 10초마다 500씩 올림 (1분에 6사이클)
    → 1분에 3,000명, 1시간에 180,000명 처리 가능
 ```
 
@@ -311,7 +311,7 @@ Lambda@Edge는 `/api/*` 요청이 오면, 순서대로 두 가지 팔찌를 확�
 
 **연결:**
 - 브라우저 모달 → CloudFront `/vwr-api/*` → API Gateway → Lambda VWR API → DynamoDB
-- EventBridge(1분 타이머) → Lambda Counter Advancer → DynamoDB
+- EventBridge(1분 타이머) → Lambda Counter Advancer (내부 6사이클, 10초 간격) → DynamoDB
 - Lambda와 DynamoDB 모두 VPC 밖 AWS 리전 서비스이므로, VPC Endpoint 없이 AWS 네트워크 내에서 직접 통신
 
 ### 4.2 Tier 2 — 서비스 레벨 대기열 (Redis)
@@ -415,7 +415,7 @@ VPC(Virtual Private Cloud)는 AWS 안에 만든 **가상의 사설 네트워크*
 |------|-----|
 | CIDR | `10.0.0.0/16` (IP 65,536개) |
 | 리전 | ap-northeast-2 (서울) |
-| 가용 영역 | 2개 (AZ-A, AZ-C) |
+| 가용 영역 | 2개 (AZ-A, AZ-B) |
 
 **왜 2개 AZ?**: 한쪽 데이터센터에 장애가 나도 반대쪽에서 서비스를 유지하기 위해.
 
@@ -428,7 +428,7 @@ VPC(Virtual Private Cloud)는 AWS 안에 만든 **가상의 사설 네트워크*
 | 항목 | 값 |
 |------|-----|
 | AZ-A | `10.0.0.0/24` |
-| AZ-C | `10.0.1.0/24` |
+| AZ-B | `10.0.1.0/24` |
 | 인터넷 | **직접 연결** (IGW 경유) |
 | 배치된 것 | NAT Gateway, ALB ENI |
 
@@ -441,7 +441,7 @@ VPC(Virtual Private Cloud)는 AWS 안에 만든 **가상의 사설 네트워크*
 | **정체** | Network Address Translation 게이트웨이 |
 | **하는 일** | Private 서브넷의 서버가 인터넷에 **나가는 것만** 허용한다. 외부에서 들어오는 것은 차단 |
 | **왜 필요** | EKS 워커 노드가 ECR에서 이미지를 다운로드하거나, 외부 API를 호출할 때 필요 |
-| **배치** | AZ마다 1개씩, 총 2개 (AZ-A장애 시 AZ-C의 NAT는 정상 동작) |
+| **배치** | AZ마다 1개씩, 총 2개 (AZ-A 장애 시 AZ-B의 NAT는 정상 동작) |
 | **비유** | 아파트 단지의 후문. 주민(서버)은 밖에 나갈 수 있지만, 외부인은 후문으로 들어올 수 없음 |
 
 **ALB ENI:**
@@ -457,7 +457,7 @@ VPC(Virtual Private Cloud)는 AWS 안에 만든 **가상의 사설 네트워크*
 | 항목 | 값 |
 |------|-----|
 | AZ-A | `10.0.10.0/24` |
-| AZ-C | `10.0.11.0/24` |
+| AZ-B | `10.0.11.0/24` |
 | 인터넷 | NAT Gateway 경유 (아웃바운드만) |
 | 배치된 것 | EKS Worker Node, 모든 서비스 Pod, 모니터링 Pod, RDS Proxy ENI, VPC Endpoint(Interface) |
 
@@ -468,7 +468,7 @@ VPC(Virtual Private Cloud)는 AWS 안에 만든 **가상의 사설 네트워크*
 | 항목 | 값 |
 |------|-----|
 | AZ-A | `10.0.20.0/24` |
-| AZ-C | `10.0.21.0/24` |
+| AZ-B | `10.0.21.0/24` |
 | 인터넷 | **완전 차단** (인바운드/아웃바운드 모두) |
 | 배치된 것 | RDS Primary, RDS Standby, RDS Read Replica |
 
@@ -479,7 +479,7 @@ VPC(Virtual Private Cloud)는 AWS 안에 만든 **가상의 사설 네트워크*
 | 항목 | 값 |
 |------|-----|
 | AZ-A | `10.0.30.0/24` |
-| AZ-C | `10.0.31.0/24` |
+| AZ-B | `10.0.31.0/24` |
 | 인터넷 | **완전 차단** |
 | 배치된 것 | ElastiCache Redis Primary, Redis Replica |
 
@@ -490,7 +490,7 @@ DB 서브넷과 마찬가지로 인터넷 경로 없음. Redis에 저장된 세�
 | 항목 | 값 |
 |------|-----|
 | AZ-A | `10.0.40.0/24` |
-| AZ-C | `10.0.41.0/24` |
+| AZ-B | `10.0.41.0/24` |
 | 인터넷 | NAT Gateway 경유 (아웃바운드만) |
 | 배치된 것 | MSK Broker ENI (양쪽 AZ), SQS FIFO, Lambda Ticket Worker |
 
@@ -632,7 +632,7 @@ EKS(Elastic Kubernetes Service)는 컨테이너화된 애플리케이션을 실�
 **동작:**
 ```
 HTTPS :443 요청 수신
-  → SSL 종료 (TLS 1.3)
+  → SSL 종료 (TLS 1.2/1.3)
   → Health Check로 정상 Pod만 선택
   → 경로별 Target Group으로 전달 (IP 타겟 모드)
 ```
@@ -683,7 +683,7 @@ HTTPS :443 요청 수신
 | 항목 | 값 |
 |------|-----|
 | **포트** | 3005 |
-| **레플리카** | 2개 |
+| **레플리카** | 2개 (HPA: 2~6) |
 | **역할** | 회원가입, 로그인, OAuth, JWT 토큰 발급/검증 |
 
 **하는 일:**
@@ -707,7 +707,7 @@ HTTPS :443 요청 수신
 
 **하는 일:**
 - 이벤트/공연 CRUD
-- 좌석 잠금 (Redis로 동시 선택 방지)
+- 좌석 잠금 (Redis로 동시 선택 방지, 420초 TTL)
 - 예매 생성/취소
 - 티켓 양도 처리
 
@@ -715,7 +715,7 @@ HTTPS :443 요청 수신
 - gateway → **ticket**
 - **ticket** → payment (REST, PaymentInternalClient — 결제 관련 내부 조회)
 - **ticket** → PostgreSQL (ticket_db, RDS Proxy 경유)
-- **ticket** → Redis (좌석 잠금: `seat:{eventId}:{seatId}`, 30초 TTL)
+- **ticket** → Redis (좌석 잠금: `seat:{eventId}:{seatId}`, 420초 TTL)
 - **ticket** → Kafka (reservation-events, transfer-events, membership-events 발행)
 - Kafka → **ticket** (payment-events 수신 — 결제 완료/실패 시 예매 확정/취소)
 
@@ -743,7 +743,7 @@ HTTPS :443 요청 수신
 | 항목 | 값 |
 |------|-----|
 | **포트** | 3004 |
-| **레플리카** | 2개 |
+| **레플리카** | 1개 (HPA: 1~4) |
 | **역할** | 이벤트 통계 집계, Kafka 이벤트 소비 |
 
 **하는 일:**
@@ -778,7 +778,7 @@ HTTPS :443 요청 수신
 | 항목 | 값 |
 |------|-----|
 | **포트** | 3009 |
-| **레플리카** | 1개 |
+| **레플리카** | 2개 (HPA: 2~6) |
 | **역할** | 이벤트/아티스트 **읽기 전용** 조회 |
 
 **하는 일:**
@@ -797,7 +797,7 @@ HTTPS :443 요청 수신
 | 항목 | 값 |
 |------|-----|
 | **포트** | 3008 |
-| **레플리카** | 2개 |
+| **레플리카** | 1개 (HPA: 1~4) |
 | **역할** | 커뮤니티 게시판, 리뷰 |
 
 **하는 일:**
@@ -884,7 +884,7 @@ queue → SQS → Lambda (티켓 이벤트 비동기 처리)
 | 인스턴스 | 위치 | 역할 |
 |----------|------|------|
 | **Primary** | AZ-A (db-subnet-a) | 읽기 + 쓰기. 모든 서비스가 여기에 쿼리 |
-| **Standby** | AZ-C (db-subnet-c) | Primary의 **동기 복제본**. 평소에는 쿼리 불가. Primary 장애 시 자동으로 Primary 승격 (Multi-AZ Failover) |
+| **Standby** | AZ-B (db-subnet-c) | Primary의 **동기 복제본**. 평소에는 쿼리 불가. Primary 장애 시 자동으로 Primary 승격 (Multi-AZ Failover) |
 | **Read Replica** | AZ-A (db-subnet-a) | Primary의 **비동기 복제본**. 읽기 전용 쿼리 가능. stats, catalog 같은 읽기 위주 서비스가 여기에 쿼리하면 Primary 부하 감소 |
 
 **연결:**
@@ -911,7 +911,7 @@ queue → SQS → Lambda (티켓 이벤트 비동기 처리)
 | 항목 | 값 |
 |------|-----|
 | **엔진** | Redis 7.1 |
-| **노드 타입** | cache.r6g.large (13GB 메모리) |
+| **노드 타입** | cache.t4g.medium |
 | **위치** | Private Cache Subnet (격리) |
 | **보안** | TLS 암호화 + AUTH 토큰 |
 
@@ -920,7 +920,7 @@ queue → SQS → Lambda (티켓 이벤트 비동기 처리)
 | 노드 | 위치 | 역할 |
 |------|------|------|
 | **Primary** | AZ-A (cache-subnet-a) | 읽기 + 쓰기 |
-| **Replica** | AZ-C (cache-subnet-c) | Primary의 복제본. 읽기 가능. Primary 장애 시 자동 승격 (Auto-Failover) |
+| **Replica** | AZ-B (cache-subnet-c) | Primary의 복제본. 읽기 가능. Primary 장애 시 자동 승격 (Auto-Failover) |
 
 **연결:**
 - Primary → Replica : **복제** (Replication)
@@ -932,7 +932,7 @@ queue → SQS → Lambda (티켓 이벤트 비동기 처리)
 | `{eventId}:queue` | Tier 2 대기열 목록 | queue |
 | `{eventId}:active` | 현재 활성 사용자 목록 | queue |
 | `{eventId}:seen` | 이미 들어온 사용자 추적 | queue |
-| `seat:{eventId}:{seatId}` | 좌석 잠금 (30초 TTL) | ticket |
+| `seat:{eventId}:{seatId}` | 좌석 잠금 (420초 TTL) | ticket |
 | `seat:{eventId}:{seatId}:token_seq` | 좌석 잠금 펜싱 토큰 카운터 | ticket |
 | `rate:{category}:{clientId}` | 요청 제한 카운터 | gateway |
 | `{eventId}:counter` | 대기열 카운터 | queue |
@@ -950,7 +950,7 @@ queue → SQS → Lambda (티켓 이벤트 비동기 처리)
 |------|-----|
 | **정체** | AWS 관리형 Apache Kafka |
 | **Kafka 버전** | 3.6.0 |
-| **브로커** | 2대 (AZ-A, AZ-C에 각 1대) |
+| **브로커** | 2대 (AZ-A, AZ-B에 각 1대) |
 | **인스턴스** | kafka.t3.small |
 | **보안** | TLS + IAM 인증 |
 | **위치** | Private Streaming Subnet |
@@ -1119,7 +1119,7 @@ CloudWatch ───────────────────────
   ├─ Integration Test
   ├─ Docker Build (arm64 이미지)
   ├─ Trivy 보안 스캔 (CRITICAL/HIGH 취약점)
-  └─ ECR에 이미지 Push (3개 태그: latest, SHA, 날짜)
+  └─ ECR에 이미지 Push (3개 태그: {SHA}-{날짜시간}, latest, {환경명})
   ↓
 ③ K8s 매니페스트의 이미지 태그를 업데이트 → Git에 커밋
   ↓

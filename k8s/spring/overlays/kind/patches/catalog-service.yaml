@@ -26,7 +26,7 @@ spec:
             - name: SPRING_PROFILES_ACTIVE
               value: "kind"
             - name: CATALOG_DB_URL
-              value: "jdbc:postgresql://postgres-spring:5432/ticket_db"
+              value: "jdbc:postgresql://postgres-spring:5432/catalog_db"
             - name: CATALOG_DB_USERNAME
               value: "urr_user"
             - name: CATALOG_DB_PASSWORD
