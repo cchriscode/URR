@@ -1,4 +1,4 @@
-<mxGraphModel dx="2305" dy="1235" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+<mxGraphModel dx="2712" dy="1453" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
   <root>
     <mxCell id="0" />
     <mxCell id="1" parent="0" />
@@ -17,7 +17,7 @@
     <mxCell id="az-a" value="Availability Zone A (ap-northeast-2a)" style="fillColor=none;strokeColor=#147EBA;dashed=1;verticalAlign=top;fontStyle=1;fontColor=#147EBA;whiteSpace=wrap;html=1;fontSize=15;strokeWidth=2;container=0;" vertex="1" parent="1">
       <mxGeometry x="329" y="610" width="510" height="995" as="geometry" />
     </mxCell>
-    <mxCell id="az-c" value="Availability Zone C (ap-northeast-2c)" style="fillColor=none;strokeColor=#147EBA;dashed=1;verticalAlign=top;fontStyle=1;fontColor=#147EBA;whiteSpace=wrap;html=1;fontSize=15;strokeWidth=2;container=0;" vertex="1" parent="1">
+    <mxCell id="az-c" value="Availability Zone B (ap-northeast-2b)" style="fillColor=none;strokeColor=#147EBA;dashed=1;verticalAlign=top;fontStyle=1;fontColor=#147EBA;whiteSpace=wrap;html=1;fontSize=15;strokeWidth=2;container=0;" vertex="1" parent="1">
       <mxGeometry x="1040" y="610" width="510" height="995" as="geometry" />
     </mxCell>
     <mxCell id="public-subnet-a" value="Public Subnet 10.0.0.0/24" style="points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=12;fontStyle=0;container=1;pointerEvents=0;collapsible=0;recursiveResize=0;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_security_group;grStroke=0;strokeColor=#248814;fillColor=#E9F3E6;verticalAlign=top;align=left;spacingLeft=30;fontColor=#248814;dashed=0;" vertex="1" parent="1">
@@ -66,31 +66,31 @@
       <mxGeometry x="370" y="9" width="50" height="48" as="geometry" />
     </mxCell>
     <mxCell id="pod-community-c" value="community&lt;div&gt;&lt;br&gt;&lt;/div&gt;" style="aspect=fixed;sketch=0;html=1;dashed=0;whitespace=wrap;verticalLabelPosition=bottom;verticalAlign=top;fillColor=#2875E2;strokeColor=#ffffff;shape=mxgraph.kubernetes.icon2;kubernetesLabel=1;prIcon=pod;fontSize=9;fontStyle=1" vertex="1" parent="app-subnet-a">
-      <mxGeometry x="390" y="109" width="50" height="48" as="geometry" />
+      <mxGeometry x="354" y="109" width="50" height="48" as="geometry" />
     </mxCell>
     <mxCell id="9XcHtQANKYaBjinsaZiJ-1" value="EKS worker Nodes" style="sketch=0;outlineConnect=0;fontColor=#666666;gradientColor=none;strokeColor=#666666;fillColor=none;dashed=1;verticalLabelPosition=top;verticalAlign=bottom;align=left;html=1;fontSize=10;fontStyle=1;pointerEvents=0;container=1;collapsible=0;recursiveResize=0;" vertex="1" parent="app-subnet-a">
-      <mxGeometry x="14" y="109" width="436" height="72" as="geometry" />
+      <mxGeometry x="14" y="109" width="456" height="72" as="geometry" />
     </mxCell>
     <mxCell id="pod-auth-a" value="auth" style="aspect=fixed;sketch=0;html=1;dashed=0;whitespace=wrap;verticalLabelPosition=bottom;verticalAlign=top;fillColor=#2875E2;strokeColor=#ffffff;shape=mxgraph.kubernetes.icon2;kubernetesLabel=1;prIcon=pod;fontSize=9;fontStyle=1" vertex="1" parent="9XcHtQANKYaBjinsaZiJ-1">
-      <mxGeometry x="75" width="50" height="48" as="geometry" />
+      <mxGeometry x="64" width="50" height="48" as="geometry" />
     </mxCell>
     <mxCell id="pod-payment-a" value="payment" style="aspect=fixed;sketch=0;html=1;dashed=0;whitespace=wrap;verticalLabelPosition=bottom;verticalAlign=top;fillColor=#C71313;strokeColor=#ffffff;shape=mxgraph.kubernetes.icon2;kubernetesLabel=1;prIcon=pod;fontSize=9;fontStyle=1" vertex="1" parent="9XcHtQANKYaBjinsaZiJ-1">
-      <mxGeometry x="135" width="50" height="48" as="geometry" />
+      <mxGeometry x="120" width="50" height="48" as="geometry" />
     </mxCell>
     <mxCell id="pod-stats-c" value="stats" style="aspect=fixed;sketch=0;html=1;dashed=0;whitespace=wrap;verticalLabelPosition=bottom;verticalAlign=top;fillColor=#2875E2;strokeColor=#ffffff;shape=mxgraph.kubernetes.icon2;kubernetesLabel=1;prIcon=pod;fontSize=9;fontStyle=1" vertex="1" parent="9XcHtQANKYaBjinsaZiJ-1">
-      <mxGeometry x="255" width="50" height="48" as="geometry" />
+      <mxGeometry x="232" width="50" height="48" as="geometry" />
     </mxCell>
     <mxCell id="pod-queue-a" value="queue" style="aspect=fixed;sketch=0;html=1;dashed=0;whitespace=wrap;verticalLabelPosition=bottom;verticalAlign=top;fillColor=#C71313;strokeColor=#ffffff;shape=mxgraph.kubernetes.icon2;kubernetesLabel=1;prIcon=pod;fontSize=9;fontStyle=1" vertex="1" parent="9XcHtQANKYaBjinsaZiJ-1">
-      <mxGeometry x="195" width="50" height="48" as="geometry" />
+      <mxGeometry x="177" width="50" height="48" as="geometry" />
     </mxCell>
     <mxCell id="pod-catalog-c" value="catalog" style="aspect=fixed;sketch=0;html=1;dashed=0;whitespace=wrap;verticalLabelPosition=bottom;verticalAlign=top;fillColor=#2875E2;strokeColor=#ffffff;shape=mxgraph.kubernetes.icon2;kubernetesLabel=1;prIcon=pod;fontSize=9;fontStyle=1" vertex="1" parent="9XcHtQANKYaBjinsaZiJ-1">
-      <mxGeometry x="315" width="50" height="48" as="geometry" />
+      <mxGeometry x="285" width="50" height="48" as="geometry" />
     </mxCell>
     <mxCell id="pod-ticket-a" value="ticket" style="aspect=fixed;sketch=0;html=1;dashed=0;whitespace=wrap;verticalLabelPosition=bottom;verticalAlign=top;fillColor=#C71313;strokeColor=#ffffff;shape=mxgraph.kubernetes.icon2;kubernetesLabel=1;prIcon=pod;fontSize=9;fontStyle=1" vertex="1" parent="9XcHtQANKYaBjinsaZiJ-1">
       <mxGeometry x="9" width="50" height="48" as="geometry" />
     </mxCell>
     <mxCell id="pod-frontend-a" value="frontend" style="aspect=fixed;sketch=0;html=1;dashed=0;whitespace=wrap;verticalLabelPosition=bottom;verticalAlign=top;fillColor=#2875E2;strokeColor=#ffffff;shape=mxgraph.kubernetes.icon2;kubernetesLabel=1;prIcon=pod;fontSize=9;fontStyle=1" vertex="1" parent="9XcHtQANKYaBjinsaZiJ-1">
-      <mxGeometry x="375" width="50" height="48" as="geometry" />
+      <mxGeometry x="395" y="2" width="50" height="48" as="geometry" />
     </mxCell>
     <mxCell id="9XcHtQANKYaBjinsaZiJ-39" value="Karpenter&#xa;Node Autoscaler" style="aspect=fixed;sketch=0;html=1;dashed=0;whitespace=wrap;verticalLabelPosition=bottom;verticalAlign=top;fillColor=#759C3E;strokeColor=#ffffff;shape=mxgraph.kubernetes.icon2;kubernetesLabel=1;prIcon=pod;fontSize=9;fontStyle=1" vertex="1" parent="app-subnet-a">
       <mxGeometry x="48" y="23" width="50" height="48" as="geometry" />
@@ -122,13 +122,13 @@
     <mxCell id="cache-subnet-a" value="Private Cache Subnet (Isolated) 10.0.30.0/24" style="points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=12;fontStyle=0;container=1;pointerEvents=0;collapsible=0;recursiveResize=0;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_security_group;grStroke=0;strokeColor=#DD344C;fillColor=#FCE9E9;verticalAlign=top;align=left;spacingLeft=30;fontColor=#DD344C;dashed=0;" vertex="1" parent="1">
       <mxGeometry x="340" y="1264" width="490" height="120" as="geometry" />
     </mxCell>
-    <mxCell id="redis-primary" value="ElastiCache Redis&#xa;Primary (r6g.large 13GB)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#C925D1;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=1;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.elasticache_for_redis;" vertex="1" parent="cache-subnet-a">
+    <mxCell id="redis-primary" value="ElastiCache Redis&#xa;Primary (t4g.medium)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#C925D1;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=1;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.elasticache_for_redis;" vertex="1" parent="cache-subnet-a">
       <mxGeometry x="220" y="36" width="48" height="48" as="geometry" />
     </mxCell>
     <mxCell id="cache-subnet-c" value="Private Cache Subnet (Isolated) 10.0.31.0/24" style="points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=12;fontStyle=0;container=1;pointerEvents=0;collapsible=0;recursiveResize=0;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_security_group;grStroke=0;strokeColor=#DD344C;fillColor=#FCE9E9;verticalAlign=top;align=left;spacingLeft=30;fontColor=#DD344C;dashed=0;" vertex="1" parent="1">
       <mxGeometry x="1055" y="1263" width="485" height="127" as="geometry" />
     </mxCell>
-    <mxCell id="redis-replica" value="ElastiCache Redis&#xa;Replica (r6g.large 13GB)&#xa;Auto-Failover" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#C925D1;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=1;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.elasticache_for_redis;" vertex="1" parent="cache-subnet-c">
+    <mxCell id="redis-replica" value="ElastiCache Redis&#xa;Replica (t4g.medium)&#xa;Auto-Failover" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#C925D1;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=1;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.elasticache_for_redis;" vertex="1" parent="cache-subnet-c">
       <mxGeometry x="206" y="36" width="48" height="48" as="geometry" />
     </mxCell>
     <mxCell id="db-subnet-a" value="Private DB Subnet (Isolated) 10.0.20.0/24" style="points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=12;fontStyle=0;container=0;pointerEvents=0;collapsible=0;recursiveResize=0;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_security_group;grStroke=0;strokeColor=#3F8624;fillColor=#E6F6E4;verticalAlign=top;align=left;spacingLeft=30;fontColor=#3F8624;dashed=0;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" vertex="1" parent="1">
@@ -170,7 +170,7 @@
     <mxCell id="vpce-gw" value="VPC Endpoint&#xa;(Gateway: S3)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#8C4FFF;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=1;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.endpoint;" vertex="1" parent="1">
       <mxGeometry x="990" y="511.5" width="52.5" height="52.5" as="geometry" />
     </mxCell>
-    <mxCell id="eks-cp" value="EKS Control Plane&#xa;(Private Only)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#ED7100;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=11;fontStyle=1;aspect=fixed;shape=mxgraph.aws4.eks_cloud;" vertex="1" parent="1">
+    <mxCell id="eks-cp" value="EKS Control Plane&#xa;(Public + Private)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#ED7100;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=11;fontStyle=1;aspect=fixed;shape=mxgraph.aws4.eks_cloud;" vertex="1" parent="1">
       <mxGeometry x="1620" y="680" width="68" height="68" as="geometry" />
     </mxCell>
     <mxCell id="ecr" value="ECR" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#ED7100;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=1;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.ecr;" vertex="1" parent="1">
@@ -202,11 +202,11 @@
         <mxPoint x="886.5" y="370" as="targetPoint" />
       </mxGeometry>
     </mxCell>
-    <mxCell id="link-alb-frontend" value=":3000" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#2875E2;strokeWidth=2;endArrow=classic;endFill=1;dashed=1;fontSize=9;fontColor=#2875E2;" edge="1" parent="1" source="alb" target="pod-frontend-a">
+    <mxCell id="link-alb-frontend" value=":3000" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#2875E2;strokeWidth=2;endArrow=classic;endFill=1;dashed=1;fontSize=9;fontColor=#2875E2;entryX=0.5;entryY=0.042;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="alb" target="pod-frontend-a">
       <mxGeometry relative="1" as="geometry">
         <Array as="points">
-          <mxPoint x="955" y="810" />
-          <mxPoint x="755" y="810" />
+          <mxPoint x="940" y="810" />
+          <mxPoint x="775" y="810" />
         </Array>
       </mxGeometry>
     </mxCell>
@@ -273,8 +273,8 @@
         <mxPoint x="775" y="1055" as="sourcePoint" />
         <mxPoint x="1610" y="810" as="targetPoint" />
         <Array as="points">
-          <mxPoint x="910" y="1055" />
-          <mxPoint x="910" y="810" />
+          <mxPoint x="950" y="1055" />
+          <mxPoint x="950" y="810" />
         </Array>
       </mxGeometry>
     </mxCell>
@@ -332,31 +332,31 @@
       <mxGeometry x="370" y="9" width="50" height="48" as="geometry" />
     </mxCell>
     <mxCell id="9XcHtQANKYaBjinsaZiJ-31" value="community&lt;div&gt;&lt;br&gt;&lt;/div&gt;" style="aspect=fixed;sketch=0;html=1;dashed=0;whitespace=wrap;verticalLabelPosition=bottom;verticalAlign=top;fillColor=#2875E2;strokeColor=#ffffff;shape=mxgraph.kubernetes.icon2;kubernetesLabel=1;prIcon=pod;fontSize=9;fontStyle=1" vertex="1" parent="1">
-      <mxGeometry x="1441" y="924" width="50" height="48" as="geometry" />
+      <mxGeometry x="1409" y="924" width="50" height="48" as="geometry" />
     </mxCell>
     <mxCell id="9XcHtQANKYaBjinsaZiJ-32" value="EKS worker Nodes" style="sketch=0;outlineConnect=0;fontColor=#666666;gradientColor=none;strokeColor=#666666;fillColor=none;dashed=1;verticalLabelPosition=top;verticalAlign=bottom;align=left;html=1;fontSize=10;fontStyle=1;pointerEvents=0;container=1;collapsible=0;recursiveResize=0;" vertex="1" parent="1">
-      <mxGeometry x="1065" y="924" width="436" height="72" as="geometry" />
+      <mxGeometry x="1065" y="924" width="455" height="72" as="geometry" />
     </mxCell>
     <mxCell id="9XcHtQANKYaBjinsaZiJ-33" value="auth" style="aspect=fixed;sketch=0;html=1;dashed=0;whitespace=wrap;verticalLabelPosition=bottom;verticalAlign=top;fillColor=#2875E2;strokeColor=#ffffff;shape=mxgraph.kubernetes.icon2;kubernetesLabel=1;prIcon=pod;fontSize=9;fontStyle=1" vertex="1" parent="9XcHtQANKYaBjinsaZiJ-32">
-      <mxGeometry x="75" width="50" height="48" as="geometry" />
+      <mxGeometry x="67" width="50" height="48" as="geometry" />
     </mxCell>
     <mxCell id="9XcHtQANKYaBjinsaZiJ-34" value="payment" style="aspect=fixed;sketch=0;html=1;dashed=0;whitespace=wrap;verticalLabelPosition=bottom;verticalAlign=top;fillColor=#C71313;strokeColor=#ffffff;shape=mxgraph.kubernetes.icon2;kubernetesLabel=1;prIcon=pod;fontSize=9;fontStyle=1" vertex="1" parent="9XcHtQANKYaBjinsaZiJ-32">
-      <mxGeometry x="135" width="50" height="48" as="geometry" />
+      <mxGeometry x="124" width="50" height="48" as="geometry" />
     </mxCell>
     <mxCell id="9XcHtQANKYaBjinsaZiJ-35" value="stats" style="aspect=fixed;sketch=0;html=1;dashed=0;whitespace=wrap;verticalLabelPosition=bottom;verticalAlign=top;fillColor=#2875E2;strokeColor=#ffffff;shape=mxgraph.kubernetes.icon2;kubernetesLabel=1;prIcon=pod;fontSize=9;fontStyle=1" vertex="1" parent="9XcHtQANKYaBjinsaZiJ-32">
-      <mxGeometry x="255" width="50" height="48" as="geometry" />
+      <mxGeometry x="239" width="50" height="48" as="geometry" />
     </mxCell>
     <mxCell id="9XcHtQANKYaBjinsaZiJ-36" value="queue" style="aspect=fixed;sketch=0;html=1;dashed=0;whitespace=wrap;verticalLabelPosition=bottom;verticalAlign=top;fillColor=#C71313;strokeColor=#ffffff;shape=mxgraph.kubernetes.icon2;kubernetesLabel=1;prIcon=pod;fontSize=9;fontStyle=1" vertex="1" parent="9XcHtQANKYaBjinsaZiJ-32">
-      <mxGeometry x="195" width="50" height="48" as="geometry" />
+      <mxGeometry x="182" width="50" height="48" as="geometry" />
     </mxCell>
     <mxCell id="9XcHtQANKYaBjinsaZiJ-37" value="catalog" style="aspect=fixed;sketch=0;html=1;dashed=0;whitespace=wrap;verticalLabelPosition=bottom;verticalAlign=top;fillColor=#2875E2;strokeColor=#ffffff;shape=mxgraph.kubernetes.icon2;kubernetesLabel=1;prIcon=pod;fontSize=9;fontStyle=1" vertex="1" parent="9XcHtQANKYaBjinsaZiJ-32">
-      <mxGeometry x="315" width="50" height="48" as="geometry" />
+      <mxGeometry x="293" width="50" height="48" as="geometry" />
     </mxCell>
     <mxCell id="9XcHtQANKYaBjinsaZiJ-38" value="ticket" style="aspect=fixed;sketch=0;html=1;dashed=0;whitespace=wrap;verticalLabelPosition=bottom;verticalAlign=top;fillColor=#C71313;strokeColor=#ffffff;shape=mxgraph.kubernetes.icon2;kubernetesLabel=1;prIcon=pod;fontSize=9;fontStyle=1" vertex="1" parent="9XcHtQANKYaBjinsaZiJ-32">
       <mxGeometry x="9" width="50" height="48" as="geometry" />
     </mxCell>
     <mxCell id="pod-frontend-c" value="frontend" style="aspect=fixed;sketch=0;html=1;dashed=0;whitespace=wrap;verticalLabelPosition=bottom;verticalAlign=top;fillColor=#2875E2;strokeColor=#ffffff;shape=mxgraph.kubernetes.icon2;kubernetesLabel=1;prIcon=pod;fontSize=9;fontStyle=1" vertex="1" parent="9XcHtQANKYaBjinsaZiJ-32">
-      <mxGeometry x="375" width="50" height="48" as="geometry" />
+      <mxGeometry x="397" width="50" height="48" as="geometry" />
     </mxCell>
     <mxCell id="9XcHtQANKYaBjinsaZiJ-41" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#ED7100;strokeWidth=2;endArrow=classic;endFill=1;dashed=1;exitX=0.46;exitY=-0.021;exitDx=0;exitDy=0;exitPerimeter=0;" edge="1" parent="1" source="9XcHtQANKYaBjinsaZiJ-39" target="eks-cp">
       <mxGeometry relative="1" as="geometry">
