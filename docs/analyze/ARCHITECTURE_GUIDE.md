@@ -29,12 +29,12 @@
 
 ## 2. 사용자 요청이 처리되는 전체 흐름
 
-사용자가 `urr.com`에 접속해서 티켓을 예매하기까지의 경로:
+사용자가 `urr.guru`에 접속해서 티켓을 예매하기까지의 경로:
 
 ```
 사용자 브라우저
   ↓
-① Route 53 (DNS)        — urr.com → CloudFront IP로 변환
+① Route 53 (DNS)        — urr.guru → CloudFront IP로 변환
   ↓
 ② CloudFront (CDN)      — 전 세계 엣지 서버에서 응답
   ↓ (분기)
@@ -63,7 +63,7 @@
 | 항목 | 설명 |
 |------|------|
 | **정체** | AWS의 DNS 서비스 |
-| **하는 일** | `urr.com` 같은 도메인을 입력하면, 실제 서버 주소(CloudFront IP)로 변환해준다 |
+| **하는 일** | `urr.guru` 같은 도메인을 입력하면, 실제 서버 주소(CloudFront IP)로 변환해준다 |
 | **연결** | 사용자 → Route 53 → CloudFront |
 | **비유** | 전화번호부. "김철수"를 검색하면 "010-xxxx-xxxx"를 알려주는 역할 |
 
