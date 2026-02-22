@@ -573,8 +573,23 @@ EKS(Elastic Kubernetes Service)는 컨테이너화된 애플리케이션을 실�
 | **위치** | AWS 관리형 (VPC 밖, 하지만 VPC Endpoint로 프라이빗 접근) |
 | **접근 제한** | **Public + Private** — VPC 내부에서 VPC Endpoint로 접근하고, 운영자는 인터넷에서도 접근 가능 (IAM 인증 필수) |
 
+**왜 Public + Private인가?**
+
+EKS API 서버 엔드포인트에 접근하는 경로가 2가지다:
+
+| 접근 주체 | 경로 | 이유 |
+|-----------|------|------|
+| Worker Node | **Private** (VPC Endpoint) | VPC 내부에서 직접 통신. NAT 비용 없음, 빠름 |
+| 운영자 kubectl | **Public** (인터넷) | VPN/Bastion 없이 어디서든 장애 대응 가능 |
+| GitHub Actions CI/CD | **Public** (인터넷) | 별도 VPN 설정 없이 클러스터 접근 가능 |
+
+Private Only로 설정하면 `kubectl`을 치기 위해 VPN 서버나 Bastion EC2를 별도로 운영해야 한다. 소규모 팀에서는 관리 부담이 크고, 장애 시 VPN/Bastion이 같이 죽으면 클러스터 접근 자체가 불가능해진다.
+
+Public Endpoint가 열려 있어도 **IAM 인증 + K8s RBAC**이 적용되므로 AWS 자격증명 없이는 API 호출 자체가 거부된다. 필요 시 `public_access_cidrs`로 운영팀 IP만 허용하여 추가 강화할 수 있다.
+
 **연결:**
-- Worker Node ↔ EKS Control Plane (VPC Endpoint 경유)
+- Worker Node ↔ EKS Control Plane (VPC Endpoint 경유, Private)
+- 운영자 kubectl → EKS Control Plane (인터넷 경유, Public, IAM 인증)
 - Karpenter → EKS Control Plane (노드 부족 시 알림 수신)
 - ArgoCD → EKS Control Plane (배포 매니페스트 적용)
 
