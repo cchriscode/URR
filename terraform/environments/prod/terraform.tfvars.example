@@ -30,9 +30,8 @@
 # elasticache_node_type = "cache.r6g.large"
 
 # Domain & TLS
-# domain_aliases       = []
-# certificate_arn      = ""
-# cors_allowed_origins = []
+# domain_name          = "urr.guru"    # Set to "" for domain-less testing (HTTP fallback)
+# cors_allowed_origins = ["https://urr.guru", "https://www.urr.guru"]
 
 # Secrets (required, no defaults)
 # cloudfront_custom_header_value = ""

@@ -194,3 +194,26 @@ output "ticket_worker_log_group" {
   description = "Lambda ticket worker CloudWatch log group"
   value       = module.lambda_worker.log_group_name
 }
+
+# ═════════════════════════════════════════════════════════════════════════════
+# ACM Certificates
+# ═════════════════════════════════════════════════════════════════════════════
+
+output "acm_cloudfront_certificate_arn" {
+  description = "ACM certificate ARN for CloudFront (us-east-1)"
+  value       = var.domain_name != "" ? module.acm[0].cloudfront_certificate_arn : ""
+}
+
+output "acm_alb_certificate_arn" {
+  description = "ACM certificate ARN for ALB (ap-northeast-2)"
+  value       = var.domain_name != "" ? module.acm[0].alb_certificate_arn : ""
+}
+
+# ═════════════════════════════════════════════════════════════════════════════
+# Route53
+# ═════════════════════════════════════════════════════════════════════════════
+
+output "route53_name_servers" {
+  description = "Route53 hosted zone name servers (set these in GoDaddy)"
+  value       = var.domain_name != "" ? aws_route53_zone.main[0].name_servers : []
+}

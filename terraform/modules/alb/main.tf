@@ -281,3 +281,38 @@ resource "aws_lb_listener" "http" {
     Name = "${var.name_prefix}-http-listener"
   }
 }
+
+# HTTP path-based rules (only when no HTTPS listener, i.e. no certificate)
+resource "aws_lb_listener_rule" "http_api_to_gateway" {
+  count        = var.enable_http_listener && var.certificate_arn == "" ? 1 : 0
+  listener_arn = aws_lb_listener.http[0].arn
+  priority     = 100
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.gateway_service.arn
+  }
+
+  condition {
+    path_pattern {
+      values = ["/api/*"]
+    }
+  }
+}
+
+resource "aws_lb_listener_rule" "http_internal_to_gateway" {
+  count        = var.enable_http_listener && var.certificate_arn == "" ? 1 : 0
+  listener_arn = aws_lb_listener.http[0].arn
+  priority     = 99
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.gateway_service.arn
+  }
+
+  condition {
+    path_pattern {
+      values = ["/internal/*"]
+    }
+  }
+}

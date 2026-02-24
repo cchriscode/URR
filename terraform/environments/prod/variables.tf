@@ -140,18 +140,6 @@ variable "elasticache_node_type" {
 # Domain & TLS
 # ═════════════════════════════════════════════════════════════════════════════
 
-variable "domain_aliases" {
-  description = "CloudFront domain aliases"
-  type        = list(string)
-  default     = []
-}
-
-variable "certificate_arn" {
-  description = "ACM certificate ARN (us-east-1 for CloudFront, ap-northeast-2 for ALB)"
-  type        = string
-  default     = ""
-}
-
 variable "cors_allowed_origins" {
   description = "Allowed origins for CORS (e.g. [\"https://urr.guru\"])"
   type        = list(string)
@@ -209,14 +197,3 @@ variable "domain_name" {
   default     = ""
 }
 
-variable "create_hosted_zone" {
-  description = "Whether to create a new Route53 hosted zone"
-  type        = bool
-  default     = true
-}
-
-variable "hosted_zone_id" {
-  description = "Existing Route53 hosted zone ID (when create_hosted_zone = false)"
-  type        = string
-  default     = ""
-}

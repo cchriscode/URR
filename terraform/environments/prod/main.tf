@@ -196,7 +196,39 @@ module "msk" {
 }
 
 # ═════════════════════════════════════════════════════════════════════════════
-# 9. ALB (depends on: VPC, EKS)
+# 9. Route53 Hosted Zone (early, no dependencies — needed by ACM)
+# ═════════════════════════════════════════════════════════════════════════════
+
+resource "aws_route53_zone" "main" {
+  count   = var.domain_name != "" ? 1 : 0
+  name    = var.domain_name
+  comment = "${var.name_prefix} hosted zone"
+
+  tags = {
+    Name = "${var.name_prefix}-zone"
+  }
+}
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 10. ACM Certificates (depends on: Route53 Zone)
+# ═════════════════════════════════════════════════════════════════════════════
+
+module "acm" {
+  count  = var.domain_name != "" ? 1 : 0
+  source = "../../modules/acm"
+
+  providers = {
+    aws           = aws
+    aws.us_east_1 = aws.us_east_1
+  }
+
+  name_prefix = var.name_prefix
+  domain_name = var.domain_name
+  zone_id     = aws_route53_zone.main[0].zone_id
+}
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 11. ALB (depends on: VPC, EKS, ACM)
 # ═════════════════════════════════════════════════════════════════════════════
 
 module "alb" {
@@ -206,7 +238,7 @@ module "alb" {
   vpc_id                          = module.vpc.vpc_id
   public_subnet_ids               = module.vpc.public_subnet_ids
   eks_node_security_group_id      = module.eks.node_security_group_id
-  certificate_arn                 = var.certificate_arn
+  certificate_arn                 = var.domain_name != "" ? module.acm[0].alb_certificate_arn : ""
   enable_deletion_protection      = true
   lambda_worker_security_group_id = module.lambda_worker.security_group_id
 }
@@ -256,8 +288,8 @@ module "cloudfront" {
   lambda_source_dir              = "${path.root}/../../lambda/edge-queue-check"
   queue_entry_token_secret       = module.secrets.queue_entry_token_secret_value
   cloudfront_custom_header_value = var.cloudfront_custom_header_value
-  aliases                        = var.domain_aliases
-  certificate_arn                = var.certificate_arn
+  aliases                        = var.domain_name != "" ? [var.domain_name, "www.${var.domain_name}"] : []
+  certificate_arn                = var.domain_name != "" ? module.acm[0].cloudfront_certificate_arn : ""
   price_class                    = "PriceClass_200"
 
   s3_bucket_name                 = module.s3.frontend_bucket_name
@@ -343,7 +375,7 @@ module "lambda_worker" {
   environment = var.environment
 
   additional_env_vars = {
-    TICKET_SERVICE_URL = "https://${module.alb.alb_dns_name}"
+    TICKET_SERVICE_URL = var.domain_name != "" ? "https://${module.alb.alb_dns_name}" : "http://${module.alb.alb_dns_name}"
     INTERNAL_API_TOKEN = var.internal_api_token
   }
 
@@ -391,12 +423,13 @@ module "waf" {
 # ═════════════════════════════════════════════════════════════════════════════
 
 module "route53" {
+  count  = var.domain_name != "" ? 1 : 0
   source = "../../modules/route53"
 
   name_prefix               = var.name_prefix
   domain_name               = var.domain_name
-  create_hosted_zone        = var.create_hosted_zone
-  hosted_zone_id            = var.hosted_zone_id
+  create_hosted_zone        = false
+  hosted_zone_id            = aws_route53_zone.main[0].zone_id
   cloudfront_domain_name    = module.cloudfront.distribution_domain_name
   cloudfront_hosted_zone_id = module.cloudfront.distribution_hosted_zone_id
 }

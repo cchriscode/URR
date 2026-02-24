@@ -61,6 +61,10 @@ credentials.txt
 *.key
 
 # Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfplan
 *.tfvars
 !*.tfvars.example
 
