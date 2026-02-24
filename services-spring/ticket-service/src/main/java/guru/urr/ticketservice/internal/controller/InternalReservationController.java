@@ -2,9 +2,12 @@ package guru.urr.ticketservice.internal.controller;
 
 import guru.urr.common.security.InternalTokenValidator;
 import guru.urr.ticketservice.domain.membership.service.MembershipService;
+import guru.urr.ticketservice.domain.reservation.dto.CreateReservationRequest;
+import guru.urr.ticketservice.domain.reservation.dto.ReservationItemRequest;
 import guru.urr.ticketservice.domain.reservation.service.ReservationPaymentHandler;
 import guru.urr.ticketservice.domain.reservation.service.ReservationService;
 import guru.urr.ticketservice.domain.transfer.service.TransferService;
+import guru.urr.ticketservice.internal.dto.InternalCreateReservationRequest;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -41,6 +44,22 @@ public class InternalReservationController {
     }
 
     // === Reservation internal APIs ===
+
+    @PostMapping("/reservations")
+    public Map<String, Object> createReservation(
+        @RequestBody InternalCreateReservationRequest request,
+        @RequestHeader(value = "Authorization", required = false) String authorization
+    ) {
+        internalTokenValidator.requireValidToken(authorization);
+        CreateReservationRequest createRequest = new CreateReservationRequest(
+            request.eventId(),
+            request.items().stream()
+                .map(i -> new ReservationItemRequest(i.ticketTypeId(), i.quantity()))
+                .toList(),
+            null
+        );
+        return reservationService.createReservation(request.userId(), createRequest);
+    }
 
     @GetMapping("/reservations/{id}/validate")
     public Map<String, Object> validate(

@@ -1,0 +1,250 @@
+{
+  "uid": "urr-overview",
+  "title": "URR Service Overview",
+  "tags": ["urr"],
+  "timezone": "browser",
+  "refresh": "15s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "service",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+        "definition": "label_values(up, job)",
+        "includeAll": true,
+        "multi": true,
+        "current": { "selected": true, "text": "All", "value": "$__all" },
+        "refresh": 2
+      }
+    ]
+  },
+  "panels": [
+    {
+      "title": "Service Health",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "collapsed": false
+    },
+    {
+      "title": "Service Up/Down",
+      "type": "stat",
+      "datasource": { "type": "prometheus" },
+      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 1 },
+      "targets": [
+        { "expr": "up{job=~\"$service\"}", "legendFormat": "{{job}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } }
+          ],
+          "thresholds": { "steps": [ { "value": null, "color": "red" }, { "value": 1, "color": "green" } ] }
+        }
+      },
+      "options": { "graphMode": "none", "colorMode": "background", "textMode": "auto" }
+    },
+
+    {
+      "title": "JVM & System",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "collapsed": false
+    },
+    {
+      "title": "CPU Usage",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 6 },
+      "targets": [
+        { "expr": "system_cpu_usage{job=~\"$service\"}", "legendFormat": "{{job}} system" },
+        { "expr": "process_cpu_usage{job=~\"$service\"}", "legendFormat": "{{job}} process" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 } }
+    },
+    {
+      "title": "JVM Heap Memory Used",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 6 },
+      "targets": [
+        { "expr": "jvm_memory_used_bytes{job=~\"$service\", area=\"heap\"}", "legendFormat": "{{job}} {{id}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "bytes" } }
+    },
+    {
+      "title": "JVM Threads",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 6 },
+      "targets": [
+        { "expr": "jvm_threads_live_threads{job=~\"$service\"}", "legendFormat": "{{job}}" }
+      ]
+    },
+
+    {
+      "title": "HTTP Requests",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "collapsed": false
+    },
+    {
+      "title": "Request Rate (per second)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
+      "targets": [
+        { "expr": "rate(http_server_requests_seconds_count{job=~\"$service\"}[1m])", "legendFormat": "{{job}} {{method}} {{uri}} {{status}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps" } }
+    },
+    {
+      "title": "Response Time p95",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
+      "targets": [
+        { "expr": "histogram_quantile(0.95, rate(http_server_requests_seconds_bucket{job=~\"$service\"}[1m]))", "legendFormat": "{{job}} {{uri}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+
+    {
+      "title": "Business - Reservations & Tickets",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
+      "collapsed": false
+    },
+    {
+      "title": "Reservations",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "targets": [
+        { "expr": "rate(business_reservation_created_total[1m])", "legendFormat": "created" },
+        { "expr": "rate(business_reservation_confirmed_total[1m])", "legendFormat": "confirmed" },
+        { "expr": "rate(business_reservation_cancelled_total[1m])", "legendFormat": "cancelled" },
+        { "expr": "rate(business_reservation_expired_total[1m])", "legendFormat": "expired" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" } }
+    },
+    {
+      "title": "Reservation Create Duration (p95)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "targets": [
+        { "expr": "histogram_quantile(0.95, rate(business_reservation_create_duration_seconds_bucket[1m]))", "legendFormat": "p95" },
+        { "expr": "histogram_quantile(0.50, rate(business_reservation_create_duration_seconds_bucket[1m]))", "legendFormat": "p50" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+
+    {
+      "title": "Business - Payments",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 32 },
+      "collapsed": false
+    },
+    {
+      "title": "Payment Events (ticket-service)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 33 },
+      "targets": [
+        { "expr": "rate(business_payment_processed_total[1m])", "legendFormat": "processed" },
+        { "expr": "rate(business_payment_failed_total[1m])", "legendFormat": "failed" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" } }
+    },
+    {
+      "title": "Payment Events (payment-service)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 33 },
+      "targets": [
+        { "expr": "rate(urr_payment_processed_total[1m])", "legendFormat": "processed" },
+        { "expr": "rate(urr_payment_failed_total[1m])", "legendFormat": "failed" },
+        { "expr": "rate(urr_payment_refunded_total[1m])", "legendFormat": "refunded" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" } }
+    },
+    {
+      "title": "Payment Processing Duration (p95)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 33 },
+      "targets": [
+        { "expr": "histogram_quantile(0.95, rate(urr_payment_processing_duration_seconds_bucket[1m]))", "legendFormat": "p95" },
+        { "expr": "histogram_quantile(0.50, rate(urr_payment_processing_duration_seconds_bucket[1m]))", "legendFormat": "p50" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+
+    {
+      "title": "Business - Queue",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 41 },
+      "collapsed": false
+    },
+    {
+      "title": "Queue Activity",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 42 },
+      "targets": [
+        { "expr": "rate(business_queue_joined_total[1m])", "legendFormat": "joined" },
+        { "expr": "rate(business_queue_admitted_total[1m])", "legendFormat": "admitted" },
+        { "expr": "rate(business_queue_left_total[1m])", "legendFormat": "left" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" } }
+    },
+    {
+      "title": "Queue Totals",
+      "type": "stat",
+      "datasource": { "type": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 42 },
+      "targets": [
+        { "expr": "business_queue_joined_total", "legendFormat": "joined" },
+        { "expr": "business_queue_admitted_total", "legendFormat": "admitted" },
+        { "expr": "business_queue_left_total", "legendFormat": "left" }
+      ],
+      "options": { "graphMode": "area", "colorMode": "background_solid" }
+    },
+
+    {
+      "title": "Business - Stats & Reconciliation",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 50 },
+      "collapsed": false
+    },
+    {
+      "title": "Stats Service",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 51 },
+      "targets": [
+        { "expr": "rate(urr_stats_events_consumed_total[1m])", "legendFormat": "events consumed" },
+        { "expr": "rate(urr_stats_queries_total[1m])", "legendFormat": "queries" },
+        { "expr": "rate(urr_stats_queries_errors_total[1m])", "legendFormat": "query errors" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" } }
+    },
+    {
+      "title": "Reconciliation Mismatches",
+      "type": "stat",
+      "datasource": { "type": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 51 },
+      "targets": [
+        { "expr": "reconciliation_mismatch_total", "legendFormat": "mismatches" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": { "steps": [ { "value": null, "color": "green" }, { "value": 1, "color": "orange" }, { "value": 10, "color": "red" } ] }
+        }
+      },
+      "options": { "graphMode": "area", "colorMode": "background" }
+    }
+  ],
+  "schemaVersion": 39
+}

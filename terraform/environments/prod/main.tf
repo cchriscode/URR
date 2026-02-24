@@ -153,11 +153,12 @@ module "rds" {
 module "elasticache" {
   source = "../../modules/elasticache"
 
-  name_prefix                = var.name_prefix
-  vpc_id                     = module.vpc.vpc_id
-  cache_subnet_ids           = module.vpc.cache_subnet_ids
-  eks_node_security_group_id = module.eks.node_security_group_id
-  preferred_azs              = module.vpc.availability_zones
+  name_prefix                     = var.name_prefix
+  vpc_id                          = module.vpc.vpc_id
+  cache_subnet_ids                = module.vpc.cache_subnet_ids
+  eks_node_security_group_id      = module.eks.node_security_group_id
+  lambda_worker_security_group_id = module.lambda_worker.security_group_id
+  preferred_azs                   = module.vpc.availability_zones
 
   node_type          = var.elasticache_node_type
   auth_token_enabled = true
@@ -201,12 +202,13 @@ module "msk" {
 module "alb" {
   source = "../../modules/alb"
 
-  name_prefix                = var.name_prefix
-  vpc_id                     = module.vpc.vpc_id
-  public_subnet_ids          = module.vpc.public_subnet_ids
-  eks_node_security_group_id = module.eks.node_security_group_id
-  certificate_arn            = var.certificate_arn
-  enable_deletion_protection = true
+  name_prefix                     = var.name_prefix
+  vpc_id                          = module.vpc.vpc_id
+  public_subnet_ids               = module.vpc.public_subnet_ids
+  eks_node_security_group_id      = module.eks.node_security_group_id
+  certificate_arn                 = var.certificate_arn
+  enable_deletion_protection      = true
+  lambda_worker_security_group_id = module.lambda_worker.security_group_id
 }
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -338,15 +340,11 @@ module "lambda_worker" {
   redis_security_group_id     = module.elasticache.security_group_id
 
   # Environment
-  db_proxy_endpoint = module.rds.rds_proxy_endpoint
-  redis_endpoint    = module.elasticache.primary_endpoint_address
-  redis_auth_token  = module.secrets.redis_auth_token
-  environment       = var.environment
+  environment = var.environment
 
   additional_env_vars = {
-    TICKET_SERVICE_URL      = "http://ticket-service.urr-spring.svc.cluster.local:3002"
-    INTERNAL_API_TOKEN      = var.internal_api_token
-    KAFKA_BOOTSTRAP_SERVERS = module.msk.bootstrap_brokers_tls
+    TICKET_SERVICE_URL = "https://${module.alb.alb_dns_name}"
+    INTERNAL_API_TOKEN = var.internal_api_token
   }
 
   # SQS

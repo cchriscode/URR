@@ -72,28 +72,6 @@ variable "redis_security_group_id" {
 
 # Environment Variables
 
-variable "db_proxy_endpoint" {
-  description = "RDS Proxy endpoint"
-  type        = string
-}
-
-variable "redis_endpoint" {
-  description = "Redis primary endpoint"
-  type        = string
-}
-
-variable "redis_port" {
-  description = "Redis port"
-  type        = number
-  default     = 6379
-}
-
-variable "redis_auth_token" {
-  description = "Redis AUTH token"
-  type        = string
-  sensitive   = true
-}
-
 variable "environment" {
   description = "Environment name (dev, staging, prod)"
   type        = string

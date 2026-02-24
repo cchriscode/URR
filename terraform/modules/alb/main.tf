@@ -65,6 +65,18 @@ resource "aws_security_group_rule" "alb_ingress_http_cidr" {
   description       = "Allow HTTP from custom CIDRs (fallback for testing)"
 }
 
+# Allow HTTPS from Lambda Worker (internal VPC traffic)
+resource "aws_security_group_rule" "alb_ingress_lambda_worker" {
+  count                    = var.lambda_worker_security_group_id != "" ? 1 : 0
+  type                     = "ingress"
+  from_port                = 443
+  to_port                  = 443
+  protocol                 = "tcp"
+  source_security_group_id = var.lambda_worker_security_group_id
+  security_group_id        = aws_security_group.alb.id
+  description              = "Allow HTTPS from Lambda worker for internal service calls"
+}
+
 # Allow all outbound traffic to EKS nodes
 resource "aws_security_group_rule" "alb_egress_all" {
   type              = "egress"
@@ -218,6 +230,24 @@ resource "aws_lb_listener_rule" "api_to_gateway" {
   condition {
     path_pattern {
       values = ["/api/*"]
+    }
+  }
+}
+
+# Path-based rule: /internal/* → Gateway Service (Lambda worker internal calls)
+resource "aws_lb_listener_rule" "internal_to_gateway" {
+  count        = var.certificate_arn != "" ? 1 : 0
+  listener_arn = aws_lb_listener.https[0].arn
+  priority     = 99
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.gateway_service.arn
+  }
+
+  condition {
+    path_pattern {
+      values = ["/internal/*"]
     }
   }
 }

@@ -78,6 +78,10 @@ spring:
             uri: ${TICKET_SERVICE_URL:http://localhost:3002}
             predicates:
               - Path=/api/v1/time/**,/api/time/**
+          - id: internal-tickets
+            uri: ${TICKET_SERVICE_URL:http://localhost:3002}
+            predicates:
+              - Path=/internal/**
 
 server:
   port: ${PORT:3001}
@@ -136,14 +140,8 @@ spring:
       on-profile: prod
   data:
     redis:
-      cluster:
-        nodes:
-          - redis-cluster-0.redis-cluster:6379
-          - redis-cluster-1.redis-cluster:6379
-          - redis-cluster-2.redis-cluster:6379
-        max-redirects: 3
-      lettuce:
-        cluster:
-          refresh:
-            adaptive: true
-            period: 30s
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      ssl:
+        enabled: true

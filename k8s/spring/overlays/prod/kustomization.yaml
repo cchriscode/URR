@@ -22,6 +22,7 @@ resources:
   - rollouts/payment-service.yaml
   - rollouts/queue-service.yaml
   - network-policy-egress.yaml
+  - init-databases.yaml
 
 configMapGenerator:
   - name: spring-prod-config

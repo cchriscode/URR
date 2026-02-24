@@ -399,9 +399,28 @@ Tier 1 통과한 사용자 (urr-vwr-token 쿠키 보유)
 
 각 단계를 통과할 때마다 별도의 JWT 토큰이 발급된다 (`urr-vwr-token`, `urr-entry-token`). 하나의 토큰에 tier 값을 넣어 업그레이드하는 방식도 가능하지만, 2개를 분리한 이유:
 
-- **만료 독립성**: VWR 토큰은 30분, 예매 토큰은 10분처럼 다르게 설정 가능. 예매 시간이 초과되면 예매 대기열(Tier 2)만 다시 서면 되고, VWR(Tier 1)은 다시 안 서도 된다. 토큰이 1개면 만료 시 VWR부터 다시 서야 한다.
+- **만료 독립성**: VWR 토큰은 10분, 예매 토큰도 10분이지만 독립적으로 설정 가능하다. 예매 시간이 초과되면 예매 대기열(Tier 2)만 다시 서면 되고, VWR(Tier 1)은 다시 안 서도 된다. 토큰이 1개면 만료 시 VWR부터 다시 서야 한다.
 - **시스템 분리**: VWR(서버리스)과 Queue(Redis)는 완전히 독립된 시스템이다. 토큰도 분리하면 시크릿, 발급 로직, 장애 범위가 서로 영향을 주지 않는다.
 - **보안**: 하나가 탈취되어도 나머지는 안전하다. 시크릿 키를 다르게 설정할 수 있다.
+
+**토큰 & TTL 타임라인:**
+
+| 항목 | TTL | 설정 위치 |
+|------|-----|-----------|
+| Tier 1 VWR 토큰 (`urr-vwr-token`) | 10분 | `lambda/vwr-api/lib/token.js` (`exp: now + 600`) |
+| Tier 2 Entry 토큰 (`urr-entry-token`) | 10분 | `queue-service` (`queue.entry-token.ttl-seconds:600`) |
+| Redis 활성 유저 TTL | 10분 | `queue-service` (`QUEUE_ACTIVE_TTL_SECONDS:600`) |
+| Redis 좌석 락 | 7분 | `ticket-service` (`seat-lock.ttl-seconds:420`) |
+| DynamoDB 대기열 레코드 | 24시간 | `lambda/vwr-api/lib/dynamo.js` (`ttl: now + 86400`) |
+| 쿠키 max-age (프론트) | 10분 | `vwr-modal.tsx`, `queue/page.tsx` (`max-age=600`) |
+
+```
+0분   VWR 입장 → Tier 1 토큰 발급 (10분 유효)
+~1분  Queue 입장 → Tier 2 Entry 토큰 발급 (10분 유효)
+~2분  좌석 선택 → Redis 좌석 락 (7분 유효)
+~5분  결제 완료
+10분  토큰 만료 → 이후 보호 API 접근 불가
+```
 
 ---
 

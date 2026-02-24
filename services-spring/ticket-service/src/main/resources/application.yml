@@ -118,10 +118,16 @@ spring:
   config:
     activate:
       on-profile: prod
+  kafka:
+    properties:
+      security.protocol: SASL_SSL
+      sasl.mechanism: AWS_MSK_IAM
+      sasl.jaas.config: software.amazon.msk.auth.iam.IAMLoginModule required;
+      sasl.client.callback.handler.class: software.amazon.msk.auth.iam.IAMClientCallbackHandler
   data:
     redis:
-      cluster:
-        nodes: ${REDIS_CLUSTER_NODES:}
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
       ssl:
         enabled: true

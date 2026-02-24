@@ -100,7 +100,7 @@ resource "aws_cloudfront_distribution" "main" {
     }
 
     custom_header {
-      name  = "X-Custom-Header"
+      name  = "X-CloudFront-Verified"
       value = var.cloudfront_custom_header_value
     }
   }

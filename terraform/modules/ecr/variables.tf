@@ -7,14 +7,14 @@ variable "service_names" {
   description = "List of service names to create repositories for"
   type        = list(string)
   default = [
-    "gateway-service",
-    "auth-service",
-    "ticket-service",
-    "payment-service",
-    "queue-service",
-    "stats-service",
-    "catalog-service",
-    "community-service",
+    "gateway",
+    "auth",
+    "ticket",
+    "payment",
+    "queue",
+    "stats",
+    "catalog",
+    "community",
     "frontend",
   ]
 }

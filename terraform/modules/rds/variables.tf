@@ -64,7 +64,7 @@ variable "database_name" {
 variable "additional_databases" {
   description = "List of additional database names (e.g., ['stats_db']). These must be created post-deployment via Flyway or init scripts."
   type        = list(string)
-  default     = ["auth_db", "payment_db", "stats_db", "community_db"]
+  default     = ["auth_db", "payment_db", "stats_db", "catalog_db", "community_db"]
 }
 
 variable "master_username" {

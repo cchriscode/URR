@@ -31,10 +31,6 @@ spec:
               value: "http://catalog-service:3009"
             - name: COMMUNITY_SERVICE_URL
               value: "http://community-service:3008"
-            - name: REDIS_HOST
-              value: "dragonfly-spring"
-            - name: REDIS_PORT
-              value: "6379"
             - name: ZIPKIN_ENDPOINT
               value: "http://zipkin-spring:9411/api/v2/spans"
             - name: CLOUDFRONT_SECRET
@@ -105,12 +101,6 @@ spec:
                   key: TICKET_DB_URL
             - name: AUTH_SERVICE_URL
               value: "http://auth-service:3005"
-            - name: REDIS_HOST
-              value: "dragonfly-spring"
-            - name: REDIS_PORT
-              value: "6379"
-            - name: KAFKA_BOOTSTRAP_SERVERS
-              value: "kafka-spring:9092"
             - name: ZIPKIN_ENDPOINT
               value: "http://zipkin-spring:9411/api/v2/spans"
             - name: TRACING_SAMPLING_PROBABILITY
@@ -142,8 +132,6 @@ spec:
                   key: PAYMENT_DB_URL
             - name: TICKET_SERVICE_URL
               value: "http://ticket-service:3002"
-            - name: KAFKA_BOOTSTRAP_SERVERS
-              value: "kafka-spring:9092"
             - name: ZIPKIN_ENDPOINT
               value: "http://zipkin-spring:9411/api/v2/spans"
             - name: TRACING_SAMPLING_PROBABILITY
@@ -173,8 +161,6 @@ spec:
                 configMapKeyRef:
                   name: spring-prod-config
                   key: STATS_DB_URL
-            - name: KAFKA_BOOTSTRAP_SERVERS
-              value: "kafka-spring:9092"
             - name: ZIPKIN_ENDPOINT
               value: "http://zipkin-spring:9411/api/v2/spans"
             - name: TRACING_SAMPLING_PROBABILITY
@@ -201,10 +187,6 @@ spec:
               value: "prod"
             - name: TICKET_SERVICE_URL
               value: "http://ticket-service:3002"
-            - name: REDIS_HOST
-              value: "dragonfly-spring"
-            - name: REDIS_PORT
-              value: "6379"
             - name: ZIPKIN_ENDPOINT
               value: "http://zipkin-spring:9411/api/v2/spans"
             - name: SQS_ENABLED
@@ -282,19 +264,15 @@ spec:
               value: "3009"
             - name: SPRING_PROFILES_ACTIVE
               value: "prod"
-            - name: TICKET_DB_URL
+            - name: CATALOG_DB_URL
               valueFrom:
                 configMapKeyRef:
                   name: spring-prod-config
-                  key: TICKET_DB_URL
+                  key: CATALOG_DB_URL
             - name: AUTH_SERVICE_URL
               value: "http://auth-service:3005"
-            - name: REDIS_HOST
-              value: "dragonfly-spring"
-            - name: REDIS_PORT
-              value: "6379"
-            - name: KAFKA_BOOTSTRAP_SERVERS
-              value: "kafka-spring:9092"
+            - name: TICKET_SERVICE_URL
+              value: "http://ticket-service:3002"
             - name: ZIPKIN_ENDPOINT
               value: "http://zipkin-spring:9411/api/v2/spans"
             - name: TRACING_SAMPLING_PROBABILITY

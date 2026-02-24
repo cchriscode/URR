@@ -52,6 +52,14 @@ variable "enable_http_listener" {
   default     = true
 }
 
+# Internal Access (Lambda Worker)
+
+variable "lambda_worker_security_group_id" {
+  description = "Security group ID for Lambda worker (allows internal access to ALB)"
+  type        = string
+  default     = ""
+}
+
 # Protection
 
 variable "enable_deletion_protection" {

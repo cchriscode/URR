@@ -101,14 +101,8 @@ spring:
       on-profile: prod
   data:
     redis:
-      cluster:
-        nodes:
-          - redis-cluster-0.redis-cluster:6379
-          - redis-cluster-1.redis-cluster:6379
-          - redis-cluster-2.redis-cluster:6379
-        max-redirects: 3
-      lettuce:
-        cluster:
-          refresh:
-            adaptive: true
-            period: 30s
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      ssl:
+        enabled: true

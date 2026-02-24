@@ -53,7 +53,7 @@ origin {
   origin_id   = "alb"
 
   custom_header {
-    name  = "X-Custom-Header"
+    name  = "X-CloudFront-Verified"
     value = var.cloudfront_custom_header_value  # Use secret here
   }
 }
@@ -81,7 +81,7 @@ resource "aws_lb_listener_rule" "validate_cloudfront_header" {
 
   condition {
     http_header {
-      http_header_name = "X-Custom-Header"
+      http_header_name = "X-CloudFront-Verified"
       values           = [var.cloudfront_custom_header_value]
     }
   }
@@ -129,7 +129,7 @@ resource "aws_lb_listener_rule" "allow_cloudfront" {
 
   condition {
     http_header {
-      http_header_name = "X-Custom-Header"
+      http_header_name = "X-CloudFront-Verified"
       values           = [var.cloudfront_custom_header_value]
     }
   }
@@ -263,7 +263,7 @@ curl -v https://urr.example.com
 ```bash
 # Try ALB with correct header from different IP (should fail due to SG)
 curl -v https://urr-alb-123456.ap-northeast-2.elb.amazonaws.com \
-  -H "X-Custom-Header: <secret-value>"
+  -H "X-CloudFront-Verified: <secret-value>"
 
 # Expected: Connection timeout (SG blocks non-CloudFront IPs)
 ```

@@ -92,11 +92,7 @@ resource "aws_lambda_function" "ticket_worker" {
   environment {
     variables = merge(
       {
-        DB_PROXY_ENDPOINT     = var.db_proxy_endpoint
-        REDIS_ENDPOINT        = var.redis_endpoint
-        REDIS_PORT            = var.redis_port
-        REDIS_AUTH_TOKEN      = var.redis_auth_token
-        ENVIRONMENT           = var.environment
+        ENVIRONMENT = var.environment
       },
       var.additional_env_vars
     )
