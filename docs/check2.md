@@ -4,7 +4,7 @@ API Gateway가 auth-service로 라우팅.
 
 auth-service에서 access token + refresh token을 발급.
 
-access token은 짧게(10~15분), refresh token은 길게(7~14일) 설정
+access token은 짧게(10-15분), refresh token은 길게(7-14일) 설정
 
 access token은 서비스 접근용, refresh token은 비밀번호 없이 access token을 재발급받는 수단
 
