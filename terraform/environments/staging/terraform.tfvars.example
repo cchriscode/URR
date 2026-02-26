@@ -14,7 +14,7 @@
 # eks_node_desired_size                    = 2
 # eks_node_min_size                        = 1
 # eks_node_max_size                        = 3
-# eks_node_instance_types                  = ["t3.small"]
+# eks_node_instance_types                  = ["t4g.small"]  # Graviton ARM (CI/CD builds arm64)
 # eks_node_capacity_type                   = "SPOT"
 
 # RDS

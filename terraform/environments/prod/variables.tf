@@ -77,9 +77,9 @@ variable "eks_node_max_size" {
 }
 
 variable "eks_node_instance_types" {
-  description = "EC2 instance types for EKS node group"
+  description = "EC2 instance types for EKS node group (ARM/Graviton for arm64 CI/CD images)"
   type        = list(string)
-  default     = ["t3.medium"]
+  default     = ["t4g.medium"]
 }
 
 variable "eks_node_capacity_type" {

@@ -25,9 +25,10 @@
 15. [DynamoDB 테이블 생성](#15-dynamodb-테이블-생성)
 16. [API Gateway 생성](#16-api-gateway-생성)
 17. [WAF 설정](#17-waf-설정)
-18. [GitHub Actions CI/CD 설정](#18-github-actions-cicd-설정)
-19. [ArgoCD 설정](#19-argocd-설정)
-20. [최종 검증 및 배포](#20-최종-검증-및-배포)
+18. [AMP/AMG 모니터링 설정](#18-ampamg-모니터링-설정)
+19. [GitHub Actions CI/CD 설정](#19-github-actions-cicd-설정)
+20. [ArgoCD 설정](#20-argocd-설정)
+21. [최종 검증 및 배포](#21-최종-검증-및-배포)
 
 ---
 
@@ -44,6 +45,9 @@
 
 # Helm 3
 # https://helm.sh/docs/intro/install/
+
+# eksctl (EKS OIDC 설정에 필요)
+# https://eksctl.io/installation/
 
 # ArgoCD CLI (선택)
 # https://argo-cd.readthedocs.io/en/stable/cli_installation/
@@ -148,25 +152,55 @@ aws sts get-caller-identity --query Account --output text
 | `kubernetes.io/role/internal-elb` | `1` |
 | `kubernetes.io/cluster/urr-prod` | `shared` |
 
-### 2.4 VPC 엔드포인트 추가 생성
+### 2.4 VPC 엔드포인트 보안 그룹 생성
 
-1. VPC → 왼쪽 **엔드포인트** → **엔드포인트 생성**
+> **먼저** 엔드포인트용 보안 그룹을 생성합니다. 모든 Interface 엔드포인트가 공유합니다.
 
-**Secrets Manager 엔드포인트:**
+1. VPC → **보안 그룹** → **보안 그룹 생성**
 
 | 항목 | 값 |
 |------|---|
-| 이름 | `urr-prod-secretsmanager-endpoint` |
-| 서비스 카테고리 | AWS 서비스 |
-| 서비스 | `com.amazonaws.ap-northeast-2.secretsmanager` |
+| 이름 | `urr-prod-vpc-endpoints-sg` |
+| 설명 | Security group for VPC Interface Endpoints |
 | VPC | urr-prod-vpc |
-| 서브넷 | App 서브넷 2개 + Streaming 서브넷 2개 |
-| 보안 그룹 | (아래 3.x에서 생성 후 지정) |
-| 프라이빗 DNS 이름 활성화 | 체크 |
 
-**SQS 엔드포인트:** 동일하게 서비스만 `com.amazonaws.ap-northeast-2.sqs`로 변경
+**인바운드 규칙:**
 
-**CloudWatch Logs 엔드포인트:** 서비스 `com.amazonaws.ap-northeast-2.logs`
+| 유형 | 포트 | 소스 | 설명 |
+|------|------|------|------|
+| HTTPS | 443 | `10.0.0.0/16` (VPC CIDR) | VPC 내부 → 엔드포인트 |
+
+### 2.5 VPC 엔드포인트 추가 생성
+
+VPC → 왼쪽 **엔드포인트** → **엔드포인트 생성** — 아래 **8개**를 각각 생성:
+
+> 모든 Interface 엔드포인트 공통 설정:
+> - VPC: `urr-prod-vpc`
+> - 서브넷: **App 프라이빗 서브넷 2개**
+> - 보안 그룹: `urr-prod-vpc-endpoints-sg`
+> - 프라이빗 DNS 이름 활성화: **체크**
+
+| # | 이름 | 서비스 | 중요도 |
+|---|------|--------|--------|
+| 1 | `urr-prod-ecr-api-endpoint` | `com.amazonaws.ap-northeast-2.ecr.api` | **CRITICAL** (이미지 pull) |
+| 2 | `urr-prod-ecr-dkr-endpoint` | `com.amazonaws.ap-northeast-2.ecr.dkr` | **CRITICAL** (이미지 pull) |
+| 3 | `urr-prod-secretsmanager-endpoint` | `com.amazonaws.ap-northeast-2.secretsmanager` | 필수 |
+| 4 | `urr-prod-sqs-endpoint` | `com.amazonaws.ap-northeast-2.sqs` | 필수 |
+| 5 | `urr-prod-logs-endpoint` | `com.amazonaws.ap-northeast-2.logs` | 필수 |
+| 6 | `urr-prod-sts-endpoint` | `com.amazonaws.ap-northeast-2.sts` | 필수 (IRSA) |
+| 7 | `urr-prod-ec2-endpoint` | `com.amazonaws.ap-northeast-2.ec2` | 권장 (VPC CNI) |
+| 8 | `urr-prod-eks-endpoint` | `com.amazonaws.ap-northeast-2.eks` | 권장 |
+
+> **CRITICAL**: ECR API + DKR 엔드포인트가 없으면 프라이빗 서브넷의 EKS 노드가 컨테이너 이미지를 pull할 수 없어 Pod가 시작되지 않습니다!
+
+**DynamoDB Gateway 엔드포인트** (선택):
+
+| 항목 | 값 |
+|------|---|
+| 이름 | `urr-prod-dynamodb-endpoint` |
+| 서비스 | `com.amazonaws.ap-northeast-2.dynamodb` |
+| 유형 | **Gateway** (Interface 아님) |
+| 라우팅 테이블 | Private 라우팅 테이블 선택 |
 
 > **메모**: VPC ID, 각 서브넷 ID를 메모장에 기록해두세요. 이후 단계에서 계속 사용합니다.
 
@@ -349,6 +383,119 @@ aws sts get-caller-identity --query Account --output text
 7. 역할 이름: `urr-prod-github-actions-role` → **역할 생성**
 8. 생성된 역할의 **ARN 복사** → 메모 (GitHub Secrets에 사용)
 
+### 3.7 RDS Proxy 역할
+
+1. IAM → **역할** → **역할 생성**
+2. 신뢰 엔터티: **AWS 서비스** → **RDS**
+3. 역할 이름: `urr-prod-rds-proxy-role` → **역할 생성**
+4. 생성 후 → **신뢰 관계** 탭 → **신뢰 정책 편집**:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "rds.amazonaws.com"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+```
+
+5. **인라인 정책 추가** → JSON:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "secretsmanager:GetSecretValue",
+      "Resource": "arn:aws:secretsmanager:ap-northeast-2:*:urr-prod/rds-credentials"
+    }
+  ]
+}
+```
+6. 정책 이름: `urr-prod-rds-proxy-secrets` → **정책 생성**
+
+### 3.8 VWR Lambda 역할
+
+1. IAM → **역할** → **역할 생성**
+2. 신뢰 엔터티: **AWS 서비스** → **Lambda**
+3. 정책: `AWSLambdaBasicExecutionRole`
+4. 역할 이름: `urr-prod-vwr-lambda-role` → **역할 생성**
+5. **인라인 정책 추가** → JSON:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:UpdateItem",
+        "dynamodb:Query",
+        "dynamodb:Scan"
+      ],
+      "Resource": [
+        "arn:aws:dynamodb:ap-northeast-2:*:table/urr-prod-vwr-*",
+        "arn:aws:dynamodb:ap-northeast-2:*:table/urr-prod-vwr-*/index/*"
+      ]
+    }
+  ]
+}
+```
+6. 정책 이름: `urr-prod-vwr-dynamodb` → **정책 생성**
+
+### 3.9 AMG (Grafana) Workspace 역할
+
+1. IAM → **역할** → **역할 생성**
+2. 신뢰 엔터티: **사용자 지정 신뢰 정책**:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "grafana.amazonaws.com"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+```
+
+3. **다음** → 권한 정책 건너뛰기 → 역할 이름: `urr-prod-amg-role` → **역할 생성**
+4. **인라인 정책 추가** → JSON:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "aps:ListWorkspaces",
+        "aps:DescribeWorkspace",
+        "aps:QueryMetrics",
+        "aps:GetLabels",
+        "aps:GetSeries",
+        "aps:GetMetricMetadata"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+5. 정책 이름: `urr-prod-amg-amp-query` → **정책 생성**
+
 ---
 
 ## 4. EKS 클러스터 생성
@@ -380,6 +527,8 @@ aws sts get-caller-identity --query Account --output text
 |------|---|
 | 컨트롤 플레인 로깅 | API, 감사, 인증자, 컨트롤러 매니저, 스케줄러 **전부 활성화** |
 
+> **로그 그룹 보존기간 설정**: 클러스터 생성 후 → CloudWatch → **로그 그룹** → `/aws/eks/urr-prod/cluster` → **편집** → **보존 기간**: `30`일 (기본 무제한이므로 비용 관리를 위해 설정)
+
 **4단계: 추가 기능 (Add-on)**
 
 기본 선택된 항목 유지:
@@ -407,10 +556,13 @@ aws sts get-caller-identity --query Account --output text
 
 | 항목 | 값 |
 |------|---|
-| AMI 유형 | Amazon Linux 2 (AL2_x86_64) |
+| AMI 유형 | Amazon Linux 2 (**AL2_ARM_64**) |
 | 용량 유형 | **온디맨드** |
-| 인스턴스 유형 | `t3.medium` |
+| 인스턴스 유형 | `t4g.medium` (Graviton ARM) |
 | 디스크 크기 | `20` GiB |
+
+> **중요: ARM64 아키텍처 사용 이유**
+> CI/CD 파이프라인이 `linux/arm64` Docker 이미지를 빌드합니다. 따라서 EKS 노드도 반드시 ARM 기반(Graviton)이어야 합니다. x86_64 노드에서는 arm64 이미지가 `exec format error`로 실행 실패합니다. Graviton 인스턴스(`t4g`, `m6g`)는 x86 대비 ~20% 비용 절감 효과도 있습니다.
 
 **조정 구성:**
 
@@ -459,6 +611,375 @@ kubectl create namespace urr-staging
 kubectl create namespace argo-rollouts
 kubectl create namespace argocd
 kubectl create namespace monitoring
+```
+
+### 4.6 EKS Access Entries 설정 (클러스터 접근 권한)
+
+> **중요**: IAM 역할/사용자가 EKS 클러스터 API를 호출하려면 Access Entry 등록이 필요합니다.
+
+**방법 A: AWS 콘솔 (EKS API Access 탭)**
+
+1. EKS → `urr-prod` 클릭 → **액세스** 탭 → **IAM 액세스 항목** → **액세스 항목 생성**
+
+**본인 IAM 사용자/역할:**
+
+| 항목 | 값 |
+|------|---|
+| IAM 보안 주체 ARN | (본인 IAM 사용자 또는 역할 ARN) |
+| 유형 | **표준** |
+| 정책 이름 추가 | `AmazonEKSClusterAdminPolicy` |
+| 액세스 범위 | **클러스터** |
+
+**GitHub Actions 역할:**
+
+| 항목 | 값 |
+|------|---|
+| IAM 보안 주체 ARN | `arn:aws:iam::{ACCOUNT_ID}:role/urr-prod-github-actions-role` |
+| 유형 | **표준** |
+| 정책 이름 추가 | `AmazonEKSClusterAdminPolicy` |
+| 액세스 범위 | **클러스터** |
+
+**방법 B: aws-auth ConfigMap (CLI)**
+
+```bash
+# 현재 aws-auth 확인
+kubectl get configmap aws-auth -n kube-system -o yaml
+
+# aws-auth에 역할 매핑 추가
+kubectl edit configmap aws-auth -n kube-system
+```
+
+`mapRoles` 섹션에 추가:
+
+```yaml
+mapRoles: |
+  - rolearn: arn:aws:iam::{ACCOUNT_ID}:role/urr-prod-eks-node-role
+    username: system:node:{{EC2PrivateDNSName}}
+    groups:
+      - system:bootstrappers
+      - system:nodes
+  - rolearn: arn:aws:iam::{ACCOUNT_ID}:role/urr-prod-github-actions-role
+    username: github-actions
+    groups:
+      - system:masters
+```
+
+### 4.7 추가 IRSA 역할 생성
+
+> IRSA (IAM Roles for Service Accounts)는 K8s 서비스 계정에 AWS IAM 역할을 연결합니다.
+> EKS OIDC Provider가 필요하므로 반드시 4.4 단계 이후에 수행합니다.
+
+**OIDC Provider ID 확인:**
+
+```bash
+OIDC_ID=$(aws eks describe-cluster --name urr-prod --query "cluster.identity.oidc.issuer" --output text | cut -d '/' -f 5)
+echo $OIDC_ID
+```
+
+#### 4.7.1 VPC CNI IRSA
+
+1. IAM → **역할** → **역할 생성** → **웹 자격 증명**
+
+| 항목 | 값 |
+|------|---|
+| 자격 증명 공급자 | `oidc.eks.ap-northeast-2.amazonaws.com/id/{OIDC_ID}` |
+| Audience | `sts.amazonaws.com` |
+
+2. 신뢰 정책에 **조건 추가**:
+
+```json
+{
+  "Condition": {
+    "StringEquals": {
+      "oidc.eks.ap-northeast-2.amazonaws.com/id/{OIDC_ID}:sub": "system:serviceaccount:kube-system:aws-node",
+      "oidc.eks.ap-northeast-2.amazonaws.com/id/{OIDC_ID}:aud": "sts.amazonaws.com"
+    }
+  }
+}
+```
+
+3. 정책: `AmazonEKS_CNI_Policy`
+4. 역할 이름: `urr-prod-vpc-cni-irsa` → **역할 생성**
+5. EKS → 추가 기능 → `vpc-cni` → **편집** → 서비스 계정 역할 ARN에 이 역할 지정
+
+#### 4.7.2 EBS CSI Driver IRSA
+
+동일 과정, 다른 값:
+
+| 항목 | 값 |
+|------|---|
+| 서비스 계정 | `system:serviceaccount:kube-system:ebs-csi-controller-sa` |
+| 정책 | `AmazonEBSCSIDriverPolicy` |
+| 역할 이름 | `urr-prod-ebs-csi-irsa` |
+
+EKS → 추가 기능 → `aws-ebs-csi-driver` → **편집** → 서비스 계정 역할 ARN 지정
+
+#### 4.7.3 Karpenter Controller IRSA
+
+| 항목 | 값 |
+|------|---|
+| 서비스 계정 | `system:serviceaccount:kube-system:karpenter` |
+| 역할 이름 | `urr-prod-karpenter-controller` |
+
+인라인 정책 (JSON):
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "KarpenterEC2",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:CreateFleet",
+        "ec2:CreateLaunchTemplate",
+        "ec2:CreateTags",
+        "ec2:DeleteLaunchTemplate",
+        "ec2:DescribeAvailabilityZones",
+        "ec2:DescribeImages",
+        "ec2:DescribeInstances",
+        "ec2:DescribeInstanceTypeOfferings",
+        "ec2:DescribeInstanceTypes",
+        "ec2:DescribeLaunchTemplates",
+        "ec2:DescribeSecurityGroups",
+        "ec2:DescribeSubnets",
+        "ec2:RunInstances",
+        "pricing:GetProducts",
+        "ssm:GetParameter"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "KarpenterPassRole",
+      "Effect": "Allow",
+      "Action": "iam:PassRole",
+      "Resource": "arn:aws:iam::{ACCOUNT_ID}:role/urr-prod-eks-node-role"
+    },
+    {
+      "Sid": "ConditionalEC2Termination",
+      "Effect": "Allow",
+      "Action": "ec2:TerminateInstances",
+      "Resource": "*",
+      "Condition": {
+        "StringLike": {
+          "ec2:ResourceTag/karpenter.sh/nodepool": "*"
+        }
+      }
+    },
+    {
+      "Sid": "EKSClusterAccess",
+      "Effect": "Allow",
+      "Action": "eks:DescribeCluster",
+      "Resource": "arn:aws:eks:ap-northeast-2:{ACCOUNT_ID}:cluster/urr-prod"
+    }
+  ]
+}
+```
+
+#### 4.7.4 Prometheus Remote Write IRSA
+
+| 항목 | 값 |
+|------|---|
+| 서비스 계정 | `system:serviceaccount:monitoring:kube-prometheus-stack-prometheus` |
+| 역할 이름 | `urr-prod-prometheus-amp-irsa` |
+
+인라인 정책:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "aps:RemoteWrite",
+        "aps:GetSeries",
+        "aps:GetLabels",
+        "aps:GetMetricMetadata"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+### 4.8 AWS Load Balancer Controller 설치
+
+> **CRITICAL**: ALB 대상 그룹의 target_type이 `ip` (K8s Pod IP 직접 등록)이므로 AWS Load Balancer Controller가 반드시 필요합니다. 이것이 없으면 ALB가 K8s Pod에 트래픽을 전달할 수 없습니다.
+
+#### 4.8.1 LBC용 IRSA 역할 생성
+
+1. IAM → **역할** → **역할 생성** → **웹 자격 증명**
+
+| 항목 | 값 |
+|------|---|
+| 서비스 계정 | `system:serviceaccount:kube-system:aws-load-balancer-controller` |
+| 역할 이름 | `urr-prod-aws-lbc-irsa` |
+
+2. 인라인 정책: [AWS 공식 IAM 정책](https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/main/docs/install/iam_policy.json) 다운로드
+
+```bash
+# 정책 JSON 다운로드
+curl -o iam_policy.json https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/main/docs/install/iam_policy.json
+
+# IAM 정책 생성
+aws iam create-policy \
+  --policy-name AWSLoadBalancerControllerIAMPolicy \
+  --policy-document file://iam_policy.json
+
+# 역할에 정책 연결
+aws iam attach-role-policy \
+  --role-name urr-prod-aws-lbc-irsa \
+  --policy-arn arn:aws:iam::{ACCOUNT_ID}:policy/AWSLoadBalancerControllerIAMPolicy
+```
+
+#### 4.8.2 Helm으로 LBC 설치
+
+```bash
+# Helm 레포 추가
+helm repo add eks https://aws.github.io/eks-charts
+helm repo update
+
+# AWS Load Balancer Controller 설치
+helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
+  --namespace kube-system \
+  --set clusterName=urr-prod \
+  --set serviceAccount.create=true \
+  --set serviceAccount.name=aws-load-balancer-controller \
+  --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"=arn:aws:iam::{ACCOUNT_ID}:role/urr-prod-aws-lbc-irsa \
+  --set region=ap-northeast-2 \
+  --set vpcId={VPC_ID}
+
+# 설치 확인
+kubectl get deployment -n kube-system aws-load-balancer-controller
+```
+
+#### 4.8.3 TargetGroupBinding 생성
+
+ALB 대상 그룹에 K8s Pod IP를 자동 등록하기 위해 `TargetGroupBinding` CRD를 생성합니다.
+
+```bash
+cat <<'EOF' | kubectl apply -f -
+apiVersion: elbv2.k8s.aws/v1beta1
+kind: TargetGroupBinding
+metadata:
+  name: gateway-tgb
+  namespace: urr-spring
+spec:
+  serviceRef:
+    name: gateway-service
+    port: 3001
+  targetGroupARN: arn:aws:elasticloadbalancing:ap-northeast-2:{ACCOUNT_ID}:targetgroup/urr-prod-gateway-tg/{TG_ID}
+  targetType: ip
+---
+apiVersion: elbv2.k8s.aws/v1beta1
+kind: TargetGroupBinding
+metadata:
+  name: frontend-tgb
+  namespace: urr-spring
+spec:
+  serviceRef:
+    name: frontend-service
+    port: 3000
+  targetGroupARN: arn:aws:elasticloadbalancing:ap-northeast-2:{ACCOUNT_ID}:targetgroup/urr-prod-frontend-tg/{TG_ID}
+  targetType: ip
+EOF
+```
+
+> `{TG_ID}`: EC2 → 대상 그룹 → 각 대상 그룹 ARN에서 마지막 슬래시 뒤 ID
+
+### 4.9 Karpenter 설치 (노드 자동 스케일링)
+
+> Karpenter는 K8s Pod 수요에 따라 EC2 노드를 자동으로 프로비저닝/해제합니다.
+
+#### 4.9.1 서브넷/보안 그룹 태그 추가
+
+Karpenter가 서브넷과 보안 그룹을 자동 발견하려면 태그가 필요합니다.
+
+1. VPC → **서브넷** → App 프라이빗 서브넷 각각 선택 → **태그 관리**:
+
+| 키 | 값 |
+|---|---|
+| `karpenter.sh/discovery` | `urr-prod` |
+
+2. EKS 노드 보안 그룹에도 동일 태그 추가
+
+#### 4.9.2 Helm으로 Karpenter 설치
+
+```bash
+# Karpenter 설치
+helm install karpenter oci://public.ecr.aws/karpenter/karpenter \
+  --namespace kube-system \
+  --version 1.1.1 \
+  --set "serviceAccount.annotations.eks\.amazonaws\.com/role-arn=arn:aws:iam::{ACCOUNT_ID}:role/urr-prod-karpenter-controller" \
+  --set settings.clusterName=urr-prod \
+  --set settings.clusterEndpoint=$(aws eks describe-cluster --name urr-prod --query "cluster.endpoint" --output text) \
+  --set replicas=1
+
+# 설치 확인
+kubectl get pods -n kube-system -l app.kubernetes.io/name=karpenter
+```
+
+#### 4.9.3 NodePool + EC2NodeClass 생성
+
+```bash
+cat <<'EOF' | kubectl apply -f -
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: default
+spec:
+  template:
+    metadata:
+      labels:
+        role: karpenter
+    spec:
+      requirements:
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["arm64"]
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["on-demand", "spot"]
+        - key: node.kubernetes.io/instance-type
+          operator: In
+          values: ["t4g.medium", "t4g.large", "t4g.xlarge", "m6g.large", "m6g.xlarge"]
+      nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
+        name: default
+  limits:
+    cpu: "32"
+    memory: "64Gi"
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 60s
+---
+apiVersion: karpenter.k8s.aws/v1
+kind: EC2NodeClass
+metadata:
+  name: default
+spec:
+  amiSelectorTerms:
+    - alias: "al2023@latest"
+  subnetSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: urr-prod
+  securityGroupSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: urr-prod
+  role: urr-prod-eks-node-role
+  blockDeviceMappings:
+    - deviceName: /dev/xvda
+      ebs:
+        volumeSize: 30Gi
+        volumeType: gp3
+        deleteOnTermination: true
+EOF
+
+# 확인
+kubectl get nodepools
+kubectl get ec2nodeclasses
 ```
 
 ---
@@ -586,6 +1107,92 @@ kubectl create namespace monitoring
 
 3. 생성 완료 후 **엔드포인트** 복사 → 메모 (예: `urr-prod-postgres.xxxx.ap-northeast-2.rds.amazonaws.com`)
 
+### 5.5 RDS Read Replica 생성
+
+1. RDS → **데이터베이스** → `urr-prod-postgres` 선택 → **작업** → **읽기 전용 복제본 생성**
+
+| 항목 | 값 |
+|------|---|
+| DB 인스턴스 식별자 | `urr-prod-postgres-replica` |
+| DB 인스턴스 클래스 | `db.t3.medium` (Primary와 동일) |
+| 가용 영역 | (Primary와 다른 AZ 권장) |
+| 퍼블릭 액세스 | **아니요** |
+| VPC 보안 그룹 | `urr-prod-rds-sg` (Primary와 동일) |
+| 파라미터 그룹 | `urr-prod-postgres16` |
+| Performance Insights | **활성화** (7일) |
+| 향상된 모니터링 | **활성화** (60초, `urr-prod-rds-monitoring-role`) |
+| 스토리지 암호화 | **활성화** |
+
+2. **읽기 전용 복제본 생성** → 약 15-20분 소요
+3. Replica 엔드포인트 메모 (읽기 전용 쿼리 분산에 사용)
+
+### 5.6 RDS Proxy 생성
+
+> RDS Proxy는 데이터베이스 연결을 풀링하여 Lambda/EKS의 연결 폭주를 방지합니다.
+
+#### 5.6.1 RDS Proxy 보안 그룹 생성
+
+1. VPC → **보안 그룹** → **보안 그룹 생성**
+
+| 항목 | 값 |
+|------|---|
+| 이름 | `urr-prod-rds-proxy-sg` |
+| 설명 | RDS Proxy security group |
+| VPC | urr-prod-vpc |
+
+**인바운드 규칙:**
+
+| 유형 | 포트 | 소스 | 설명 |
+|------|------|------|------|
+| PostgreSQL | 5432 | EKS 노드 보안 그룹 | EKS → Proxy |
+| PostgreSQL | 5432 | Lambda Worker 보안 그룹 | Lambda → Proxy |
+
+2. `urr-prod-rds-sg`에 **인바운드 규칙 추가**:
+
+| 유형 | 포트 | 소스 |
+|------|------|------|
+| PostgreSQL | 5432 | `urr-prod-rds-proxy-sg` |
+
+#### 5.6.2 RDS Proxy 생성
+
+1. RDS → 왼쪽 **프록시** → **프록시 생성**
+
+| 항목 | 값 |
+|------|---|
+| 엔진 패밀리 | **PostgreSQL** |
+| 프록시 식별자 | `urr-prod-proxy` |
+| 유휴 클라이언트 연결 제한 시간 | `1800`초 |
+| TLS 필요 | **체크** |
+| IAM 역할 | `urr-prod-rds-proxy-role` |
+
+**Secrets Manager 보안 암호:**
+
+| 항목 | 값 |
+|------|---|
+| 보안 암호 | `urr-prod/rds-credentials` |
+
+**연결:**
+
+| 항목 | 값 |
+|------|---|
+| 서브넷 | App 프라이빗 서브넷 2개 (**DB 서브넷 아님!**) |
+| VPC 보안 그룹 | `urr-prod-rds-proxy-sg` |
+
+**대상 그룹 구성:**
+
+| 항목 | 값 |
+|------|---|
+| 데이터베이스 | `urr-prod-postgres` |
+| 연결 차용 제한 시간 | `120`초 |
+| 최대 연결 비율 | `100`% |
+| 유휴 연결 비율 | `50`% |
+
+2. **프록시 생성** → 약 10분 소요
+3. 생성 완료 후 **프록시 엔드포인트** 복사 → 메모
+
+> **중요**: 서비스에서 DB 접속 시 RDS 엔드포인트 대신 **Proxy 엔드포인트**를 사용하세요!
+> config.env의 `*_DB_URL`에 Proxy 엔드포인트를 입력합니다.
+
 ---
 
 ## 6. ElastiCache Redis 생성
@@ -682,6 +1289,13 @@ kubectl create namespace monitoring
 | 자동 마이너 버전 업그레이드 | 활성화 |
 
 | 파라미터 그룹 | `urr-prod-redis7` |
+
+**로그:**
+
+| 항목 | 값 |
+|------|---|
+| Slow 로그 전달 | **CloudWatch Logs** → `/aws/elasticache/urr-prod-redis/slow-log` |
+| 엔진 로그 전달 | **CloudWatch Logs** → `/aws/elasticache/urr-prod-redis/engine-log` |
 
 2. **생성** → 약 10분 소요
 3. 생성 완료 후 **기본 엔드포인트** 복사 → 메모
@@ -782,6 +1396,36 @@ log.retention.bytes=-1
 
 2. **클러스터 생성** → **약 20-30분 소요**
 3. 생성 완료 후 **클라이언트 정보 보기** → **부트스트랩 서버** 복사 (IAM 인증 엔드포인트)
+
+### 7.4 MSK 로그 그룹 보존기간
+
+CloudWatch → **로그 그룹** → `/aws/msk/urr-prod` → **편집** → **보존 기간**: `14`일
+
+### 7.5 MSK CloudWatch 알람
+
+1. CloudWatch → **알람** → **알람 생성**
+
+**알람 1: 활성 컨트롤러 없음**
+
+| 항목 | 값 |
+|------|---|
+| 지표 네임스페이스 | `AWS/Kafka` |
+| 지표 이름 | `ActiveControllerCount` |
+| 통계 | 합계 |
+| 기간 | `300`초 |
+| 조건 | 보다 작음: `1` |
+| 평가 기간 | 1/1 |
+| 알람 이름 | `urr-prod-msk-no-active-controller` |
+| 알람 작업 | (SNS 토픽 또는 건너뛰기) |
+
+**알람 2: 오프라인 파티션**
+
+| 항목 | 값 |
+|------|---|
+| 지표 이름 | `OfflinePartitionsCount` |
+| 통계 | 합계 |
+| 조건 | 보다 큼: `0` |
+| 알람 이름 | `urr-prod-msk-offline-partitions` |
 
 ---
 
@@ -889,6 +1533,28 @@ log.retention.bytes=-1
   }
 ]
 ```
+
+### 9.2 S3 수명 주기 규칙
+
+버킷 선택 → **관리** 탭 → **수명 주기 규칙 생성**
+
+**규칙 1: 이전 버전 정리**
+
+| 항목 | 값 |
+|------|---|
+| 이름 | `cleanup-old-versions` |
+| 범위 | 전체 버킷에 적용 |
+| 규칙 작업 | **비현재 버전의 객체를 영구적으로 삭제** 체크 |
+| 비현재 객체 유지 일수 | `30`일 |
+
+**규칙 2: 미완료 멀티파트 업로드 정리**
+
+| 항목 | 값 |
+|------|---|
+| 이름 | `abort-incomplete-multipart` |
+| 범위 | 전체 버킷에 적용 |
+| 규칙 작업 | **만료된 객체 삭제 마커 또는 불완전한 멀티파트 업로드 삭제** 체크 |
+| 불완전한 멀티파트 업로드 삭제 일수 | `7`일 |
 
 ---
 
@@ -1024,6 +1690,34 @@ openssl rand -hex 32
 }
 ```
 
+### 11.4 SQS CloudWatch 알람
+
+CloudWatch → **알람** → **알람 생성**
+
+**알람 1: DLQ 메시지 도착 (장애 감지)**
+
+| 항목 | 값 |
+|------|---|
+| 지표 네임스페이스 | `AWS/SQS` |
+| 지표 이름 | `ApproximateNumberOfMessagesVisible` |
+| 대기열 이름 | `urr-prod-ticket-events-dlq.fifo` |
+| 통계 | 합계 |
+| 기간 | `300`초 |
+| 조건 | 보다 큼: `0` |
+| 평가 기간 | 1/1 |
+| 알람 이름 | `urr-prod-sqs-dlq-has-messages` |
+| 누락 데이터 처리 | notBreaching |
+
+**알람 2: 메시지 체류 시간 초과**
+
+| 항목 | 값 |
+|------|---|
+| 지표 이름 | `ApproximateAgeOfOldestMessage` |
+| 대기열 이름 | `urr-prod-ticket-events.fifo` |
+| 통계 | 최대값 |
+| 조건 | 보다 큼: `600` (10분, 초 단위) |
+| 알람 이름 | `urr-prod-sqs-message-age-high` |
+
 ---
 
 ## 12. ALB 생성
@@ -1041,9 +1735,12 @@ openssl rand -hex 32
 
 | 유형 | 포트 | 소스 | 설명 |
 |------|------|------|------|
-| HTTPS | 443 | `0.0.0.0/0` (또는 CloudFront prefix list) | HTTPS 트래픽 |
-| HTTP | 80 | `0.0.0.0/0` | HTTP→HTTPS 리다이렉트용 |
+| HTTPS | 443 | **관리형 접두사 목록** → `com.amazonaws.global.cloudfront.origin-facing` | CloudFront만 허용 (권장) |
+| HTTP | 80 | **관리형 접두사 목록** → `com.amazonaws.global.cloudfront.origin-facing` | HTTP 트래픽 |
 
+> **보안 권장**: `0.0.0.0/0` 대신 **CloudFront 관리형 접두사 목록**을 사용하면 ALB에 직접 접근을 차단하여 WAF 우회를 방지합니다.
+> 소스 선택 시 → **관리형 접두사 목록** 탭 → `com.amazonaws.global.cloudfront.origin-facing` 선택
+>
 > **도메인 없이 테스트**: HTTP 80만 열어도 됩니다. CloudFront가 HTTP로 연결하므로.
 
 **아웃바운드 규칙:**
@@ -1125,14 +1822,27 @@ openssl rand -hex 32
 
 **리스너:**
 
-**도메인 없이 테스트하는 경우 (HTTP만):**
+---
+
+**A. 도메인 있는 경우 (프로덕션 — HTTPS + HTTP→HTTPS 리다이렉트):**
+
+> **사전 조건**: ACM 인증서가 ap-northeast-2에 발급 완료되어야 합니다 (섹션 12.5 참조).
 
 | 리스너 | 포트 | 기본 작업 |
 |--------|------|----------|
-| HTTP | 80 | 전달 → `urr-prod-frontend-tg` |
+| HTTPS | 443 | 전달 → `urr-prod-frontend-tg` |
+| HTTP | 80 | 리디렉션 → HTTPS:443 (301) |
 
-**리스너 규칙 추가** (ALB 생성 후):
-- ALB 선택 → **리스너** 탭 → HTTP:80 리스너 클릭 → **규칙** 탭 → **규칙 추가**
+**HTTPS 리스너 설정:**
+
+| 항목 | 값 |
+|------|---|
+| 보안 정책 | `ELBSecurityPolicy-TLS13-1-2-2021-06` |
+| 기본 SSL/TLS 인증서 | ACM 인증서 선택 (ap-northeast-2 리전) |
+
+**HTTPS 리스너 규칙 추가** (ALB 생성 후):
+
+ALB 선택 → **리스너** 탭 → HTTPS:443 리스너 클릭 → **규칙** → **규칙 추가**
 
 **규칙 1:**
 
@@ -1152,7 +1862,85 @@ openssl rand -hex 32
 | 조건 | 경로 패턴: `/internal/*` |
 | 작업 | 전달: `urr-prod-gateway-tg` |
 
+---
+
+**B. 도메인 없이 테스트하는 경우 (HTTP만):**
+
+| 리스너 | 포트 | 기본 작업 |
+|--------|------|----------|
+| HTTP | 80 | 전달 → `urr-prod-frontend-tg` |
+
+**HTTP 리스너 규칙 추가** (동일한 규칙):
+
+| 이름 | 우선 순위 | 조건 | 작업 |
+|------|----------|------|------|
+| `api-to-gateway` | `100` | `/api/*` | 전달: `urr-prod-gateway-tg` |
+| `internal-to-gateway` | `99` | `/internal/*` | 전달: `urr-prod-gateway-tg` |
+
+---
+
 2. **로드 밸런서 생성** → ALB DNS 이름 복사 → 메모
+
+### 12.4 ACM 인증서 생성 (도메인 사용 시)
+
+> 도메인 없이 테스트만 하는 경우 이 섹션을 건너뛰세요.
+
+#### 12.4.1 ALB용 인증서 (ap-northeast-2)
+
+1. AWS 콘솔 → **Certificate Manager (ACM)** → **인증서 요청**
+
+| 항목 | 값 |
+|------|---|
+| 인증서 유형 | **퍼블릭 인증서 요청** |
+| 도메인 이름 | `urr.guru` |
+| 다른 이름 추가 | `*.urr.guru` |
+| 검증 방법 | **DNS 검증** |
+
+2. **요청** 클릭 → 인증서 상세 → **Route 53에서 레코드 생성** 클릭 (Route53 존이 있는 경우)
+3. DNS 검증 완료까지 대기 (수 분 ~ 최대 30분)
+4. 상태가 **발급됨**이 되면 ARN 복사 → 메모
+
+#### 12.4.2 CloudFront용 인증서 (us-east-1)
+
+> **중요**: CloudFront는 반드시 **us-east-1 (버지니아 북부)** 리전의 인증서만 사용 가능!
+
+1. **리전을 us-east-1로 변경**
+2. ACM → **인증서 요청** (동일한 도메인/와일드카드)
+3. DNS 검증 (Route53이면 자동, 아니면 CNAME 수동 추가)
+4. 발급 후 ARN 복사 → 메모
+5. **리전을 다시 ap-northeast-2로 돌리기!**
+
+### 12.5 Route53 호스트 영역 생성 (도메인 사용 시)
+
+> 도메인 없이 테스트만 하는 경우 이 섹션을 건너뛰세요.
+
+1. AWS 콘솔 → **Route 53** → **호스트 영역** → **호스트 영역 생성**
+
+| 항목 | 값 |
+|------|---|
+| 도메인 이름 | `urr.guru` |
+| 유형 | **퍼블릭 호스트 영역** |
+
+2. **호스트 영역 생성** 클릭
+3. **NS 레코드 4개** 복사 → **GoDaddy에서 네임서버 변경** (NS 전파 최대 48시간)
+4. NS 전파 후 → **레코드 생성**:
+
+**A 레코드 (루트 도메인):**
+
+| 항목 | 값 |
+|------|---|
+| 레코드 이름 | (비워둠 = `urr.guru`) |
+| 레코드 유형 | **A** |
+| 별칭 | **예** |
+| 트래픽 라우팅 대상 | **CloudFront 배포에 대한 별칭** → 배포 도메인 선택 |
+
+**A 레코드 (www):**
+
+| 항목 | 값 |
+|------|---|
+| 레코드 이름 | `www` |
+| 레코드 유형 | **A** |
+| 별칭 → 대상 | 동일 CloudFront 배포 |
 
 ---
 
@@ -1198,12 +1986,87 @@ openssl rand -hex 32
 | 뷰어 프로토콜 정책 | **HTTP와 HTTPS로 리디렉션** |
 | 허용된 HTTP 메서드 | **GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE** |
 | 캐시 키 및 원본 요청 | **캐시 정책 및 원본 요청 정책** |
-| 캐시 정책 | **CachingDisabled** (또는 사용자 지정) |
+| 캐시 정책 | `urr-prod-frontend-ssr` (아래에서 생성) 또는 **CachingDisabled** |
 | 원본 요청 정책 | **AllViewer** |
+| 응답 헤더 정책 | `urr-prod-security-headers` |
 
 2. **배포 생성** 클릭
 
-### 13.3 추가 캐시 동작 생성
+### 13.2a 커스텀 캐시 정책 생성 (선택 — 성능 최적화)
+
+> 기본 **CachingDisabled**로도 동작하지만, 아래 커스텀 정책을 생성하면 성능이 향상됩니다.
+
+CloudFront → **정책** → **캐시** 탭 → **캐시 정책 생성**
+
+**정책 1: Frontend SSR 캐시** (기본 동작용)
+
+| 항목 | 값 |
+|------|---|
+| 이름 | `urr-prod-frontend-ssr` |
+| 최소 TTL | `0` |
+| 기본 TTL | `0` |
+| 최대 TTL | `60` |
+| 압축 지원 | Gzip ✅, Brotli ✅ |
+| 캐시 키 쿠키 | **모두** |
+| 캐시 키 헤더 | **허용 목록**: `Authorization`, `Host` |
+| 캐시 키 쿼리 문자열 | **모두** |
+
+**정책 2: API 캐시 (캐싱 없음)** (`/api/*` 동작용)
+
+| 항목 | 값 |
+|------|---|
+| 이름 | `urr-prod-api-no-cache` |
+| 최소/기본/최대 TTL | 전부 `0` |
+| 압축 지원 | Gzip ✅, Brotli ✅ |
+| 캐시 키 쿠키 | **모두** |
+| 캐시 키 헤더 | **허용 목록**: `Authorization`, `CloudFront-Viewer-Country`, `Host` |
+| 캐시 키 쿼리 문자열 | **모두** |
+
+**정책 3: VWR 정적 캐시** (`/vwr/*` 동작용)
+
+| 항목 | 값 |
+|------|---|
+| 이름 | `urr-prod-vwr-static` |
+| 최소 TTL | `0` |
+| 기본 TTL | `300` (5분) |
+| 최대 TTL | `3600` (1시간) |
+| 압축 지원 | Gzip ✅, Brotli ✅ |
+| 캐시 키 쿠키/헤더/쿼리 | **없음** (정적 파일) |
+
+### 13.3 보안 응답 헤더 정책 생성
+
+배포 전에 보안 헤더 정책을 먼저 생성합니다.
+
+1. CloudFront → 왼쪽 **정책** → **응답 헤더** 탭 → **응답 헤더 정책 생성**
+
+| 항목 | 값 |
+|------|---|
+| 이름 | `urr-prod-security-headers` |
+
+**보안 헤더:**
+
+| 헤더 | 값 | 재정의 |
+|------|---|--------|
+| Strict-Transport-Security (HSTS) | `max-age=31536000; includeSubDomains; preload` | 예 |
+| X-Content-Type-Options | `nosniff` | 예 |
+| X-Frame-Options | `DENY` | 예 |
+| X-XSS-Protection | `1; mode=block` | 예 |
+| Referrer-Policy | `strict-origin-when-cross-origin` | 예 |
+
+**CORS:**
+
+| 항목 | 값 |
+|------|---|
+| Access-Control-Allow-Credentials | `true` |
+| Access-Control-Allow-Headers | `*` |
+| Access-Control-Allow-Methods | 전체 |
+| Access-Control-Allow-Origin | `*` (또는 특정 도메인) |
+| Access-Control-Max-Age | `3600` |
+| 원본 재정의 | 아니요 |
+
+2. **정책 생성**
+
+### 13.4 추가 캐시 동작 생성
 
 배포 클릭 → **동작** 탭 → **동작 생성**
 
@@ -1217,6 +2080,7 @@ openssl rand -hex 32
 | HTTP 메서드 | GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE |
 | 캐시 정책 | **CachingDisabled** |
 | 원본 요청 정책 | **AllViewer** |
+| 응답 헤더 정책 | `urr-prod-security-headers` |
 
 **동작 2: /_next/static/***
 
@@ -1238,6 +2102,88 @@ openssl rand -hex 32
 | OAC | `urr-prod-s3-oac` |
 
 > S3 버킷 정책을 업데이트하라는 배너 뜸 → **정책 복사** → S3 버킷 정책에 붙여넣기
+
+### 13.5 CloudFront Functions 생성
+
+> CloudFront Functions는 Lambda@Edge보다 가볍고, URL 재작성에 사용됩니다.
+
+#### 13.5.1 VWR 페이지 리라이트 함수
+
+1. CloudFront → 왼쪽 **함수** → **함수 생성**
+
+| 항목 | 값 |
+|------|---|
+| 이름 | `urr-prod-vwr-page-rewrite` |
+| 설명 | Rewrites /vwr/{eventId} to /vwr/index.html for S3 static page |
+| 런타임 | **cloudfront-js-2.0** |
+
+2. **함수 코드**에 입력:
+
+```javascript
+function handler(event) {
+  var request = event.request;
+  request.uri = '/vwr/index.html';
+  return request;
+}
+```
+
+3. **변경 사항 저장** → **게시** 탭 → **함수 게시**
+
+#### 13.5.2 VWR API 리라이트 함수
+
+동일 방법으로 생성:
+
+| 항목 | 값 |
+|------|---|
+| 이름 | `urr-prod-vwr-api-rewrite` |
+| 설명 | Strips /vwr-api prefix before forwarding to API Gateway |
+
+코드:
+
+```javascript
+function handler(event) {
+  var request = event.request;
+  request.uri = request.uri.replace(/^\/vwr-api/, '');
+  if (request.uri === '') request.uri = '/';
+  return request;
+}
+```
+
+**게시** 후 → 배포에 연결합니다.
+
+#### 13.5.3 CloudFront에 VWR 동작 + 함수 연결
+
+배포 → **동작** 탭 → **동작 생성**
+
+**동작: /vwr/***
+
+| 항목 | 값 |
+|------|---|
+| 경로 패턴 | `/vwr/*` |
+| 원본 | S3 원본 (urr-prod-frontend-assets) |
+| 뷰어 프로토콜 | HTTPS로 리디렉션 |
+| 캐시 정책 | 사용자 지정 (TTL: 기본 300초, 최대 3600초) |
+| **함수 연결** → 뷰어 요청 | **CloudFront Functions** → `urr-prod-vwr-page-rewrite` |
+
+**동작: /vwr-api/*** (API Gateway VWR 원본이 있을 때)
+
+| 항목 | 값 |
+|------|---|
+| 경로 패턴 | `/vwr-api/*` |
+| 원본 | API Gateway 원본 (아래 추가) |
+| 뷰어 프로토콜 | HTTPS로 리디렉션 |
+| 캐시 정책 | **CachingDisabled** |
+| **함수 연결** → 뷰어 요청 | **CloudFront Functions** → `urr-prod-vwr-api-rewrite` |
+
+### 13.6 VWR API Gateway 원본 추가
+
+배포 → **원본** 탭 → **원본 생성**
+
+| 항목 | 값 |
+|------|---|
+| 원본 도메인 | `{API_GATEWAY_ID}.execute-api.ap-northeast-2.amazonaws.com` |
+| 프로토콜 | **HTTPS만** |
+| 원본 경로 | `/v1` (API Gateway 스테이지) |
 
 3. CloudFront 도메인 이름 복사 → 메모 (예: `d1234abcd.cloudfront.net`)
 
@@ -1322,6 +2268,9 @@ VPC → 보안 그룹 → 보안 그룹 생성
 | 배치 크기 | `10` |
 | 배치 기간 | `5`초 |
 | 최대 동시성 | `10` |
+| 함수 응답 유형 | **ReportBatchItemFailures** 체크 |
+
+> **중요**: `ReportBatchItemFailures`를 활성화하지 않으면 배치 내 1개 메시지 실패 시 **전체 배치가 재처리**됩니다.
 
 3. **코드 업로드**: `lambda/ticket-worker/` 디렉토리를 zip → 업로드
 
@@ -1330,6 +2279,49 @@ cd lambda/ticket-worker
 zip -r ../../ticket-worker.zip .
 # Lambda 콘솔 → 코드 → .zip 파일 업로드
 ```
+
+4. **모니터링 설정** (구성 → 모니터링 및 운영 도구):
+
+| 항목 | 값 |
+|------|---|
+| X-Ray 활성 추적 | **활성화** |
+
+5. **로그 그룹 보존기간**: CloudWatch → 로그 그룹 → `/aws/lambda/urr-prod-ticket-worker` → 보존 기간: `7`일
+
+### 14.1a Lambda Worker CloudWatch 알람
+
+CloudWatch → **알람** → **알람 생성**
+
+**알람 1: Lambda 에러 감지**
+
+| 항목 | 값 |
+|------|---|
+| 지표 | `AWS/Lambda` → `Errors` |
+| 차원 | FunctionName: `urr-prod-ticket-worker` |
+| 통계 | 합계 |
+| 기간 | `300`초 |
+| 조건 | 보다 큼: `5` |
+| 평가 기간 | 2/2 |
+| 알람 이름 | `urr-prod-lambda-worker-errors` |
+| 누락 데이터 | notBreaching |
+
+**알람 2: Lambda 실행 시간 과다**
+
+| 항목 | 값 |
+|------|---|
+| 지표 | `AWS/Lambda` → `Duration` |
+| 통계 | 평균 |
+| 조건 | 보다 큼: `24000` (ms, 타임아웃 30초의 80%) |
+| 알람 이름 | `urr-prod-lambda-worker-duration` |
+
+**알람 3: Lambda 스로틀 감지**
+
+| 항목 | 값 |
+|------|---|
+| 지표 | `AWS/Lambda` → `Throttles` |
+| 통계 | 합계 |
+| 조건 | 보다 큼: `0` |
+| 알람 이름 | `urr-prod-lambda-worker-throttles` |
 
 ### 14.2 Lambda@Edge (CloudFront Queue Check)
 
@@ -1351,14 +2343,134 @@ zip -r ../../ticket-worker.zip .
 | 메모리 | `128` MB |
 | 시간 초과 | `5`초 |
 
-3. `lambda/edge-queue-check/` 디렉토리를 zip → 업로드
-4. **작업** → **새 버전 게시** (Lambda@Edge는 게시 필수)
-5. 게시된 ARN 복사 (`:1` 포함된 qualified ARN)
+3. **코드 패키징 전 config.json 생성** (CRITICAL):
+
+> Lambda@Edge는 환경 변수를 사용할 수 없으므로, 설정을 config.json 파일에 포함시켜야 합니다!
+
+```bash
+# lambda/edge-queue-check/ 디렉토리에 config.json 생성
+cat > lambda/edge-queue-check/config.json << 'EOF'
+{
+  "queueEntryTokenSecret": "{QUEUE_ENTRY_TOKEN_SECRET}",
+  "vwrApiEndpoint": "{API_GATEWAY_INVOKE_URL}",
+  "cookieName": "urr_queue_token"
+}
+EOF
+
+# vwr-active.json 생성 (현재 대기열 활성 이벤트 목록)
+cat > lambda/edge-queue-check/vwr-active.json << 'EOF'
+{
+  "activeEvents": []
+}
+EOF
+```
+
+> `{QUEUE_ENTRY_TOKEN_SECRET}`: Secrets Manager의 queue-entry-token-secret 값
+> `{API_GATEWAY_INVOKE_URL}`: API Gateway 호출 URL
+
+4. zip 패키징 후 업로드:
+
+```bash
+cd lambda/edge-queue-check
+zip -r ../../edge-queue-check.zip .
+# Lambda 콘솔 → 코드 → .zip 파일 업로드
+```
+
+5. **작업** → **새 버전 게시** (Lambda@Edge는 게시 필수)
+6. 게시된 ARN 복사 (`:1` 포함된 qualified ARN)
 
 6. **리전을 다시 ap-northeast-2로 돌리기!**
 
 7. CloudFront → 배포 → 동작 → `/api/*` 동작 편집:
    - **함수 연결** → **Lambda@Edge** → **뷰어 요청** → 게시된 ARN 입력
+
+### 14.3 VWR Lambda 함수 생성
+
+#### 14.3.1 VWR API 함수 (Tier 1 대기열 API)
+
+1. Lambda → **함수 생성** (리전: ap-northeast-2)
+
+| 항목 | 값 |
+|------|---|
+| 함수 이름 | `urr-prod-vwr-api` |
+| 런타임 | Node.js 20.x |
+| 아키텍처 | x86_64 |
+| 실행 역할 | `urr-prod-vwr-lambda-role` |
+
+2. **구성** 탭:
+
+**일반 구성:**
+
+| 항목 | 값 |
+|------|---|
+| 메모리 | `256` MB |
+| 시간 초과 | `10`초 |
+
+**환경 변수:**
+
+| 키 | 값 |
+|---|---|
+| `TABLE_COUNTERS` | `urr-prod-vwr-counters` |
+| `TABLE_POSITIONS` | `urr-prod-vwr-positions` |
+| `VWR_TOKEN_SECRET` | (HMAC 비밀키, 64자 랜덤 문자열) |
+| `CORS_ORIGIN` | `https://{CLOUDFRONT_DOMAIN}` (또는 `*`) |
+
+**동시성:**
+
+| 항목 | 값 |
+|------|---|
+| 예약된 동시성 | `500` |
+
+3. `lambda/vwr-api/` 디렉토리를 zip → 업로드
+
+#### 14.3.2 VWR Counter Advancer 함수
+
+1. Lambda → **함수 생성**
+
+| 항목 | 값 |
+|------|---|
+| 함수 이름 | `urr-prod-vwr-counter-advancer` |
+| 런타임 | Node.js 20.x |
+| 실행 역할 | `urr-prod-vwr-lambda-role` (VWR API와 동일 역할) |
+
+2. **구성**:
+
+| 항목 | 값 |
+|------|---|
+| 메모리 | `128` MB |
+| 시간 초과 | `70`초 (내부 6회 루프 × 10초 + 여유) |
+
+**환경 변수:**
+
+| 키 | 값 |
+|---|---|
+| `TABLE_COUNTERS` | `urr-prod-vwr-counters` |
+| `BATCH_SIZE` | `500` |
+
+3. `lambda/vwr-counter-advancer/` 디렉토리를 zip → 업로드
+
+#### 14.3.3 EventBridge 스케줄러 연결
+
+1. AWS 콘솔 → **Amazon EventBridge** → **규칙** → **규칙 생성**
+
+| 항목 | 값 |
+|------|---|
+| 이름 | `urr-prod-vwr-counter-advance` |
+| 설명 | Advance VWR serving counter every 10 seconds |
+| 이벤트 버스 | default |
+| 규칙 유형 | **스케줄** |
+| 스케줄 표현식 | `rate(1 minute)` |
+
+2. **대상**:
+
+| 항목 | 값 |
+|------|---|
+| 대상 유형 | **Lambda 함수** |
+| 함수 | `urr-prod-vwr-counter-advancer` |
+
+3. **규칙 생성** 클릭
+
+> 1분 주기로 호출되고, Lambda 내부에서 10초 간격으로 6회 루프하여 실질적으로 10초마다 카운터 진행
 
 ---
 
@@ -1499,9 +2611,82 @@ zip -r ../../ticket-worker.zip .
 
 ---
 
-## 18. GitHub Actions CI/CD 설정
+## 18. AMP/AMG 모니터링 설정
 
-### 18.1 GitHub Secrets 설정
+> AMP (Amazon Managed Prometheus) + AMG (Amazon Managed Grafana)로 K8s 클러스터와 서비스를 모니터링합니다.
+
+### 18.1 Amazon Managed Prometheus (AMP) 생성
+
+1. AWS 콘솔 → 상단 검색 `Prometheus` → **Amazon Managed Service for Prometheus**
+2. **워크스페이스 생성**
+
+| 항목 | 값 |
+|------|---|
+| 별칭 | `urr-prod-amp` |
+
+3. **워크스페이스 생성** → 즉시 생성됨
+4. **원격 쓰기 엔드포인트** 복사 → 메모 (예: `https://aps-workspaces.ap-northeast-2.amazonaws.com/workspaces/ws-xxxxx/api/v1/remote_write`)
+
+### 18.2 Amazon Managed Grafana (AMG) 생성
+
+> **사전 조건**: AWS IAM Identity Center (SSO) 활성화 필요
+
+1. AWS 콘솔 → 검색 `Grafana` → **Amazon Managed Grafana**
+2. **워크스페이스 생성**
+
+| 항목 | 값 |
+|------|---|
+| 이름 | `urr-prod-grafana` |
+| 인증 | **AWS IAM Identity Center (SSO)** |
+| 권한 유형 | **서비스 관리형** |
+| IAM 역할 | `urr-prod-amg-role` |
+| 데이터 소스 | **Amazon Managed Service for Prometheus** 체크 |
+| 플러그인 관리 | **활성화** |
+
+3. **워크스페이스 생성** → 약 5분 소요
+4. 생성 후 → **사용자 할당** → SSO 사용자/그룹을 **Admin**으로 할당
+5. Grafana URL 메모 (예: `https://g-xxxxx.grafana-workspace.ap-northeast-2.amazonaws.com`)
+
+### 18.3 Prometheus 스택 설치 (EKS에서)
+
+```bash
+# kube-prometheus-stack Helm 레포 추가
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo update
+
+# 설치 (IRSA 역할 연결 + AMP 원격 쓰기)
+helm install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+  --namespace monitoring \
+  --set prometheus.serviceAccount.annotations."eks\.amazonaws\.com/role-arn"=arn:aws:iam::{ACCOUNT_ID}:role/urr-prod-prometheus-amp-irsa \
+  --set prometheus.prometheusSpec.remoteWrite[0].url={AMP_REMOTE_WRITE_ENDPOINT} \
+  --set prometheus.prometheusSpec.remoteWrite[0].sigv4.region=ap-northeast-2 \
+  --set prometheus.prometheusSpec.remoteWrite[0].queueConfig.maxSamplesPerSend=1000 \
+  --set prometheus.prometheusSpec.remoteWrite[0].queueConfig.maxShards=200 \
+  --set prometheus.prometheusSpec.remoteWrite[0].queueConfig.capacity=2500
+
+# 확인
+kubectl get pods -n monitoring
+```
+
+### 18.4 Grafana에 AMP 데이터 소스 연결
+
+1. Grafana URL 접속 → 로그인
+2. 왼쪽 **Configuration** (⚙️) → **Data Sources** → **Add data source**
+3. **Prometheus** 선택
+
+| 항목 | 값 |
+|------|---|
+| URL | AMP 쿼리 엔드포인트 (예: `https://aps-workspaces.ap-northeast-2.amazonaws.com/workspaces/ws-xxxxx`) |
+| Auth | **SigV4 auth** 활성화 |
+| Default Region | `ap-northeast-2` |
+
+4. **Save & test** → 성공 확인
+
+---
+
+## 19. GitHub Actions CI/CD 설정
+
+### 19.1 GitHub Secrets 설정
 
 1. GitHub → 레포지토리 (`cchriscode/URR`) → **Settings** → 왼쪽 **Secrets and variables** → **Actions**
 
@@ -1513,7 +2698,7 @@ zip -r ../../ticket-worker.zip .
 | `AWS_ACCOUNT_ID` | `{12자리 계정 ID}` | AWS 계정 ID |
 | `DISCORD_WEBHOOK` | (Discord 웹훅 URL) | 배포 알림용 |
 
-### 18.2 GitHub Variables 설정
+### 19.2 GitHub Variables 설정
 
 **Repository variables** 탭 → **New repository variable**:
 
@@ -1521,7 +2706,7 @@ zip -r ../../ticket-worker.zip .
 |------|---|
 | `STAGING_URL` | `https://d1234abcd.cloudfront.net` (CloudFront 도메인) |
 
-### 18.3 GitHub Environment 설정
+### 19.3 GitHub Environment 설정
 
 1. Settings → **Environments** → **New environment**
 
@@ -1534,7 +2719,7 @@ zip -r ../../ticket-worker.zip .
 
 > 이렇게 하면 `prod` 환경 배포 시 수동 승인이 필요합니다.
 
-### 18.4 워크플로 동작 확인
+### 19.4 워크플로 동작 확인
 
 워크플로는 이미 `.github/workflows/` 에 있으므로 별도 생성 불필요.
 
@@ -1547,7 +2732,7 @@ zip -r ../../ticket-worker.zip .
 **수동 트리거:**
 - Actions 탭 → 워크플로 선택 → **Run workflow** → 환경 선택 (staging/prod)
 
-### 18.5 CI/CD 파이프라인 흐름
+### 19.5 CI/CD 파이프라인 흐름
 
 ```
 코드 push (main 브랜치)
@@ -1565,9 +2750,9 @@ GitHub Actions 트리거
 
 ---
 
-## 19. ArgoCD 설정
+## 20. ArgoCD 설정
 
-### 19.1 ArgoCD 설치
+### 20.1 ArgoCD 설치
 
 ```bash
 # ArgoCD 설치
@@ -1581,13 +2766,13 @@ kubectl port-forward svc/argocd-server -n argocd 8080:443
 kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
 ```
 
-### 19.2 ArgoCD 웹 UI 접속
+### 20.2 ArgoCD 웹 UI 접속
 
 1. 브라우저에서 `https://localhost:8080` 접속
 2. **Username**: `admin`
 3. **Password**: (위에서 확인한 비밀번호)
 
-### 19.3 Git 레포지토리 연결
+### 20.3 Git 레포지토리 연결
 
 1. ArgoCD UI → 왼쪽 **Settings** (⚙️) → **Repositories** → **Connect Repo**
 
@@ -1603,7 +2788,7 @@ kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.pas
 
 2. **Connect** 클릭 → 연결 성공 확인
 
-### 19.4 ArgoCD Application 생성
+### 20.4 ArgoCD Application 생성
 
 #### 방법 A: ArgoCD UI에서 생성
 
@@ -1654,7 +2839,7 @@ spec:
 EOF
 ```
 
-### 19.5 Argo Rollouts 설치
+### 20.5 Argo Rollouts 설치
 
 ```bash
 kubectl apply -n argo-rollouts -f https://github.com/argoproj/argo-rollouts/releases/download/v1.7.2/install.yaml
@@ -1663,7 +2848,7 @@ kubectl apply -n argo-rollouts -f https://github.com/argoproj/argo-rollouts/rele
 kubectl get pods -n argo-rollouts
 ```
 
-### 19.6 ArgoCD 동작 확인
+### 20.6 ArgoCD 동작 확인
 
 ```bash
 # Application 상태 확인
@@ -1682,60 +2867,144 @@ ArgoCD UI에서:
 
 ---
 
-## 20. 최종 검증 및 배포
+## 21. 최종 검증 및 배포
 
-### 20.1 K8s Config/Secret 파일 준비
+### 21.1 kustomization.yaml 프로덕션 설정 확인
+
+배포 전 `k8s/spring/overlays/prod/kustomization.yaml`이 프로덕션에 맞게 설정되어 있는지 확인합니다.
+
+**이미 적용된 프로덕션 변경사항:**
+
+| 항목 | 변경 이유 |
+|------|-----------|
+| `kafka.yaml` 제거 | 프로덕션은 AWS MSK(관리형 Kafka)를 사용. 인클러스터 Kafka StatefulSet 불필요 |
+| `redis.yaml` 제거 | 프로덕션은 AWS ElastiCache(관리형 Redis)를 사용. 인클러스터 Redis Cluster 불필요 |
+| `zipkin.yaml` 추가 | 분산 추적을 위한 Zipkin 서버 (모든 서비스가 참조) |
+| `secretGenerator` 제거 | `secrets.env`는 `.gitignore` 대상 → ArgoCD Git 동기화 시 파일 없어서 kustomize build 실패. Secret은 수동 생성 |
+
+> **중요**: 만약 `kustomization.yaml`에 아직 `kafka.yaml`, `redis.yaml`이 있거나 `secretGenerator` 블록이 있다면, 위 표대로 수정 후 커밋하세요. 그렇지 않으면 ArgoCD 동기화가 실패하거나 불필요한 리소스가 배포됩니다.
+
+### 21.2 K8s Config/Secret 파일 준비
 
 배포 전 `config.env`와 `secrets.env`를 실제 값으로 채워야 합니다.
 
 **config.env 업데이트** (`k8s/spring/overlays/prod/config.env`):
 
-```env
-# RDS 엔드포인트 입력 (RDS 콘솔에서 복사)
-AUTH_DB_URL=jdbc:postgresql://{RDS_ENDPOINT}:5432/auth_db
-TICKET_DB_URL=jdbc:postgresql://{RDS_ENDPOINT}:5432/ticket_db
-PAYMENT_DB_URL=jdbc:postgresql://{RDS_ENDPOINT}:5432/payment_db
-STATS_DB_URL=jdbc:postgresql://{RDS_ENDPOINT}:5432/stats_db
-CATALOG_DB_URL=jdbc:postgresql://{RDS_ENDPOINT}:5432/catalog_db
-COMMUNITY_DB_URL=jdbc:postgresql://{RDS_ENDPOINT}:5432/community_db
+> 실제 파일의 **모든 변수**를 빠짐없이 설정해야 합니다. `CHANGE_ME` 부분만 실제 값으로 교체하세요.
 
-# Redis 엔드포인트 (ElastiCache 콘솔에서 복사)
-REDIS_HOST={REDIS_PRIMARY_ENDPOINT}
+```env
+# === DB 연결 (RDS Proxy 엔드포인트 사용! 직접 RDS가 아닌 Proxy!) ===
+# terraform output: module.rds.rds_proxy_endpoint
+AUTH_DB_URL=jdbc:postgresql://{RDS_PROXY_ENDPOINT}:5432/auth_db
+TICKET_DB_URL=jdbc:postgresql://{RDS_PROXY_ENDPOINT}:5432/ticket_db
+PAYMENT_DB_URL=jdbc:postgresql://{RDS_PROXY_ENDPOINT}:5432/payment_db
+STATS_DB_URL=jdbc:postgresql://{RDS_PROXY_ENDPOINT}:5432/stats_db
+CATALOG_DB_URL=jdbc:postgresql://{RDS_PROXY_ENDPOINT}:5432/catalog_db
+COMMUNITY_DB_URL=jdbc:postgresql://{RDS_PROXY_ENDPOINT}:5432/community_db
+
+# === 서비스 디스커버리 (K8s 내부 DNS, 변경 불필요) ===
+AUTH_SERVICE_URL=http://auth-service:3005
+TICKET_SERVICE_URL=http://ticket-service:3002
+PAYMENT_SERVICE_URL=http://payment-service:3003
+STATS_SERVICE_URL=http://stats-service:3004
+QUEUE_SERVICE_URL=http://queue-service:3007
+COMMUNITY_SERVICE_URL=http://community-service:3008
+CATALOG_SERVICE_URL=http://catalog-service:3009
+
+# === Redis (ElastiCache 콘솔에서 복사) ===
+# terraform output: module.elasticache.primary_endpoint_address
+REDIS_HOST={ELASTICACHE_PRIMARY_ENDPOINT}
 REDIS_PORT=6379
 
-# Kafka 부트스트랩 (MSK 콘솔에서 복사)
-KAFKA_BOOTSTRAP_SERVERS={MSK_BOOTSTRAP_SERVERS}
+# === AWS 리전 ===
+AWS_REGION=ap-northeast-2
 
-# SQS
+# === 분산 추적 (Zipkin, K8s 내부) ===
+ZIPKIN_ENDPOINT=http://zipkin-spring:9411/api/v2/spans
+TRACING_SAMPLING_PROBABILITY=0.1
+
+# === SQS ===
 SQS_ENABLED=true
+# terraform output: module.sqs.queue_url
 SQS_QUEUE_URL={SQS_QUEUE_URL}
 
-# CORS (CloudFront 도메인 또는 커스텀 도메인)
-CORS_ALLOWED_ORIGINS=https://{CLOUDFRONT_DOMAIN}
+# === CORS (도메인 설정에 맞게 변경) ===
+CORS_ALLOWED_ORIGINS=https://{DOMAIN_OR_CLOUDFRONT}
+
+# === Kafka (MSK 콘솔 → 클라이언트 정보 → Bootstrap servers 복사) ===
+KAFKA_TOPIC_REPLICATION_FACTOR=2
+# terraform output: module.msk.bootstrap_brokers_tls
+KAFKA_BOOTSTRAP_SERVERS={MSK_BOOTSTRAP_SERVERS_TLS}
+
+# === 보안 ===
+COOKIE_SECURE=true
 ```
+
+> **주의**: `KAFKA_BOOTSTRAP_SERVERS`는 반드시 MSK 부트스트랩 서버 주소로 입력하세요. 기본 config.env에 있는 `kafka-spring-0.kafka-spring-headless:9092` 같은 인클러스터 주소는 MSK를 사용하는 프로덕션에서는 동작하지 않습니다.
 
 **secrets.env 생성** (`k8s/spring/overlays/prod/secrets.env`):
 
+> `secrets.env.example`을 복사하여 모든 24개 키를 채워야 합니다.
+
 ```env
-DB_HOST={RDS_ENDPOINT}
+# === RDS 마스터 계정 ===
+DB_HOST={RDS_PROXY_ENDPOINT}
 POSTGRES_USER=urr_admin
-POSTGRES_PASSWORD={RDS_비밀번호}
-REDIS_PASSWORD={REDIS_AUTH_토큰}
-JWT_SECRET={JWT_시크릿}
-QUEUE_ENTRY_TOKEN_SECRET={QUEUE_토큰_시크릿}
+POSTGRES_PASSWORD={RDS_마스터_비밀번호}
+
+# === 서비스별 DB 계정 (RDS에서 별도 생성 필요) ===
+AUTH_DB_USERNAME={auth_db_유저}
+AUTH_DB_PASSWORD={auth_db_비밀번호}
+TICKET_DB_USERNAME={ticket_db_유저}
+TICKET_DB_PASSWORD={ticket_db_비밀번호}
+PAYMENT_DB_USERNAME={payment_db_유저}
+PAYMENT_DB_PASSWORD={payment_db_비밀번호}
+STATS_DB_USERNAME={stats_db_유저}
+STATS_DB_PASSWORD={stats_db_비밀번호}
+CATALOG_DB_USERNAME={catalog_db_유저}
+CATALOG_DB_PASSWORD={catalog_db_비밀번호}
+COMMUNITY_DB_USERNAME={community_db_유저}
+COMMUNITY_DB_PASSWORD={community_db_비밀번호}
+
+# === 인증/보안 토큰 ===
+JWT_SECRET={base64_인코딩_최소_32바이트}
+INTERNAL_API_TOKEN={강력한_랜덤_토큰}
+QUEUE_ENTRY_TOKEN_SECRET={최소_32자_시크릿}
+
+# === 외부 서비스 키 ===
+TOSS_CLIENT_KEY={토스_프로덕션_클라이언트_키}
+GOOGLE_CLIENT_ID={구글_OAuth_클라이언트_ID}
+
+# === AWS 리소스 ===
+SQS_QUEUE_URL={SQS_FIFO_큐_URL}
+AWS_S3_BUCKET={S3_버킷_이름}
 CLOUDFRONT_SECRET={X-CloudFront-Verified_헤더_값}
-INTERNAL_API_TOKEN={내부_API_토큰}
+REDIS_PASSWORD={ElastiCache_AUTH_토큰}
 ```
 
-> **주의**: `secrets.env`는 `.gitignore`에 의해 git에 올라가지 않습니다. 수동으로 관리하세요.
+> **서비스별 DB 계정 생성 방법**: RDS에 접속하여 각 데이터베이스마다 전용 유저를 생성합니다:
+> ```sql
+> -- 예: auth_db 전용 유저
+> CREATE USER auth_user WITH PASSWORD 'strong_password';
+> GRANT ALL PRIVILEGES ON DATABASE auth_db TO auth_user;
+> ```
 
-### 20.2 데이터베이스 초기화
+> **주의**: `secrets.env`는 `.gitignore`에 의해 git에 올라가지 않습니다. 수동으로 관리하세요.
+> `kustomization.yaml`에서 `secretGenerator`는 제거되어 있습니다 (ArgoCD가 Git에서 secrets.env를 찾을 수 없으므로).
+> Secret은 아래처럼 수동으로 생성합니다.
+
+### 21.3 Secret 생성 및 데이터베이스 초기화
 
 ```bash
-# secrets.env를 K8s Secret으로 생성
+# 1. secrets.env를 K8s Secret으로 수동 생성
 kubectl create secret generic spring-prod-secret \
   --from-env-file=k8s/spring/overlays/prod/secrets.env \
   -n urr-spring --dry-run=client -o yaml | kubectl apply -f -
+
+# ArgoCD가 이 Secret을 삭제/덮어쓰지 않도록 레이블 추가
+kubectl label secret spring-prod-secret -n urr-spring \
+  argocd.argoproj.io/compare-options=IgnoreExtraneous \
+  --overwrite
 
 # DB 초기화 Job 실행
 kubectl apply -f k8s/spring/overlays/prod/init-databases.yaml -n urr-spring
@@ -1745,7 +3014,7 @@ kubectl get jobs -n urr-spring
 kubectl logs job/init-databases -n urr-spring
 ```
 
-### 20.3 첫 배포 트리거
+### 21.4 첫 배포 트리거
 
 **방법 1: 수동 워크플로 실행**
 1. GitHub → Actions → `gateway-service-ci-cd` 선택
@@ -1759,7 +3028,7 @@ git push origin main
 # → CI/CD 자동 트리거 → ECR push → K8s manifest 업데이트 → ArgoCD 동기화
 ```
 
-### 20.4 검증 체크리스트
+### 21.5 검증 체크리스트
 
 ```bash
 # 1. Pod 상태 확인
@@ -1783,7 +3052,7 @@ curl -I https://{CLOUDFRONT_DOMAIN}
 curl https://{CLOUDFRONT_DOMAIN}/api/health
 ```
 
-### 20.5 전체 아키텍처 흐름 요약
+### 21.6 전체 아키텍처 흐름 요약
 
 ```
 사용자 브라우저
@@ -1809,6 +3078,7 @@ CI/CD:
 === AWS 리소스 메모 ===
 Account ID:
 VPC ID:
+OIDC Provider ID:
 Public Subnet AZ-a:
 Public Subnet AZ-c:
 Private Subnet AZ-a:
@@ -1822,8 +3092,11 @@ Streaming Subnet AZ-c:
 
 EKS Cluster Name: urr-prod
 EKS Node SG ID:
+EKS Cluster Endpoint:
 
-RDS Endpoint:
+RDS Endpoint (Primary):
+RDS Read Replica Endpoint:
+RDS Proxy Endpoint:
 RDS Master Password:
 Redis Primary Endpoint:
 Redis AUTH Token:
@@ -1833,9 +3106,15 @@ SQS Queue URL:
 ALB DNS Name:
 CloudFront Domain:
 CloudFront Distribution ID:
+Gateway Target Group ARN:
+Frontend Target Group ARN:
 
 Lambda Edge ARN (qualified):
 API Gateway Invoke URL:
+VWR Token Secret:
+
+AMP Remote Write Endpoint:
+AMG Grafana URL:
 
 GitHub Actions Role ARN:
 X-CloudFront-Verified Header Value:

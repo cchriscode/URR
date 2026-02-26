@@ -1,9 +1,10 @@
+# Rollout-managed services: Deployment replicas = 0 (Rollout handles pod creation)
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: gateway-service
 spec:
-  replicas: 3
+  replicas: 0
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -17,14 +18,14 @@ kind: Deployment
 metadata:
   name: ticket-service
 spec:
-  replicas: 3
+  replicas: 0
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: payment-service
 spec:
-  replicas: 2
+  replicas: 0
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -38,7 +39,7 @@ kind: Deployment
 metadata:
   name: queue-service
 spec:
-  replicas: 3
+  replicas: 0
 ---
 apiVersion: apps/v1
 kind: Deployment

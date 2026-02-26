@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: zipkin-spring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: zipkin-spring
+  template:
+    metadata:
+      labels:
+        app: zipkin-spring
+    spec:
+      containers:
+        - name: zipkin
+          image: openzipkin/zipkin:3
+          ports:
+            - containerPort: 9411
+          env:
+            - name: STORAGE_TYPE
+              value: "mem"
+            - name: JAVA_OPTS
+              value: "-Xms128m -Xmx256m"
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 9411
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 9411
+            initialDelaySeconds: 10
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: zipkin-spring
+spec:
+  type: ClusterIP
+  selector:
+    app: zipkin-spring
+  ports:
+    - port: 9411
+      targetPort: 9411

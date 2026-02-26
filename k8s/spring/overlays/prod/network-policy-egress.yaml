@@ -31,3 +31,10 @@ spec:
           protocol: TCP
         - port: 9094
           protocol: TCP
+    # VPC Endpoints (SQS, Secrets Manager, STS, etc.) use HTTPS 443
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/16  # VPC CIDR - covers all VPC endpoints
+      ports:
+        - port: 443
+          protocol: TCP

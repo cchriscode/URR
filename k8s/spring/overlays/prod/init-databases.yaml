@@ -11,6 +11,7 @@ spec:
     metadata:
       labels:
         app: init-databases
+        tier: backend
     spec:
       restartPolicy: OnFailure
       containers:

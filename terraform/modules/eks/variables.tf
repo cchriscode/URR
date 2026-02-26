@@ -77,9 +77,9 @@ variable "node_group_max_size" {
 }
 
 variable "node_instance_types" {
-  description = "List of instance types for worker nodes"
+  description = "List of instance types for worker nodes (ARM/Graviton for arm64 CI/CD images)"
   type        = list(string)
-  default     = ["t3.medium"]
+  default     = ["t4g.medium"]
 }
 
 variable "node_capacity_type" {

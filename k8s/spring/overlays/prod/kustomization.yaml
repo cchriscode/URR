@@ -13,8 +13,8 @@ resources:
   - ../../base
   - pdb.yaml
   - hpa.yaml
-  - kafka.yaml
-  - redis.yaml
+  # kafka.yaml / redis.yaml removed: production uses AWS MSK + ElastiCache
+  - zipkin.yaml
   - analysis-template.yaml
   - preview-services.yaml
   - rollouts/gateway-service.yaml
@@ -29,10 +29,9 @@ configMapGenerator:
     envs:
       - config.env
 
-secretGenerator:
-  - name: spring-prod-secret
-    envs:
-      - secrets.env
+# secretGenerator removed: secrets.env is gitignored and unavailable to ArgoCD.
+# Create secret manually: kubectl create secret generic spring-prod-secret \
+#   --from-env-file=secrets.env -n urr-spring --dry-run=client -o yaml | kubectl apply -f -
 
 generatorOptions:
   disableNameSuffixHash: true

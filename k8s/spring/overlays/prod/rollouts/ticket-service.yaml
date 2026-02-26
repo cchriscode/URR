@@ -13,33 +13,74 @@ spec:
       app: ticket-service
   template:
     metadata:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3002"
+        prometheus.io/path: "/actuator/prometheus"
       labels:
         app: ticket-service
+        tier: backend
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
       containers:
         - name: ticket-service
           image: YOUR_ECR_URI/ticket-service:latest
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
           ports:
             - containerPort: 3002
-          resources:
-            requests:
-              cpu: "200m"
-              memory: "256Mi"
-            limits:
-              cpu: "1"
-              memory: "1Gi"
+          envFrom:
+            - configMapRef:
+                name: spring-prod-config
+            - secretRef:
+                name: spring-prod-secret
+          env:
+            - name: PORT
+              value: "3002"
+            - name: SPRING_PROFILES_ACTIVE
+              value: "prod"
+            - name: TICKET_DB_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: spring-prod-config
+                  key: TICKET_DB_URL
+            - name: AUTH_SERVICE_URL
+              value: "http://auth-service:3005"
+            - name: ZIPKIN_ENDPOINT
+              value: "http://zipkin-spring:9411/api/v2/spans"
+            - name: TRACING_SAMPLING_PROBABILITY
+              value: "0.1"
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 3002
+            failureThreshold: 30
+            periodSeconds: 5
           readinessProbe:
             httpGet:
-              path: /health
+              path: /actuator/health/readiness
               port: 3002
-            initialDelaySeconds: 10
             periodSeconds: 10
           livenessProbe:
             httpGet:
-              path: /health
+              path: /actuator/health/liveness
               port: 3002
-            initialDelaySeconds: 20
             periodSeconds: 20
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "512Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
   strategy:
     blueGreen:
       activeService: ticket-service

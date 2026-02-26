@@ -165,6 +165,7 @@ resource "aws_eks_node_group" "main" {
     max_unavailable = 1
   }
 
+  ami_type       = "AL2_ARM_64"
   instance_types = var.node_instance_types
   capacity_type  = var.node_capacity_type
   disk_size      = var.node_disk_size
